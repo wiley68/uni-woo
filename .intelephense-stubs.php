@@ -154,6 +154,13 @@ function register_post_status($post_status, $args = array()) {}
 function add_meta_box($id, $title, $callback, $screen = null, $context = 'advanced', $priority = 'default', $callback_args = null) {}
 function add_options_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null) {}
 
+function get_admin_page_title(): string
+{
+	return '';
+}
+
+function submit_button(string $text = '', string $type = 'primary', string $name = 'submit', bool $wrap = true, array $other_attributes = array()): void {}
+
 function admin_url(string $path = '', string $scheme = 'admin'): string
 {
 	return '';
@@ -387,11 +394,6 @@ function wp_kses(string $content, array $allowed_html, array $allowed_protocols 
 function wp_kses_post(string $content): string
 {
 	return $content;
-}
-
-function random_bytes(int $length): string
-{
-	return '';
 }
 
 function wpautop(string $text, bool $br = true): string

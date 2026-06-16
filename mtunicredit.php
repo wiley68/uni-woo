@@ -63,6 +63,7 @@ define( 'MTUC_JS_URI', MTUC_PLUGIN_URL . '/js' );
 
 /** Includes */
 $mtuc_files = array(
+	'/admin.php',
 	'/functions.php',
 );
 
@@ -96,4 +97,8 @@ function mtuc_declare_woocommerce_compatibility() {
  */
 function mtuc_plugin_bootstrap() {
 	load_plugin_textdomain( 'mtunicredit', false, dirname( plugin_basename( MTUC_PLUGIN_FILE ) ) . '/languages' );
+
+	if ( is_admin() ) {
+		add_action( 'admin_menu', 'mtuc_admin_register_menu' );
+	}
 }
