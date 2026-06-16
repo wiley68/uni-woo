@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name:       УНИ Кредит
- * Plugin URI:        https://avalonbg.com
- * Description:       Кредитен калкулатор за УниКредит — WooCommerce модул за покупки на изплащане.
+ * Plugin Name:       УниКредит покупки на Кредит
+ * Plugin URI:        https://www.unicreditbulbank.bg/bg/ucfin
+ * Description:       УниКредит покупки на Кредит — WooCommerce модул за покупки на изплащане.
  * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
@@ -12,7 +12,7 @@
  * Text Domain:       mtunicredit
  * Domain Path:       /languages
  * WC requires at least: 6.0
- * WC tested up to:   10.4.0
+ * WC tested up to:   10.8.1
  * License:           GPL-3.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-3.0.html
  *

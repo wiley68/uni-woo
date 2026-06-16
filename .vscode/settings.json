@@ -1,6 +1,5 @@
 {
-  // WordPress PHPCS: composer install && composer run format
-  // За format on save инсталирайте „PHP Code Sniffer“ и задайте defaultFormatter по-долу.
+  // WordPress PHPCS: composer install && composer run lint && composer run format
   "editor.formatOnSave": true,
   "editor.insertSpaces": false,
   "editor.detectIndentation": false,
@@ -10,10 +9,7 @@
   "[php]": {
     "editor.insertSpaces": false,
     "editor.tabSize": 4,
-    "editor.defaultFormatter": "obliviousharmony.vscode-php-codesniffer",
-    "editor.formatOnSave": true,
-    "phpCodeSniffer.fixOnSave": true,
-    "phpCodeSniffer.executablePath": "${workspaceFolder}/vendor/bin/phpcs"
+    "editor.formatOnSave": false
   },
   "[javascript]": {
     "editor.insertSpaces": false,
@@ -23,7 +19,10 @@
     "editor.insertSpaces": false,
     "editor.tabSize": 4
   },
-  "intelephense.environment.includePaths": ["${workspaceFolder}"],
+  "intelephense.environment.includePaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/.intelephense-stubs"
+  ],
   "intelephense.files.exclude": ["**/vendor/**", "**/.git/**"],
   "intelephense.stubs": [
     "superglobals",
