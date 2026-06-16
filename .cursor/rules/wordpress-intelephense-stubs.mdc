@@ -1,0 +1,30 @@
+---
+description: WordPress/WooCommerce код + Intelephense stubs (не заобикаляй WP API заради IDE)
+alwaysApply: true
+---
+
+# WordPress код и Intelephense stubs
+
+## Принцип
+
+- Винаги използвай **официалните WordPress/WooCommerce** функции, hooks и API (`sanitize_key`, `esc_url`, `wc_get_product`, и т.н.).
+- **Не** заменяй WP функции с custom PHP само защото Intelephense показва „Undefined function/class“ — това е липса на IDE контекст, не грешка в кода.
+
+## Когато редакторът „греши“
+
+1. Потвърди, че символът е от WordPress/WooCommerce core.
+2. Добави/допълни декларация в **`.intelephense-stubs.php`** на проекта (секция WordPress Core Functions или WooCommerce).
+3. Увери се, че `.vscode/settings.json` включва `${workspaceFolder}` в `intelephense.environment.includePaths`.
+4. Не променяй production логиката заради linter-а.
+
+## Шаблон за нов stub
+
+```php
+/**
+ * @param string $key
+ * @return string
+ */
+function sanitize_key( $key ) {
+    return $key;
+}
+```

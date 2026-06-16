@@ -1,0 +1,44 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Logs
+*.log
+error.log
+error_log
+**/error_log
+**/error_log.*
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build artifacts
+dist/
+build/
+coverage/
+*.map
+
+# Environment / local config
+.env
+.env.*
+!.env.example
+
+# Archive / temp files
+*.zip
+*.tar
+*.gz
+*.tmp
+*.temp
+
+# Loco Translate temporary/generated files
+*.po~
+*.pot~
+*-backup-*.pot~
+*.l10n.php

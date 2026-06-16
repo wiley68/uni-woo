@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "obliviousharmony.vscode-php-codesniffer",
+    "bmewburn.vscode-intelephense-client",
+    "editorconfig.editorconfig"
+  ]
+}

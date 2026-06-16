@@ -1,0 +1,36 @@
+# https://editorconfig.org
+# УНИ Кредит (mtunicredit) — правила за редактора (съвместими с WordPress PHPCS).
+#
+# PHP: табове (4), UTF-8, LF. Форматиране при запис: разширение PHP Code Sniffer + phpcbf.
+# JS/CSS: табове (4) — същият стил.
+# Команди: composer install | composer run format | composer run lint
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.php]
+indent_style = tab
+indent_size = 4
+tab_width = 4
+
+[*.{js,css}]
+indent_style = tab
+indent_size = 4
+tab_width = 4
+
+[*.{json,yml,yaml,md,txt}]
+indent_style = space
+indent_size = 2
+
+[composer.json]
+indent_style = tab
+indent_size = 4
+
+[phpcs.xml.dist]
+indent_style = tab
+indent_size = 4
