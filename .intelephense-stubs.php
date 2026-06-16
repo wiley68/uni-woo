@@ -142,6 +142,7 @@ function get_option($option, $default = false): mixed
 	return $default;
 }
 function update_option($option, $value, $autoload = null) {}
+function add_option($option, $value, $deprecated = '', $autoload = 'yes') {}
 function delete_option($option) {}
 function get_site_option($option, $default = false) {}
 function delete_site_option($option) {}
@@ -415,8 +416,26 @@ function get_footer($name = null, $args = array()) {}
 
 class WP_Error
 {
-	public function __construct($code = '', $message = '', $data = '') {}
-	public function get_error_message($code = '') {}
+	public function __construct( $code = '', $message = '', $data = '' ) {}
+
+	public function get_error_code(): string
+	{
+		return '';
+	}
+
+	public function get_error_message( $code = '' ): string
+	{
+		unset( $code );
+
+		return '';
+	}
+
+	public function get_error_data( $code = '' ): mixed
+	{
+		unset( $code );
+
+		return null;
+	}
 }
 
 class WP_Post

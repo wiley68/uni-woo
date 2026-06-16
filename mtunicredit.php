@@ -63,6 +63,7 @@ define( 'MTUC_JS_URI', MTUC_PLUGIN_URL . '/js' );
 
 /** Includes */
 $mtuc_files = array(
+	'/class-mtuc-settings.php',
 	'/admin.php',
 	'/functions.php',
 );
@@ -73,6 +74,18 @@ foreach ( $mtuc_files as $file ) {
 
 add_action( 'before_woocommerce_init', 'mtuc_declare_woocommerce_compatibility' );
 add_action( 'plugins_loaded', 'mtuc_plugin_bootstrap', 0 );
+
+register_activation_hook( MTUC_PLUGIN_FILE, 'mtuc_activate_plugin' );
+
+/**
+ * Plugin activation: default options.
+ *
+ * @since 1.0.0
+ * @return void
+ */
+function mtuc_activate_plugin() {
+	Mtuc_Settings::install_defaults();
+}
 
 /**
  * Declare compatibility with WooCommerce features.
