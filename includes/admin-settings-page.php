@@ -9,8 +9,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$mtuc_settings_saved = false;
-$mtuc_settings_error = '';
+$mtuc_settings_saved   = false;
+$mtuc_settings_error   = '';
+$mtuc_shop_refreshed   = false;
+$mtuc_shop_refresh_err = '';
+
+if (
+	isset( $_POST['mtuc_refresh_shop'] )
+	&& '1' === $_POST['mtuc_refresh_shop']
+	&& check_admin_referer( 'mtuc_refresh_shop', 'mtuc_refresh_shop_nonce' )
+	&& current_user_can( 'manage_options' )
+) {
+	$result = Mtuc_Shop_Cache::refresh_from_api();
+
+	if ( is_wp_error( $result ) ) {
+		$mtuc_shop_refresh_err = $result->get_error_message();
+	} else {
+		$mtuc_shop_refreshed = true;
+	}
+}
 
 if (
 	isset( $_POST['mtuc_settings_submitted'] )
@@ -29,6 +46,7 @@ if (
 
 $mtuc_settings = Mtuc_Settings::get_all();
 $mtuc_hooks    = Mtuc_Settings::get_hook_choices();
+$mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_Settings::OPTION_UNICID ] );
 
 ?>
 <div class="wrap">
@@ -46,7 +64,34 @@ $mtuc_hooks    = Mtuc_Settings::get_hook_choices();
 		</div>
 	<?php endif; ?>
 
-	<form method="post" action="<?php echo esc_url( admin_url( 'options-general.php?page=' . MTUC_ADMIN_PAGE_SLUG ) ); ?>">
+	<?php if ( $mtuc_shop_refreshed ) : ?>
+		<div class="notice notice-success is-dismissible">
+			<p><strong><?php esc_html_e( 'Данните от банката са обновени успешно.', 'mtunicredit' ); ?></strong></p>
+		</div>
+	<?php endif; ?>
+
+	<?php if ( '' !== $mtuc_shop_refresh_err ) : ?>
+		<div class="notice notice-error">
+			<p><strong><?php echo esc_html( $mtuc_shop_refresh_err ); ?></strong></p>
+		</div>
+	<?php endif; ?>
+
+	<?php if ( is_array( $mtuc_cache ) ) : ?>
+		<p class="description">
+			<?php
+			echo esc_html(
+				sprintf(
+					/* translators: 1: fetched datetime, 2: expires datetime */
+					__( 'Кеш на shop данни: зареден на %1$s UTC, валиден до %2$s UTC.', 'mtunicredit' ),
+					$mtuc_cache['fetched_at'],
+					$mtuc_cache['expires_at']
+				)
+			);
+			?>
+		</p>
+	<?php endif; ?>
+
+	<form method="post" id="mtuc-settings-form" action="<?php echo esc_url( admin_url( 'options-general.php?page=' . MTUC_ADMIN_PAGE_SLUG ) ); ?>">
 		<?php wp_nonce_field( 'mtuc_save_settings', 'mtuc_settings_nonce' ); ?>
 		<input type="hidden" name="mtuc_settings_submitted" value="1" />
 
@@ -140,7 +185,22 @@ $mtuc_hooks    = Mtuc_Settings::get_hook_choices();
 				</tr>
 			</tbody>
 		</table>
-
-		<?php submit_button( __( 'Запази настройките', 'mtunicredit' ) ); ?>
 	</form>
+
+	<div class="submit" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-left:0;">
+		<?php
+		submit_button(
+			__( 'Запази настройките', 'mtunicredit' ),
+			'primary',
+			'mtuc_save_settings',
+			false,
+			array( 'form' => 'mtuc-settings-form' )
+		);
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'options-general.php?page=' . MTUC_ADMIN_PAGE_SLUG ) ); ?>" style="margin:0;">
+			<?php wp_nonce_field( 'mtuc_refresh_shop', 'mtuc_refresh_shop_nonce' ); ?>
+			<input type="hidden" name="mtuc_refresh_shop" value="1" />
+			<?php submit_button( __( 'Обнови данните от банката', 'mtunicredit' ), 'secondary', 'mtuc_refresh_shop_submit', false ); ?>
+		</form>
+	</div>
 </div>

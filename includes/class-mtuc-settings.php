@@ -166,6 +166,11 @@ class Mtuc_Settings {
 			delete_site_option( $option );
 		}
 
+		Mtuc_Cp_Api_Client::clear_token();
+		Mtuc_Shop_Cache::drop_table();
+		delete_option( 'mtuc_db_version' );
+		delete_site_option( 'mtuc_db_version' );
+
 		wp_cache_flush();
 	}
 

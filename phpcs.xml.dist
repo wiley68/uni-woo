@@ -11,6 +11,9 @@
 	<exclude-pattern>/.git/*</exclude-pattern>
 	<exclude-pattern>/.intelephense-stubs.php</exclude-pattern>
 	<exclude-pattern>/.intelephense-stubs/*</exclude-pattern>
+	<exclude-pattern>/api.php</exclude-pattern>
+	<exclude-pattern>/ShopAuthController.php</exclude-pattern>
+	<exclude-pattern>/2026_*.php</exclude-pattern>
 	<exclude-pattern>/node_modules/*</exclude-pattern>
 	<exclude-pattern>*.min.js</exclude-pattern>
 

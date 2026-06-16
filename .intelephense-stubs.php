@@ -147,6 +147,17 @@ function delete_option($option) {}
 function get_site_option($option, $default = false) {}
 function delete_site_option($option) {}
 
+/**
+ * @param string $type 'mysql' or other.
+ * @param bool   $gmt  Whether to use GMT.
+ * @return int|string
+ */
+function current_time( $type, $gmt = false ) {
+	unset( $type, $gmt );
+
+	return '';
+}
+
 function determine_locale() {}
 function load_plugin_textdomain($domain, $deprecated = false, $plugin_rel_path = false) {}
 function load_textdomain($domain, $mofile) {}
@@ -294,6 +305,14 @@ function wp_remote_post($url, $args = array()): array|WP_Error
  * @return array<string, mixed>|WP_Error
  */
 function wp_remote_get($url, $args = array()): array|WP_Error
+{
+	return array('body' => '', 'response' => array('code' => 200));
+}
+
+/**
+ * @return array<string, mixed>|WP_Error
+ */
+function wp_remote_request($url, $args = array()): array|WP_Error
 {
 	return array('body' => '', 'response' => array('code' => 200));
 }
