@@ -49,6 +49,9 @@ if ( ! mtuc_is_woocommerce_active() ) {
 	return;
 }
 
+/** Environment config — includes/config.php (един файл за dev / test / prod). */
+require_once __DIR__ . '/includes/config.php';
+
 /** Plugin constants */
 define( 'MTUC_VERSION', '1.0.0' );
 define( 'MTUC_PLUGIN_FILE', __FILE__ );
