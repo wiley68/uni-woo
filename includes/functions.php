@@ -119,7 +119,7 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 
 	$is_mobile    = wp_is_mobile();
 	$default_logo = esc_url( MTUC_PLUGIN_URL . '/images/uni_logo.jpg' );
-	$picture_url  = mtuc_get_shop_picture_url( $shop, false );
+	$picture_url  = mtuc_get_shop_picture_url( $shop, true );
 	$float_image  = $is_mobile ? mtuc_get_shop_picture_url( $shop, true ) : $default_logo;
 
 	if ( '' === $float_image ) {
