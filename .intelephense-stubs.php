@@ -262,6 +262,8 @@ function get_current_user_id(): int
 
 function is_user_logged_in() {}
 function is_admin() {}
+function is_front_page() {}
+function wp_is_mobile() {}
 function is_ssl() {}
 
 function wp_doing_ajax(): bool

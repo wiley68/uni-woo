@@ -1,0 +1,135 @@
+/**
+ * Scoped under .mtuc-reklama to avoid theme button/link overrides without !important.
+ */
+.mtuc-reklama {
+	position: relative;
+	z-index: 999999;
+}
+
+.mtuc-reklama button.mtuc-reklama-float {
+	appearance: none;
+	-webkit-appearance: none;
+	box-sizing: border-box;
+	display: block;
+	margin: 0;
+	padding: 0;
+	font: inherit;
+	line-height: normal;
+	color: inherit;
+	text-align: center;
+	text-transform: none;
+	letter-spacing: normal;
+	background-image: none;
+	min-height: 0;
+	z-index: 999999;
+	position: fixed;
+	width: 120px;
+	height: 60px;
+	top: calc(100% / 3 - 30px);
+	left: 0;
+	background-color: #ffffff;
+	border-style: solid;
+	border-color: #d20210;
+	border-width: 1px 1px 1px 0;
+	border-top-right-radius: 8px;
+	border-bottom-right-radius: 8px;
+	box-shadow: 2px 2px 3px #999;
+	cursor: pointer;
+}
+
+.mtuc-reklama button.mtuc-reklama-float:hover,
+.mtuc-reklama button.mtuc-reklama-float:focus,
+.mtuc-reklama button.mtuc-reklama-float:active {
+	background-color: #ffffff;
+	background-image: none;
+	border-style: solid;
+	border-color: #d20210;
+	border-width: 1px 1px 1px 0;
+	box-shadow: 2px 2px 3px #999;
+	color: inherit;
+}
+
+.mtuc-reklama button.mtuc-reklama-float:focus {
+	outline: none;
+}
+
+.mtuc-reklama button.mtuc-reklama-float:focus-visible {
+	outline: 2px solid #d20210;
+	outline-offset: 2px;
+}
+
+.mtuc-reklama button.mtuc-reklama-float img {
+	max-height: 39px;
+	width: auto;
+}
+
+.mtuc-reklama .mtuc-reklama-panel {
+	z-index: 999999;
+	position: fixed;
+	top: calc(100% / 3 - 130px);
+	left: 122px;
+	display: table;
+	visibility: hidden;
+	opacity: 0;
+	transition: opacity 0.5s ease, visibility 0s linear 0.5s;
+}
+
+.mtuc-reklama .mtuc-reklama-panel.is-visible {
+	visibility: visible;
+	opacity: 1;
+	transition: opacity 0.5s ease, visibility 0s linear 0s;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-arrow {
+	display: table-cell;
+	vertical-align: middle;
+	width: 12px;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-arrow::before {
+	content: "";
+	display: block;
+	width: 0;
+	height: 0;
+	border-top: 10px solid transparent;
+	border-bottom: 10px solid transparent;
+	border-right: 10px solid #d20210;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-body {
+	width: 410px;
+	height: 260px;
+	color: #696969;
+	background: #f5f5f5;
+	display: table-cell;
+	vertical-align: top;
+	padding-left: 5px;
+	border: 1px solid #d20210;
+	border-radius: 3px;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-body > img {
+	max-width: 400px;
+	max-height: 140px;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-title {
+	font-size: 16px;
+	padding-top: 3px;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-link {
+	text-align: center;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-link a {
+	color: #d20210;
+	font-weight: 700;
+	text-decoration: none;
+}
+
+.mtuc-reklama .mtuc-reklama-panel-link a:hover,
+.mtuc-reklama .mtuc-reklama-panel-link a:focus {
+	color: #d20210;
+	text-decoration: underline;
+}

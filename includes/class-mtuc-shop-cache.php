@@ -87,13 +87,22 @@ class Mtuc_Shop_Cache {
 	}
 
 	/**
-	 * Get shop data — from cache if fresh, otherwise from CP API.
+	 * Get shop data — from cache when fresh, otherwise refresh from CP API.
 	 *
-	 * @param string $unicid        Store unicid.
-	 * @param bool   $force_refresh Skip cache TTL.
+	 * This is the default entry point for reading shop configuration anywhere
+	 * in the module. Missing cache rows and expired TTL trigger an API refresh.
+	 * Use refresh_from_api() only for explicit manual refresh (admin button).
+	 *
+	 * @param string|null $unicid        Store unicid (defaults to settings).
+	 * @param bool        $force_refresh Skip cache and always call CP API.
 	 * @return array<string, mixed>|WP_Error Shop `data` object from API.
 	 */
-	public static function get_shop_data( string $unicid, bool $force_refresh = false ) {
+	public static function get_shop_data( $unicid = null, bool $force_refresh = false ) {
+		if ( null === $unicid ) {
+			$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
+		}
+
+		$unicid = sanitize_text_field( (string) $unicid );
 		if ( '' === $unicid ) {
 			return new WP_Error(
 				'mtuc_cache_no_unicid',
@@ -104,7 +113,10 @@ class Mtuc_Shop_Cache {
 		if ( ! $force_refresh ) {
 			$cached = self::get_fresh_row( $unicid );
 			if ( null !== $cached ) {
-				return self::decode_shop_data( $cached['shop_data'] );
+				$data = self::decode_shop_data( $cached['shop_data'] );
+				if ( ! is_wp_error( $data ) ) {
+					return $data;
+				}
 			}
 		}
 
@@ -112,7 +124,7 @@ class Mtuc_Shop_Cache {
 	}
 
 	/**
-	 * Force fetch from CP and overwrite cache.
+	 * Force fetch from CP and overwrite cache (explicit refresh only).
 	 *
 	 * @param string|null $unicid Store unicid (defaults to settings).
 	 * @return array<string, mixed>|WP_Error

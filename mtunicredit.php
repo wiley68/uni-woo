@@ -122,4 +122,6 @@ function mtuc_plugin_bootstrap() {
 	if ( is_admin() ) {
 		add_action( 'admin_menu', 'mtuc_admin_register_menu' );
 	}
+
+	mtuc_register_reklama_hooks();
 }
