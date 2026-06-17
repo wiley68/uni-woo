@@ -108,6 +108,17 @@ function esc_url_raw(string $url, $protocols = null): string
 {
 	return $url;
 }
+
+/**
+ * @param int $component PHP_URL_* constant.
+ * @return array<string, mixed>|false|null|string|int
+ */
+function wp_parse_url( string $url, int $component = -1 ) {
+	unset( $url, $component );
+
+	return false;
+}
+
 function esc_js(string $text): string
 {
 	return $text;
@@ -387,9 +398,36 @@ function get_posts($args = null): array
 	return array();
 }
 
-function get_transient($transient) {}
-function set_transient($transient, $value, $expiration = 0) {}
-function delete_transient($transient) {}
+/**
+ * @return mixed|false
+ */
+function get_transient( string $transient ): mixed
+{
+	unset( $transient );
+
+	return false;
+}
+
+/**
+ * @param mixed $value
+ * @return bool
+ */
+function set_transient( string $transient, $value, int $expiration = 0 ): bool
+{
+	unset( $transient, $value, $expiration );
+
+	return false;
+}
+
+/**
+ * @return bool
+ */
+function delete_transient( string $transient ): bool
+{
+	unset( $transient );
+
+	return false;
+}
 
 function get_current_screen(): ?WP_Screen
 {

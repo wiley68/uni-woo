@@ -29,3 +29,11 @@ if ( ! defined( 'MTUC_CONTROL_PANEL_URL' ) ) {
 if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
 	define( 'MTUC_API_BASE_URL', untrailingslashit( MTUC_CONTROL_PANEL_URL ) . '/api/v1' );
 }
+
+/**
+ * Optional CDN asset date suffix (YYYYMMDD) when CP does not yet send reklama_manifest_version.
+ * Prefer reklama_manifest_version / reklama_picture_url from shop API instead.
+ */
+if ( ! defined( 'MTUC_REKLAMA_ASSETS_DATE' ) ) {
+	define( 'MTUC_REKLAMA_ASSETS_DATE', '20260612' );
+}

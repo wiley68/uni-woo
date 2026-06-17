@@ -43,6 +43,257 @@ function mtuc_get_shop_data( $unicid = null ) {
 }
 
 /**
+ * Transient key for a CDN reklama manifest URL.
+ *
+ * @param string $manifest_url Manifest JSON URL from shop data.
+ * @return string
+ */
+function mtuc_reklama_manifest_transient_key( string $manifest_url ): string {
+	return 'mtuc_rkl_mf_' . md5( $manifest_url );
+}
+
+/**
+ * Invalidate cached CDN manifest (e.g. after shop cache refresh).
+ *
+ * @param string $manifest_url Manifest JSON URL from shop data.
+ * @return void
+ */
+function mtuc_clear_reklama_manifest_cache( string $manifest_url ): void {
+	$manifest_url = esc_url_raw( $manifest_url );
+	if ( '' === $manifest_url ) {
+		return;
+	}
+
+	delete_transient( mtuc_reklama_manifest_transient_key( $manifest_url ) );
+}
+
+/**
+ * Fetch and cache CDN manifest for reklama assets.
+ *
+ * @param string $manifest_url Manifest JSON URL from shop data.
+ * @return array<string, mixed>|null
+ */
+function mtuc_get_reklama_manifest( string $manifest_url ): ?array {
+	$manifest_url = esc_url_raw( $manifest_url );
+	if ( '' === $manifest_url ) {
+		return null;
+	}
+
+	$cache_key = mtuc_reklama_manifest_transient_key( $manifest_url );
+	$cached    = get_transient( $cache_key );
+	if ( is_array( $cached ) && ! empty( $cached['assets'] ) && is_array( $cached['assets'] ) ) {
+		return $cached;
+	}
+
+	$response = wp_remote_get(
+		$manifest_url,
+		array(
+			'timeout'     => 10,
+			'redirection' => 3,
+			'headers'     => array(
+				'Accept'     => 'application/json',
+				'User-Agent' => 'mtunicredit/' . MTUC_VERSION . '; ' . home_url(),
+			),
+		)
+	);
+
+	if ( is_wp_error( $response ) ) {
+		return null;
+	}
+
+	if ( 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+		return null;
+	}
+
+	$data = json_decode( wp_remote_retrieve_body( $response ), true );
+	if ( ! is_array( $data ) || empty( $data['assets'] ) || ! is_array( $data['assets'] ) ) {
+		return null;
+	}
+
+	set_transient( $cache_key, $data, Mtuc_Shop_Cache::TTL );
+
+	return $data;
+}
+
+/**
+ * Resolve popup image URL from shop data / CDN manifest.
+ *
+ * @param array<string, mixed> $shop Shop `data` object.
+ * @return string Escaped URL or empty string.
+ */
+function mtuc_resolve_reklama_picture_url( array $shop ): string {
+	$reklama_id = isset( $shop['uni_container_reklama'] ) ? (int) $shop['uni_container_reklama'] : 0;
+	if ( $reklama_id <= 0 ) {
+		return '';
+	}
+
+	if ( ! empty( $shop['reklama_picture_url'] ) ) {
+		return esc_url_raw( (string) $shop['reklama_picture_url'] );
+	}
+
+	$embedded = mtuc_get_reklama_asset_from_embedded_manifest( $shop, $reklama_id );
+	if ( '' !== $embedded ) {
+		return $embedded;
+	}
+
+	$built = mtuc_build_reklama_picture_url( $shop, $reklama_id );
+	if ( '' !== $built ) {
+		return $built;
+	}
+
+	return mtuc_get_reklama_picture_url_from_manifest( $shop, $reklama_id );
+}
+
+/**
+ * Read asset URL from embedded manifest object in shop data (if CP provides it).
+ *
+ * @param array<string, mixed> $shop       Shop `data` object.
+ * @param int                  $reklama_id Container reklama id.
+ * @return string
+ */
+function mtuc_get_reklama_asset_from_embedded_manifest( array $shop, int $reklama_id ): string {
+	if ( empty( $shop['reklama_manifest'] ) || ! is_array( $shop['reklama_manifest'] ) ) {
+		return '';
+	}
+
+	$asset_key = 'unim' . $reklama_id;
+	$assets    = $shop['reklama_manifest']['assets'] ?? null;
+	if ( ! is_array( $assets ) || empty( $assets[ $asset_key ] ) || ! is_string( $assets[ $asset_key ] ) ) {
+		return '';
+	}
+
+	return esc_url_raw( $assets[ $asset_key ] );
+}
+
+/**
+ * Build CDN asset URL from manifest version and reklama id.
+ *
+ * @param array<string, mixed> $shop       Shop `data` object.
+ * @param int                  $reklama_id Container reklama id.
+ * @return string
+ */
+function mtuc_build_reklama_picture_url( array $shop, int $reklama_id ): string {
+	$date = mtuc_get_reklama_assets_date( $shop );
+	if ( '' === $date ) {
+		return '';
+	}
+
+	$base = mtuc_get_reklama_cdn_assets_base( $shop );
+	if ( '' === $base ) {
+		return '';
+	}
+
+	$url = trailingslashit( $base ) . 'unim' . $reklama_id . '.' . $date . '.png';
+
+	/**
+	 * Filter built CDN picture URL before use.
+	 *
+	 * @param string               $url        Built asset URL.
+	 * @param array<string, mixed> $shop       Shop data.
+	 * @param int                  $reklama_id Reklama id.
+	 */
+	return esc_url_raw( (string) apply_filters( 'mtuc_reklama_picture_url', $url, $shop, $reklama_id ) );
+}
+
+/**
+ * Asset date suffix (YYYYMMDD) for CDN filenames.
+ *
+ * @param array<string, mixed> $shop Shop `data` object.
+ * @return string
+ */
+function mtuc_get_reklama_assets_date( array $shop ): string {
+	$version = '';
+	if ( ! empty( $shop['reklama_manifest_version'] ) ) {
+		$version = (string) $shop['reklama_manifest_version'];
+	} elseif ( ! empty( $shop['reklama_assets_version'] ) ) {
+		$version = (string) $shop['reklama_assets_version'];
+	} elseif ( ! empty( $shop['reklama_manifest'] ) && is_array( $shop['reklama_manifest'] ) && ! empty( $shop['reklama_manifest']['version'] ) ) {
+		$version = (string) $shop['reklama_manifest']['version'];
+	} elseif ( defined( 'MTUC_REKLAMA_ASSETS_DATE' ) && '' !== MTUC_REKLAMA_ASSETS_DATE ) {
+		$version = (string) MTUC_REKLAMA_ASSETS_DATE;
+	}
+
+	$date = mtuc_reklama_version_to_asset_date( $version );
+
+	/**
+	 * Filter CDN asset date suffix (YYYYMMDD).
+	 *
+	 * @param string               $date YYYYMMDD or empty.
+	 * @param array<string, mixed> $shop Shop data.
+	 */
+	return (string) apply_filters( 'mtuc_reklama_assets_date', $date, $shop );
+}
+
+/**
+ * Convert manifest version to YYYYMMDD asset suffix.
+ *
+ * @param string $version Manifest or date version string.
+ * @return string
+ */
+function mtuc_reklama_version_to_asset_date( string $version ): string {
+	$version = trim( $version );
+	if ( '' === $version ) {
+		return '';
+	}
+
+	if ( preg_match( '/(\d{4})-(\d{2})-(\d{2})/', $version, $matches ) ) {
+		return $matches[1] . $matches[2] . $matches[3];
+	}
+
+	if ( preg_match( '/^\d{8}$/', $version ) ) {
+		return $version;
+	}
+
+	return '';
+}
+
+/**
+ * CDN /assets/ base URL derived from reklama_manifest_url host.
+ *
+ * @param array<string, mixed> $shop Shop `data` object.
+ * @return string
+ */
+function mtuc_get_reklama_cdn_assets_base( array $shop ): string {
+	$manifest_url = isset( $shop['reklama_manifest_url'] ) ? esc_url_raw( (string) $shop['reklama_manifest_url'] ) : '';
+	if ( '' === $manifest_url ) {
+		return '';
+	}
+
+	$parsed = wp_parse_url( $manifest_url );
+	if ( empty( $parsed['scheme'] ) || empty( $parsed['host'] ) ) {
+		return '';
+	}
+
+	return $parsed['scheme'] . '://' . $parsed['host'] . '/assets';
+}
+
+/**
+ * Resolve popup image URL via server-side manifest fetch (fallback).
+ *
+ * @param array<string, mixed> $shop       Shop `data` object.
+ * @param int                  $reklama_id Container reklama id.
+ * @return string Escaped URL or empty string.
+ */
+function mtuc_get_reklama_picture_url_from_manifest( array $shop, int $reklama_id ): string {
+	$manifest_url = isset( $shop['reklama_manifest_url'] ) ? esc_url_raw( (string) $shop['reklama_manifest_url'] ) : '';
+	if ( '' === $manifest_url ) {
+		return '';
+	}
+
+	$manifest = mtuc_get_reklama_manifest( $manifest_url );
+	if ( null === $manifest ) {
+		return '';
+	}
+
+	$asset_key = 'unim' . $reklama_id;
+	if ( empty( $manifest['assets'][ $asset_key ] ) || ! is_string( $manifest['assets'][ $asset_key ] ) ) {
+		return '';
+	}
+
+	return esc_url_raw( $manifest['assets'][ $asset_key ] );
+}
+
+/**
  * Build reklama context when the floating button should be shown.
  *
  * @param bool $settings_only Skip shop cache lookup (for asset enqueue).
@@ -100,12 +351,15 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 		return null;
 	}
 
+	$manifest_url = isset( $shop['reklama_manifest_url'] ) ? esc_url_raw( (string) $shop['reklama_manifest_url'] ) : '';
+	$reklama_id   = isset( $shop['uni_container_reklama'] ) ? (int) $shop['uni_container_reklama'] : 0;
+
 	$context = array(
 		'backurl'     => $backurl,
 		'txt1'        => isset( $shop['uni_container_txt1'] ) ? sanitize_text_field( (string) $shop['uni_container_txt1'] ) : '',
 		'txt2'        => isset( $shop['uni_container_txt2'] ) ? sanitize_text_field( (string) $shop['uni_container_txt2'] ) : '',
 		'logo_url'    => esc_url( MTUC_PLUGIN_URL . '/images/uni_logo.jpg' ),
-		'picture_url' => esc_url( MTUC_PLUGIN_URL . '/images/unim.png' ),
+		'picture_url' => esc_url( mtuc_resolve_reklama_picture_url( $shop ) ),
 		'is_mobile'   => wp_is_mobile(),
 	);
 
@@ -195,7 +449,13 @@ function mtuc_render_reklama_button(): void {
 			<div class="mtuc-reklama-panel-arrow" aria-hidden="true"></div>
 			<div class="mtuc-reklama-panel-body">
 				<div style="padding-bottom:5px;"></div>
-				<img src="<?php echo esc_url( $context['picture_url'] ); ?>" alt="" />
+				<img
+					class="mtuc-reklama-panel-picture"
+					alt=""
+					<?php if ( '' !== $context['picture_url'] ) : ?>
+						src="<?php echo esc_url( $context['picture_url'] ); ?>"
+					<?php endif; ?>
+				/>
 				<?php if ( '' !== $txt1 ) : ?>
 					<div class="mtuc-reklama-panel-title"><?php echo esc_html( $txt1 ); ?></div>
 				<?php endif; ?>

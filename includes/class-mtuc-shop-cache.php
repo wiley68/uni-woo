@@ -245,11 +245,19 @@ class Mtuc_Shop_Cache {
 	private static function save( string $unicid, array $data ): void {
 		global $wpdb;
 
-		$table     = self::table_name();
-		$now       = current_time( 'mysql', true );
-		$expires   = gmdate( 'Y-m-d H:i:s', time() + self::TTL );
-		$shop_json = wp_json_encode( $data, JSON_UNESCAPED_UNICODE );
+		$table   = self::table_name();
+		$now     = current_time( 'mysql', true );
+		$expires = gmdate( 'Y-m-d H:i:s', time() + self::TTL );
+		if ( ! empty( $data['reklama_manifest_url'] ) && is_string( $data['reklama_manifest_url'] ) ) {
+			mtuc_clear_reklama_manifest_cache( $data['reklama_manifest_url'] );
+		}
 
+		$picture_url = mtuc_resolve_reklama_picture_url( $data );
+		if ( '' !== $picture_url ) {
+			$data['reklama_picture_url'] = $picture_url;
+		}
+
+		$shop_json  = wp_json_encode( $data, JSON_UNESCAPED_UNICODE );
 		$coeff_list = isset( $data['coeff_list'] ) ? wp_json_encode( $data['coeff_list'], JSON_UNESCAPED_UNICODE ) : null;
 		$kop_data   = isset( $data['kop'] ) ? wp_json_encode( $data['kop'], JSON_UNESCAPED_UNICODE ) : null;
 		$consents   = isset( $data['consents'] ) ? wp_json_encode( $data['consents'], JSON_UNESCAPED_UNICODE ) : null;
