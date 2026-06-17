@@ -61,6 +61,8 @@ class Mtuc_Shop_Cache {
 			coeff_list longtext NULL,
 			kop_data longtext NULL,
 			consents longtext NULL,
+			uni_picture varchar(512) NULL,
+			uni_picturem varchar(512) NULL,
 			fetched_at datetime NOT NULL,
 			expires_at datetime NOT NULL,
 			PRIMARY KEY  (id),
@@ -248,19 +250,13 @@ class Mtuc_Shop_Cache {
 		$table   = self::table_name();
 		$now     = current_time( 'mysql', true );
 		$expires = gmdate( 'Y-m-d H:i:s', time() + self::TTL );
-		if ( ! empty( $data['reklama_manifest_url'] ) && is_string( $data['reklama_manifest_url'] ) ) {
-			mtuc_clear_reklama_manifest_cache( $data['reklama_manifest_url'] );
-		}
 
-		$picture_url = mtuc_resolve_reklama_picture_url( $data );
-		if ( '' !== $picture_url ) {
-			$data['reklama_picture_url'] = $picture_url;
-		}
-
-		$shop_json  = wp_json_encode( $data, JSON_UNESCAPED_UNICODE );
-		$coeff_list = isset( $data['coeff_list'] ) ? wp_json_encode( $data['coeff_list'], JSON_UNESCAPED_UNICODE ) : null;
-		$kop_data   = isset( $data['kop'] ) ? wp_json_encode( $data['kop'], JSON_UNESCAPED_UNICODE ) : null;
-		$consents   = isset( $data['consents'] ) ? wp_json_encode( $data['consents'], JSON_UNESCAPED_UNICODE ) : null;
+		$shop_json    = wp_json_encode( $data, JSON_UNESCAPED_UNICODE );
+		$coeff_list   = isset( $data['coeff_list'] ) ? wp_json_encode( $data['coeff_list'], JSON_UNESCAPED_UNICODE ) : null;
+		$kop_data     = isset( $data['kop'] ) ? wp_json_encode( $data['kop'], JSON_UNESCAPED_UNICODE ) : null;
+		$consents     = isset( $data['consents'] ) ? wp_json_encode( $data['consents'], JSON_UNESCAPED_UNICODE ) : null;
+		$uni_picture  = self::sanitize_picture_url( $data['uni_picture'] ?? '' );
+		$uni_picturem = self::sanitize_picture_url( $data['uni_picturem'] ?? '' );
 
 		$existing_id = $wpdb->get_var(
 			$wpdb->prepare(
@@ -270,13 +266,15 @@ class Mtuc_Shop_Cache {
 		);
 
 		$row = array(
-			'unicid'     => $unicid,
-			'shop_data'  => $shop_json,
-			'coeff_list' => $coeff_list,
-			'kop_data'   => $kop_data,
-			'consents'   => $consents,
-			'fetched_at' => $now,
-			'expires_at' => $expires,
+			'unicid'       => $unicid,
+			'shop_data'    => $shop_json,
+			'coeff_list'   => $coeff_list,
+			'kop_data'     => $kop_data,
+			'consents'     => $consents,
+			'uni_picture'  => $uni_picture,
+			'uni_picturem' => $uni_picturem,
+			'fetched_at'   => $now,
+			'expires_at'   => $expires,
 		);
 
 		if ( $existing_id ) {
@@ -284,7 +282,7 @@ class Mtuc_Shop_Cache {
 				$table,
 				$row,
 				array( 'id' => (int) $existing_id ),
-				array( '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
+				array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
 				array( '%d' )
 			);
 			return;
@@ -293,8 +291,20 @@ class Mtuc_Shop_Cache {
 		$wpdb->insert(
 			$table,
 			$row,
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 		);
+	}
+
+	/**
+	 * Sanitize CDN picture URL for cache columns.
+	 *
+	 * @param mixed $url Raw URL from API.
+	 * @return string|null
+	 */
+	private static function sanitize_picture_url( $url ): ?string {
+		$url = esc_url_raw( (string) $url );
+
+		return '' !== $url ? $url : null;
 	}
 
 	/**

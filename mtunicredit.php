@@ -54,7 +54,7 @@ require_once __DIR__ . '/includes/config.php';
 
 /** Plugin constants */
 define( 'MTUC_VERSION', '1.0.0' );
-define( 'MTUC_DB_VERSION', '1.0.0' );
+define( 'MTUC_DB_VERSION', '1.1.0' );
 define( 'MTUC_PLUGIN_FILE', __FILE__ );
 define( 'MTUC_PLUGIN_DIR', untrailingslashit( __DIR__ ) );
 define( 'MTUC_PLUGIN_URL', untrailingslashit( plugin_dir_url( __FILE__ ) ) );
