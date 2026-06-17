@@ -75,6 +75,14 @@ foreach ( $mtuc_files as $file ) {
 	require_once MTUC_INCLUDES_DIR . $file;
 }
 
+// TEMPORARY — dev cache refresh stats; delete with dev-cache-refresh-log.php before production.
+if ( defined( 'MTUC_DEV_CACHE_REFRESH_LOG' ) && MTUC_DEV_CACHE_REFRESH_LOG ) {
+	$mtuc_dev_log = MTUC_PLUGIN_DIR . '/dev-cache-refresh-log.php';
+	if ( is_readable( $mtuc_dev_log ) ) {
+		require_once $mtuc_dev_log;
+	}
+}
+
 add_action( 'before_woocommerce_init', 'mtuc_declare_woocommerce_compatibility' );
 add_action( 'plugins_loaded', 'mtuc_plugin_bootstrap', 0 );
 

@@ -138,14 +138,21 @@ class Mtuc_Shop_Cache {
 
 		$unicid = sanitize_text_field( (string) $unicid );
 		if ( '' === $unicid ) {
-			return new WP_Error(
+			$result = new WP_Error(
 				'mtuc_cache_no_unicid',
 				__( 'Липсва unicid за обновяване на данни от банката.', 'mtunicredit' )
 			);
+			if ( function_exists( 'mtuc_dev_log_cache_refresh' ) ) {
+				mtuc_dev_log_cache_refresh( $unicid, $result );
+			}
+			return $result;
 		}
 
 		$response = Mtuc_Cp_Api_Client::fetch_shop();
 		if ( is_wp_error( $response ) ) {
+			if ( function_exists( 'mtuc_dev_log_cache_refresh' ) ) {
+				mtuc_dev_log_cache_refresh( $unicid, $response );
+			}
 			return $response;
 		}
 
@@ -154,12 +161,21 @@ class Mtuc_Shop_Cache {
 				? $response['message']
 				: __( 'КП не върна валидни shop данни.', 'mtunicredit' );
 
-			return new WP_Error( 'mtuc_cache_invalid_shop_payload', $message );
+			$result = new WP_Error( 'mtuc_cache_invalid_shop_payload', $message );
+			if ( function_exists( 'mtuc_dev_log_cache_refresh' ) ) {
+				mtuc_dev_log_cache_refresh( $unicid, $result );
+			}
+			return $result;
 		}
 
 		self::save( $unicid, $response['data'] );
 
-		return $response['data'];
+		$result = $response['data'];
+		if ( function_exists( 'mtuc_dev_log_cache_refresh' ) ) {
+			mtuc_dev_log_cache_refresh( $unicid, $result );
+		}
+
+		return $result;
 	}
 
 	/**
