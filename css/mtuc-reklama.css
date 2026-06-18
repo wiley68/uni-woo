@@ -4,6 +4,7 @@
 .mtuc-reklama {
 	position: relative;
 	z-index: 999999;
+	font-family: var(--mtuc-font-family);
 }
 
 .mtuc-reklama button.mtuc-reklama-float {
@@ -106,6 +107,7 @@
 	padding-left: 5px;
 	border: 1px solid #d20210;
 	border-radius: 3px;
+	font-family: var(--mtuc-font-family);
 }
 
 .mtuc-reklama .mtuc-reklama-panel-body > img {
@@ -120,6 +122,8 @@
 
 .mtuc-reklama .mtuc-reklama-panel-link {
 	text-align: center;
+	font-family: var(--mtuc-font-family);
+	font-weight: 700;
 }
 
 .mtuc-reklama .mtuc-reklama-panel-link a {

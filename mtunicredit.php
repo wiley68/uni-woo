@@ -61,6 +61,7 @@ define( 'MTUC_PLUGIN_URL', untrailingslashit( plugin_dir_url( __FILE__ ) ) );
 define( 'MTUC_INCLUDES_DIR', MTUC_PLUGIN_DIR . '/includes' );
 define( 'MTUC_CSS_URI', MTUC_PLUGIN_URL . '/css' );
 define( 'MTUC_JS_URI', MTUC_PLUGIN_URL . '/js' );
+define( 'MTUC_FONTS_URI', MTUC_PLUGIN_URL . '/fonts' );
 
 /** Includes */
 $mtuc_files = array(

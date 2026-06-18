@@ -150,6 +150,32 @@ function mtuc_register_reklama_hooks(): void {
 }
 
 /**
+ * Enqueue shared MTUC fonts (Roboto Condensed).
+ *
+ * Safe to call multiple times; registers the style handle only once.
+ *
+ * @return void
+ */
+function mtuc_enqueue_fonts(): void {
+	static $enqueued = false;
+
+	if ( $enqueued ) {
+		return;
+	}
+
+	$enqueued = true;
+
+	$css_file = MTUC_PLUGIN_DIR . '/css/mtuc-fonts.css';
+
+	wp_enqueue_style(
+		'mtuc-fonts',
+		MTUC_CSS_URI . '/mtuc-fonts.css',
+		array(),
+		file_exists( $css_file ) ? (string) filemtime( $css_file ) : MTUC_VERSION
+	);
+}
+
+/**
  * Enqueue reklama CSS/JS on the shop homepage when enabled.
  *
  * @return void
@@ -163,10 +189,12 @@ function mtuc_enqueue_reklama_assets(): void {
 	$css_file = MTUC_PLUGIN_DIR . '/css/mtuc-reklama.css';
 	$js_file  = MTUC_PLUGIN_DIR . '/js/mtuc-reklama.js';
 
+	mtuc_enqueue_fonts();
+
 	wp_enqueue_style(
 		'mtuc-reklama',
-		MTUC_PLUGIN_URL . '/css/mtuc-reklama.css',
-		array(),
+		MTUC_CSS_URI . '/mtuc-reklama.css',
+		array( 'mtuc-fonts' ),
 		file_exists( $css_file ) ? (string) filemtime( $css_file ) : MTUC_VERSION
 	);
 
