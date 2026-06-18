@@ -91,6 +91,18 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 		</p>
 	<?php endif; ?>
 
+	<p class="description">
+		<?php
+		echo esc_html(
+			sprintf(
+				/* translators: %s: REST endpoint URL for CP cache push */
+				__( 'URL за push обновяване на кеша от КП: %s', 'mtunicredit' ),
+				Mtuc_Rest_Api::get_shop_cache_url()
+			)
+		);
+		?>
+	</p>
+
 	<form method="post" id="mtuc-settings-form" action="<?php echo esc_url( admin_url( 'options-general.php?page=' . MTUC_ADMIN_PAGE_SLUG ) ); ?>">
 		<?php wp_nonce_field( 'mtuc_save_settings', 'mtuc_settings_nonce' ); ?>
 		<input type="hidden" name="mtuc_settings_submitted" value="1" />

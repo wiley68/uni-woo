@@ -203,6 +203,47 @@ function site_url(string $path = '', ?string $scheme = null): string
 	return '';
 }
 
+function rest_url(string $path = '', string $scheme = 'rest'): string
+{
+	unset($scheme);
+
+	return '';
+}
+
+/**
+ * @param array<string, mixed> $args
+ */
+function register_rest_route(string $route_namespace, string $route, array $args = array(), bool $override = false): bool
+{
+	unset($route_namespace, $route, $args, $override);
+
+	return true;
+}
+
+class WP_REST_Server
+{
+	public const READABLE   = 'GET';
+	public const CREATABLE  = 'POST';
+	public const EDITABLE   = 'POST, PUT, PATCH';
+	public const DELETABLE  = 'DELETE';
+	public const ALLMETHODS = 'GET, POST, PUT, PATCH, DELETE';
+}
+
+class WP_REST_Request
+{
+	/** @return mixed */
+	public function get_json_params() {}
+
+	/** @return mixed */
+	public function get_param(string $key) {}
+}
+
+class WP_REST_Response
+{
+	/** @param mixed $data */
+	public function __construct($data = null, int $status = 200) {}
+}
+
 function get_site_url($blog_id = null, string $path = '', ?string $scheme = null): string
 {
 	unset($blog_id, $scheme);

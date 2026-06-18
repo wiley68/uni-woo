@@ -179,6 +179,46 @@ class Mtuc_Shop_Cache {
 	}
 
 	/**
+	 * Update cache from CP push webhook (no outbound API call).
+	 *
+	 * @param string               $unicid Store unicid.
+	 * @param array<string, mixed> $data   Shop `data` object.
+	 * @return array<string, string>|WP_Error Cache metadata.
+	 */
+	public static function update_from_cp_push( string $unicid, array $data ) {
+		$unicid = sanitize_text_field( $unicid );
+		if ( '' === $unicid ) {
+			return new WP_Error(
+				'mtuc_cache_no_unicid',
+				__( 'Липсва unicid за обновяване на кеша.', 'mtunicredit' )
+			);
+		}
+
+		if ( empty( $data ) ) {
+			return new WP_Error(
+				'mtuc_cache_invalid_shop_payload',
+				__( 'Липсват shop данни в заявката.', 'mtunicredit' )
+			);
+		}
+
+		self::save( $unicid, $data );
+
+		$meta = self::get_cache_meta( $unicid );
+		if ( null === $meta ) {
+			return new WP_Error(
+				'mtuc_cache_save_failed',
+				__( 'Кешът не може да бъде записан.', 'mtunicredit' )
+			);
+		}
+
+		if ( function_exists( 'mtuc_dev_log_cache_refresh' ) ) {
+			mtuc_dev_log_cache_refresh( $unicid, $data );
+		}
+
+		return $meta;
+	}
+
+	/**
 	 * Cache metadata for admin UI.
 	 *
 	 * @param string $unicid Store unicid.

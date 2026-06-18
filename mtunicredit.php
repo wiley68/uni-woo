@@ -67,6 +67,7 @@ $mtuc_files = array(
 	'/class-mtuc-settings.php',
 	'/class-mtuc-cp-api-client.php',
 	'/class-mtuc-shop-cache.php',
+	'/class-mtuc-rest-api.php',
 	'/admin.php',
 	'/functions.php',
 );
@@ -131,5 +132,6 @@ function mtuc_plugin_bootstrap() {
 		add_action( 'admin_menu', 'mtuc_admin_register_menu' );
 	}
 
+	Mtuc_Rest_Api::init();
 	mtuc_register_reklama_hooks();
 }
