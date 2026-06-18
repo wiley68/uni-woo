@@ -113,9 +113,6 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 	}
 
 	$backurl = isset( $shop['uni_backurl'] ) ? esc_url_raw( (string) $shop['uni_backurl'] ) : '';
-	if ( '' === $backurl ) {
-		return null;
-	}
 
 	$is_mobile    = wp_is_mobile();
 	$default_logo = esc_url( MTUC_PLUGIN_URL . '/images/uni_logo.jpg' );
@@ -203,7 +200,13 @@ function mtuc_render_reklama_button(): void {
 	if ( $context['is_mobile'] ) {
 		?>
 		<div class="mtuc-reklama" id="mtuc-reklama">
-			<button type="button" class="mtuc-reklama-float" onclick="mtucReklamaOpenUrl('<?php echo esc_js( $backurl ); ?>');">
+			<button
+				type="button"
+				class="mtuc-reklama-float"
+				<?php if ( '' !== $backurl ) : ?>
+					onclick="mtucReklamaOpenUrl('<?php echo esc_js( $backurl ); ?>');"
+				<?php endif; ?>
+			>
 				<img src="<?php echo esc_url( $context['float_image_url'] ); ?>" alt="<?php esc_attr_e( 'УниКредит покупки на Кредит', 'mtunicredit' ); ?>" />
 			</button>
 		</div>
@@ -235,9 +238,13 @@ function mtuc_render_reklama_button(): void {
 					<p><?php echo esc_html( $txt2 ); ?></p>
 				<?php endif; ?>
 				<div class="mtuc-reklama-panel-link">
-					<a href="<?php echo esc_url( $backurl ); ?>" target="_blank" rel="noopener noreferrer">
+					<?php if ( '' !== $backurl ) : ?>
+						<a href="<?php echo esc_url( $backurl ); ?>" target="_blank" rel="noopener noreferrer">
+							<?php esc_html_e( 'ИНФОРМАЦИЯ ЗА ОНЛАЙН ПАЗАРУВАНЕ НА КРЕДИТ!', 'mtunicredit' ); ?>
+						</a>
+					<?php else : ?>
 						<?php esc_html_e( 'ИНФОРМАЦИЯ ЗА ОНЛАЙН ПАЗАРУВАНЕ НА КРЕДИТ!', 'mtunicredit' ); ?>
-					</a>
+					<?php endif; ?>
 				</div>
 			</div>
 		</div>
