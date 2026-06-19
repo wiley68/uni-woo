@@ -180,6 +180,29 @@ function mtuc_register_product_hooks(): void {
 	}
 
 	add_action( $hook, 'mtuc_render_product_calculator', 15 );
+	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_product_assets' );
+}
+
+/**
+ * Enqueue product calculator CSS on single product pages when enabled.
+ *
+ * @return void
+ */
+function mtuc_enqueue_product_assets(): void {
+	if ( ! mtuc_should_show_product_calculator() ) {
+		return;
+	}
+
+	$css_file = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
+
+	mtuc_enqueue_fonts();
+
+	wp_enqueue_style(
+		'mtuc-product',
+		MTUC_CSS_URI . '/mtuc-product.css',
+		array( 'mtuc-fonts' ),
+		file_exists( $css_file ) ? (string) filemtime( $css_file ) : MTUC_VERSION
+	);
 }
 
 /**
