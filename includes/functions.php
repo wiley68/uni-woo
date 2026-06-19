@@ -136,6 +136,71 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 }
 
 /**
+ * Whether the product-page calculator should be rendered.
+ *
+ * @return bool
+ */
+function mtuc_should_show_product_calculator(): bool {
+	if ( ! is_product() || is_admin() ) {
+		return false;
+	}
+
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		return false;
+	}
+
+	$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
+	if ( '' === $unicid ) {
+		return false;
+	}
+
+	$shop = mtuc_get_shop_data( $unicid );
+	if ( is_wp_error( $shop ) ) {
+		return false;
+	}
+
+	return mtuc_is_yes_flag( $shop['uni_status'] ?? 0 );
+}
+
+/**
+ * Register WooCommerce hook for the product-page calculator template.
+ *
+ * @return void
+ */
+function mtuc_register_product_hooks(): void {
+	if ( is_admin() ) {
+		return;
+	}
+
+	$hook = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_HOOK );
+	$hooks = Mtuc_Settings::get_hook_choices();
+
+	if ( ! array_key_exists( $hook, $hooks ) ) {
+		$hook = Mtuc_Settings::DEFAULT_HOOK;
+	}
+
+	add_action( $hook, 'mtuc_render_product_calculator', 15 );
+}
+
+/**
+ * Render product-page calculator template when conditions are met.
+ *
+ * @return void
+ */
+function mtuc_render_product_calculator(): void {
+	if ( ! mtuc_should_show_product_calculator() ) {
+		return;
+	}
+
+	$template = MTUC_PLUGIN_DIR . '/templates/product-calculator.php';
+	if ( ! is_readable( $template ) ) {
+		return;
+	}
+
+	include $template;
+}
+
+/**
  * Register frontend hooks for the homepage reklama button.
  *
  * @return void

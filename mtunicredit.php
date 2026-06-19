@@ -134,5 +134,6 @@ function mtuc_plugin_bootstrap() {
 	}
 
 	Mtuc_Rest_Api::init();
+	mtuc_register_product_hooks();
 	mtuc_register_reklama_hooks();
 }
