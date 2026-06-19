@@ -62,10 +62,13 @@ function mtuc_get_shop_picture_url( array $shop, bool $mobile = false ): string 
 /**
  * Local UniCredit logo URL (SVG).
  *
+ * @param bool $for_dark_button Use red-background variant for dark button style.
  * @return string
  */
-function mtuc_get_uni_logo_url(): string {
-	return esc_url( MTUC_PLUGIN_URL . '/images/uni_logo.svg' );
+function mtuc_get_uni_logo_url( bool $for_dark_button = false ): string {
+	$file = $for_dark_button ? 'uni_logo_red.svg' : 'uni_logo.svg';
+
+	return esc_url( MTUC_PLUGIN_URL . '/images/' . $file );
 }
 
 /**
@@ -182,9 +185,11 @@ function mtuc_get_product_calculator_context(): ?array {
 		return null;
 	}
 
+	$is_dark_button = mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 );
+
 	$context = array(
-		'is_dark_button' => mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 ),
-		'logo_url'       => mtuc_get_uni_logo_url(),
+		'is_dark_button' => $is_dark_button,
+		'logo_url'       => mtuc_get_uni_logo_url( $is_dark_button ),
 		'gap'            => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
 	);
 
