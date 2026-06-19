@@ -145,30 +145,59 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 }
 
 /**
+ * Build product calculator context when the template should be shown.
+ *
+ * @return array<string, mixed>|null
+ */
+function mtuc_get_product_calculator_context(): ?array {
+	if ( ! is_product() || is_admin() ) {
+		return null;
+	}
+
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		return null;
+	}
+
+	$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
+	if ( '' === $unicid ) {
+		return null;
+	}
+
+	static $context  = null;
+	static $resolved = false;
+
+	if ( $resolved ) {
+		return $context;
+	}
+
+	$resolved = true;
+	$context  = null;
+
+	$shop = mtuc_get_shop_data( $unicid );
+	if ( is_wp_error( $shop ) ) {
+		return null;
+	}
+
+	if ( ! mtuc_is_yes_flag( $shop['uni_status'] ?? 0 ) ) {
+		return null;
+	}
+
+	$context = array(
+		'is_dark_button' => mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 ),
+		'logo_url'       => mtuc_get_uni_logo_url(),
+		'gap'            => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
+	);
+
+	return $context;
+}
+
+/**
  * Whether the product-page calculator should be rendered.
  *
  * @return bool
  */
 function mtuc_should_show_product_calculator(): bool {
-	if ( ! is_product() || is_admin() ) {
-		return false;
-	}
-
-	if ( ! Mtuc_Settings::is_enabled() ) {
-		return false;
-	}
-
-	$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
-	if ( '' === $unicid ) {
-		return false;
-	}
-
-	$shop = mtuc_get_shop_data( $unicid );
-	if ( is_wp_error( $shop ) ) {
-		return false;
-	}
-
-	return mtuc_is_yes_flag( $shop['uni_status'] ?? 0 );
+	return null !== mtuc_get_product_calculator_context();
 }
 
 /**
@@ -220,7 +249,8 @@ function mtuc_enqueue_product_assets(): void {
  * @return void
  */
 function mtuc_render_product_calculator(): void {
-	if ( ! mtuc_should_show_product_calculator() ) {
+	$context = mtuc_get_product_calculator_context();
+	if ( null === $context ) {
 		return;
 	}
 

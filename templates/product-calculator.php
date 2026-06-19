@@ -3,16 +3,23 @@
  * Product page calculator placeholder.
  *
  * @package MTUC
+ *
+ * @var array<string, mixed> $context Product calculator context from mtuc_get_product_calculator_context().
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$mtuc_gap      = (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP );
-$mtuc_logo_url = mtuc_get_uni_logo_url();
+$mtuc_gap           = (int) ( $context['gap'] ?? 0 );
+$mtuc_logo_url      = (string) ( $context['logo_url'] ?? mtuc_get_uni_logo_url() );
+$mtuc_is_dark_btn   = ! empty( $context['is_dark_button'] );
+$mtuc_root_classes  = 'mtuc-product-calculator';
+if ( $mtuc_is_dark_btn ) {
+	$mtuc_root_classes .= ' mtuc-product-calculator--dark';
+}
 ?>
-<div class="mtuc-product-calculator"<?php echo $mtuc_gap > 0 ? ' style="margin-top:' . esc_attr( (string) $mtuc_gap ) . 'px;"' : ''; ?>>
+<div class="<?php echo esc_attr( $mtuc_root_classes ); ?>"<?php echo $mtuc_gap > 0 ? ' style="margin-top:' . esc_attr( (string) $mtuc_gap ) . 'px;"' : ''; ?>>
 	<div class="mtuc-product-calculator__wrap">
 		<?php for ( $mtuc_btn_index = 0; $mtuc_btn_index < 2; $mtuc_btn_index++ ) : ?>
 			<button type="button" class="mtuc-product-calculator__btn">

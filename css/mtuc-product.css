@@ -122,6 +122,23 @@
 	border-color: var(--mtuc-red);
 }
 
+.mtuc-product-calculator--dark button.mtuc-product-calculator__btn {
+	background: var(--mtuc-red);
+	border-color: #b82119;
+}
+
+.mtuc-product-calculator--dark button.mtuc-product-calculator__btn .mtuc-product-calculator__label,
+.mtuc-product-calculator--dark button.mtuc-product-calculator__btn .mtuc-product-calculator__price {
+	color: #fff;
+}
+
+.mtuc-product-calculator--dark button.mtuc-product-calculator__btn:hover,
+.mtuc-product-calculator--dark button.mtuc-product-calculator__btn:focus-visible {
+	background: #d9261f;
+	background-image: none;
+	border-color: #b82119;
+}
+
 @container mtuc-product-buttons (max-width: 269px) {
 	.mtuc-product-calculator__wrap {
 		flex-direction: column;
