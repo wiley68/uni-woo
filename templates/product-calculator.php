@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $mtuc_gap      = (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP );
-$mtuc_logo_url = mtuc_get_product_button_logo_url();
+$mtuc_logo_url = mtuc_get_uni_logo_url();
 ?>
 <div class="mtuc-product-calculator"<?php echo $mtuc_gap > 0 ? ' style="margin-top:' . esc_attr( (string) $mtuc_gap ) . 'px;"' : ''; ?>>
 	<div class="mtuc-product-calculator__wrap">

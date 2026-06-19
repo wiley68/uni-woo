@@ -60,6 +60,15 @@ function mtuc_get_shop_picture_url( array $shop, bool $mobile = false ): string 
 }
 
 /**
+ * Local UniCredit logo URL (SVG).
+ *
+ * @return string
+ */
+function mtuc_get_uni_logo_url(): string {
+	return esc_url( MTUC_PLUGIN_URL . '/images/uni_logo.svg' );
+}
+
+/**
  * Build reklama context when the floating button should be shown.
  *
  * @param bool $settings_only Skip shop cache lookup (for asset enqueue).
@@ -115,7 +124,7 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 	$backurl = isset( $shop['uni_backurl'] ) ? esc_url_raw( (string) $shop['uni_backurl'] ) : '';
 
 	$is_mobile    = wp_is_mobile();
-	$default_logo = esc_url( MTUC_PLUGIN_URL . '/images/uni_logo.jpg' );
+	$default_logo = mtuc_get_uni_logo_url();
 	$picture_url  = mtuc_get_shop_picture_url( $shop, true );
 	$float_image  = $is_mobile ? mtuc_get_shop_picture_url( $shop, true ) : $default_logo;
 
@@ -160,21 +169,6 @@ function mtuc_should_show_product_calculator(): bool {
 	}
 
 	return mtuc_is_yes_flag( $shop['uni_status'] ?? 0 );
-}
-
-/**
- * Logo URL for the product calculator button (prefers SVG when available).
- *
- * @return string
- */
-function mtuc_get_product_button_logo_url(): string {
-	$svg_path = MTUC_PLUGIN_DIR . '/images/uni_logo.svg';
-
-	if ( is_readable( $svg_path ) ) {
-		return MTUC_PLUGIN_URL . '/images/uni_logo.svg';
-	}
-
-	return MTUC_PLUGIN_URL . '/images/uni_logo.jpg';
 }
 
 /**
@@ -338,7 +332,9 @@ function mtuc_render_reklama_button(): void {
 					onclick="mtucReklamaOpenUrl('<?php echo esc_js( $backurl ); ?>');"
 				<?php endif; ?>
 			>
-				<img src="<?php echo esc_url( $context['float_image_url'] ); ?>" alt="<?php esc_attr_e( 'УниКредит покупки на Кредит', 'mtunicredit' ); ?>" />
+				<span class="mtuc-reklama-float__logo">
+					<img src="<?php echo esc_url( $context['float_image_url'] ); ?>" alt="<?php esc_attr_e( 'УниКредит покупки на Кредит', 'mtunicredit' ); ?>" />
+				</span>
 			</button>
 		</div>
 		<?php
@@ -348,7 +344,9 @@ function mtuc_render_reklama_button(): void {
 	?>
 	<div class="mtuc-reklama" id="mtuc-reklama">
 		<button type="button" class="mtuc-reklama-float" onclick="mtucReklamaToggle();" aria-controls="mtuc-reklama-panel" aria-expanded="false">
-			<img src="<?php echo esc_url( $context['float_image_url'] ); ?>" alt="<?php esc_attr_e( 'УниКредит покупки на Кредит', 'mtunicredit' ); ?>" />
+			<span class="mtuc-reklama-float__logo">
+				<img src="<?php echo esc_url( $context['float_image_url'] ); ?>" alt="<?php esc_attr_e( 'УниКредит покупки на Кредит', 'mtunicredit' ); ?>" />
+			</span>
 		</button>
 
 		<div id="mtuc-reklama-panel" class="mtuc-reklama-panel" role="dialog" aria-label="<?php esc_attr_e( 'Информация за онлайн пазаруване на кредит', 'mtunicredit' ); ?>">
