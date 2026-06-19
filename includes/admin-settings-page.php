@@ -161,15 +161,6 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 					</td>
 				</tr>
 				<tr>
-					<th scope="row"><?php esc_html_e( 'Директно добавяне на продукта в кошницата', 'mtunicredit' ); ?></th>
-					<td>
-						<label for="mtuc_cart">
-							<input type="checkbox" name="<?php echo esc_attr( Mtuc_Settings::OPTION_CART ); ?>" id="mtuc_cart" value="1" <?php checked( 1, (int) $mtuc_settings[ Mtuc_Settings::OPTION_CART ] ); ?> />
-							<?php esc_html_e( 'Ако изберете тази опция, при натискане на бутона на калкулатора в продуктовата страница, избрания продукт директно ще се добавя в кошницата.', 'mtunicredit' ); ?>
-						</label>
-					</td>
-				</tr>
-				<tr>
 					<th scope="row"><?php esc_html_e( 'Режим отстраняване на грешки', 'mtunicredit' ); ?></th>
 					<td>
 						<label for="mtuc_debug">

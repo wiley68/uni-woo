@@ -29,9 +29,6 @@ class Mtuc_Settings {
 	/** Option key: homepage advertisement flag (0|1). */
 	public const OPTION_REKLAMA = 'mtuc_reklama';
 
-	/** Option key: direct add-to-cart from calculator (0|1). */
-	public const OPTION_CART = 'mtuc_cart';
-
 	/** Option key: debug mode flag (0|1). */
 	public const OPTION_DEBUG = 'mtuc_debug';
 
@@ -53,7 +50,6 @@ class Mtuc_Settings {
 			self::OPTION_SECRET_KEY,
 			self::OPTION_HOOK,
 			self::OPTION_REKLAMA,
-			self::OPTION_CART,
 			self::OPTION_DEBUG,
 			self::OPTION_GAP,
 		);
@@ -69,7 +65,6 @@ class Mtuc_Settings {
 			self::OPTION_STATUS  => 1,
 			self::OPTION_HOOK    => self::DEFAULT_HOOK,
 			self::OPTION_REKLAMA => 0,
-			self::OPTION_CART    => 0,
 			self::OPTION_DEBUG   => 0,
 			self::OPTION_GAP     => 0,
 		);
@@ -239,7 +234,6 @@ class Mtuc_Settings {
 		update_option( self::OPTION_SECRET_KEY, $secret_key );
 		update_option( self::OPTION_HOOK, $hook );
 		update_option( self::OPTION_REKLAMA, self::post_flag_to_int( $post, self::OPTION_REKLAMA ) );
-		update_option( self::OPTION_CART, self::post_flag_to_int( $post, self::OPTION_CART ) );
 		update_option( self::OPTION_DEBUG, self::post_flag_to_int( $post, self::OPTION_DEBUG ) );
 		update_option( self::OPTION_GAP, $gap );
 
