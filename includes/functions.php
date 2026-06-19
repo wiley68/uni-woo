@@ -163,6 +163,21 @@ function mtuc_should_show_product_calculator(): bool {
 }
 
 /**
+ * Logo URL for the product calculator button (prefers SVG when available).
+ *
+ * @return string
+ */
+function mtuc_get_product_button_logo_url(): string {
+	$svg_path = MTUC_PLUGIN_DIR . '/images/uni_logo.svg';
+
+	if ( is_readable( $svg_path ) ) {
+		return MTUC_PLUGIN_URL . '/images/uni_logo.svg';
+	}
+
+	return MTUC_PLUGIN_URL . '/images/uni_logo.jpg';
+}
+
+/**
  * Register WooCommerce hook for the product-page calculator template.
  *
  * @return void

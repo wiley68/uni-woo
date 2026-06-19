@@ -8,6 +8,8 @@
 	margin: 0;
 	padding: 0;
 	font-family: var(--mtuc-font-family, inherit);
+	/* Logo size — increase/decrease to tune (proportional width follows aspect ratio). */
+	--mtuc-logo-height: 24px;
 }
 
 .mtuc-product-calculator__wrap {
@@ -30,28 +32,74 @@
 	-webkit-appearance: none;
 	box-sizing: border-box;
 	display: inline-flex;
+	flex-direction: row;
 	align-items: center;
-	justify-content: center;
+	justify-content: space-between;
+	gap: 4px;
 	flex: 0 0 270px;
 	width: 270px;
 	min-width: 270px;
 	max-width: 270px;
-	height: 50px;
-	max-height: 50px;
+	min-height: 56px;
 	margin: 0;
-	padding: 0 20px;
-	border: 1px solid #ee2e24;
+	padding: 6px 12px 6px 16px;
+	border: 2px solid #ee2e24;
 	border-radius: 9999px;
 	background: #fff;
 	background-image: none;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 	color: inherit;
 	font: inherit;
-	line-height: 1.2;
-	text-align: center;
 	text-decoration: none;
 	text-transform: none;
 	letter-spacing: normal;
 	cursor: pointer;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__content {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	min-width: 0;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__logo {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__logo img {
+	display: block;
+	flex-shrink: 0;
+	width: auto;
+	height: var(--mtuc-logo-height);
+	max-height: var(--mtuc-logo-height);
+	max-width: calc(var(--mtuc-logo-height) * 400 / 124);
+	object-fit: contain;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__label {
+	display: block;
+	width: 100%;
+	color: #d92a21;
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1.2;
+	text-align: center;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__price {
+	display: block;
+	width: 100%;
+	margin-top: 2px;
+	color: #000;
+	font-size: 13px;
+	line-height: 1.2;
+	text-align: center;
 }
 
 .mtuc-product-calculator button.mtuc-product-calculator__btn:hover,
