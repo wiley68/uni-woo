@@ -87,7 +87,7 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 			echo esc_html(
 				sprintf(
 					/* translators: 1: fetched datetime, 2: expires datetime (store timezone) */
-					__( 'Кеш на shop данни: зареден на %1$s, валиден до %2$s.', 'mtunicredit' ),
+					__( 'Кеш на банковите данни: зареден на %1$s, валиден до %2$s.', 'mtunicredit' ),
 					$mtuc_fetched_at,
 					$mtuc_expires_at
 				)
