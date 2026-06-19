@@ -10,6 +10,9 @@
 	font-family: var(--mtuc-font-family, inherit);
 	/* Logo size — increase/decrease to tune (proportional width follows aspect ratio). */
 	--mtuc-logo-height: 24px;
+	--mtuc-red: #ee2e24;
+	--mtuc-red-text: #d92a21;
+	--mtuc-red-hover-bg: rgba(238, 46, 36, 0.1);
 }
 
 .mtuc-product-calculator__wrap {
@@ -43,7 +46,7 @@
 	min-height: 56px;
 	margin: 0;
 	padding: 6px 12px 6px 16px;
-	border: 2px solid #ee2e24;
+	border: 2px solid var(--mtuc-red);
 	border-radius: 9999px;
 	background: #fff;
 	background-image: none;
@@ -54,6 +57,16 @@
 	text-transform: none;
 	letter-spacing: normal;
 	cursor: pointer;
+	transition: background-color 0.2s ease;
+	outline: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn:focus,
+.mtuc-product-calculator button.mtuc-product-calculator__btn:focus-visible,
+.mtuc-product-calculator button.mtuc-product-calculator__btn:active {
+	outline: none;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 .mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__content {
@@ -85,7 +98,7 @@
 .mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__label {
 	display: block;
 	width: 100%;
-	color: #d92a21;
+	color: var(--mtuc-red-text);
 	font-size: 18px;
 	font-weight: 700;
 	line-height: 1.2;
@@ -103,9 +116,10 @@
 }
 
 .mtuc-product-calculator button.mtuc-product-calculator__btn:hover,
-.mtuc-product-calculator button.mtuc-product-calculator__btn:focus {
-	background: #fff;
-	border-color: #ee2e24;
+.mtuc-product-calculator button.mtuc-product-calculator__btn:focus-visible {
+	background: var(--mtuc-red-hover-bg);
+	background-image: none;
+	border-color: var(--mtuc-red);
 }
 
 @container mtuc-product-buttons (max-width: 269px) {
