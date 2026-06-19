@@ -152,6 +152,19 @@ function get_option($option, $default = false): mixed
 {
 	return $default;
 }
+
+/**
+ * @param string $string
+ * @param string $format
+ * @return string|false
+ */
+function get_date_from_gmt($string, $format = 'Y-m-d H:i:s')
+{
+	unset($string, $format);
+
+	return '';
+}
+
 function update_option($option, $value, $autoload = null) {}
 function add_option($option, $value, $deprecated = '', $autoload = 'yes') {}
 function delete_option($option) {}

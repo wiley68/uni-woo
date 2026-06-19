@@ -31,6 +31,27 @@ function mtuc_admin_register_menu() {
 }
 
 /**
+ * Enqueue admin CSS on the plugin settings screen only.
+ *
+ * @param string $hook_suffix Current admin page hook.
+ * @return void
+ */
+function mtuc_admin_enqueue_styles( string $hook_suffix ): void {
+	if ( 'settings_page_' . MTUC_ADMIN_PAGE_SLUG !== $hook_suffix ) {
+		return;
+	}
+
+	$css_file = MTUC_PLUGIN_DIR . '/css/mtuc-admin.css';
+
+	wp_enqueue_style(
+		'mtuc-admin',
+		MTUC_PLUGIN_URL . '/css/mtuc-admin.css',
+		array(),
+		file_exists( $css_file ) ? (string) filemtime( $css_file ) : MTUC_VERSION
+	);
+}
+
+/**
  * Renders the admin settings page.
  *
  * @since 1.0.0
@@ -43,3 +64,5 @@ function mtuc_admin_render_settings_page() {
 
 	require MTUC_INCLUDES_DIR . '/admin-settings-page.php';
 }
+
+add_action( 'admin_enqueue_scripts', 'mtuc_admin_enqueue_styles' );

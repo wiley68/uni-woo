@@ -1,0 +1,17 @@
+/**
+ * Admin settings page — form-table column widths.
+ */
+
+.mtuc-form-table {
+	table-layout: fixed;
+	width: 100%;
+}
+
+.mtuc-form-table th {
+	width: 25%;
+	vertical-align: top;
+}
+
+.mtuc-form-table td {
+	width: 75%;
+}

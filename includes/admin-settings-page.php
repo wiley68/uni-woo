@@ -77,31 +77,24 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 	<?php endif; ?>
 
 	<?php if ( is_array( $mtuc_cache ) ) : ?>
+		<?php
+		$mtuc_datetime_format = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+		$mtuc_fetched_at      = get_date_from_gmt( $mtuc_cache['fetched_at'], $mtuc_datetime_format );
+		$mtuc_expires_at      = get_date_from_gmt( $mtuc_cache['expires_at'], $mtuc_datetime_format );
+		?>
 		<p class="description">
 			<?php
 			echo esc_html(
 				sprintf(
-					/* translators: 1: fetched datetime, 2: expires datetime */
-					__( 'Кеш на shop данни: зареден на %1$s UTC, валиден до %2$s UTC.', 'mtunicredit' ),
-					$mtuc_cache['fetched_at'],
-					$mtuc_cache['expires_at']
+					/* translators: 1: fetched datetime, 2: expires datetime (store timezone) */
+					__( 'Кеш на shop данни: зареден на %1$s, валиден до %2$s.', 'mtunicredit' ),
+					$mtuc_fetched_at,
+					$mtuc_expires_at
 				)
 			);
 			?>
 		</p>
 	<?php endif; ?>
-
-	<p class="description">
-		<?php
-		echo esc_html(
-			sprintf(
-				/* translators: %s: REST endpoint URL for CP cache push */
-				__( 'URL за push обновяване на кеша от КП: %s', 'mtunicredit' ),
-				Mtuc_Rest_Api::get_shop_cache_url()
-			)
-		);
-		?>
-	</p>
 
 	<form method="post" id="mtuc-settings-form" action="<?php echo esc_url( admin_url( 'options-general.php?page=' . MTUC_ADMIN_PAGE_SLUG ) ); ?>">
 		<?php wp_nonce_field( 'mtuc_save_settings', 'mtuc_settings_nonce' ); ?>
@@ -109,7 +102,7 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 
 		<h2 class="title"><?php esc_html_e( 'Системни настройки', 'mtunicredit' ); ?></h2>
 
-		<table class="form-table" role="presentation">
+		<table class="form-table mtuc-form-table" role="presentation">
 			<tbody>
 				<tr>
 					<th scope="row"><?php esc_html_e( 'УниКредит покупки на Кредит', 'mtunicredit' ); ?></th>
@@ -138,7 +131,7 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 						<p class="description">
 							<?php esc_html_e( 'Секретен код на магазина Ви в системата на УниКредит.', 'mtunicredit' ); ?>
 							<?php if ( '' !== $mtuc_settings[ Mtuc_Settings::OPTION_SECRET_KEY ] ) : ?>
-								<br /><?php esc_html_e( 'Оставете празно, за да запазите текущия секретен код.', 'mtunicredit' ); ?>
+								<?php esc_html_e( 'Оставете празно, за да запазите текущия секретен код.', 'mtunicredit' ); ?>
 							<?php endif; ?>
 						</p>
 					</td>

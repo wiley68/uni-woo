@@ -55,3 +55,14 @@ function selected( $selected, $current = true, $display = true ): string
  * @return void
  */
 function register_activation_hook( $file, $callback ): void {}
+
+/**
+ * @param string $string
+ * @param string $format
+ * @return string|false
+ */
+function get_date_from_gmt( $string, $format = 'Y-m-d H:i:s' ) {
+	unset( $string, $format );
+
+	return '';
+}
