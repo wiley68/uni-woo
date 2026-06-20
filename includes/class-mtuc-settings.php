@@ -198,7 +198,9 @@ class Mtuc_Settings {
 			? sanitize_text_field( wp_unslash( $post[ self::OPTION_SECRET_KEY ] ) )
 			: '';
 
-		$stored_secret = get_option( self::OPTION_SECRET_KEY, '' );
+		$stored_secret       = get_option( self::OPTION_SECRET_KEY, '' );
+		$stored_unicid       = (string) get_option( self::OPTION_UNICID, '' );
+		$credentials_changed = ( $stored_unicid !== $unicid );
 
 		if ( '' === $secret_key ) {
 			if ( '' === $stored_secret ) {
@@ -213,6 +215,8 @@ class Mtuc_Settings {
 				'mtuc_secret_length',
 				__( 'Секретният код не може да надвишава 64 символа.', 'mtunicredit' )
 			);
+		} else {
+			$credentials_changed = true;
 		}
 
 		$hook = isset( $post[ self::OPTION_HOOK ] )
@@ -236,6 +240,10 @@ class Mtuc_Settings {
 		update_option( self::OPTION_REKLAMA, self::post_flag_to_int( $post, self::OPTION_REKLAMA ) );
 		update_option( self::OPTION_DEBUG, self::post_flag_to_int( $post, self::OPTION_DEBUG ) );
 		update_option( self::OPTION_GAP, $gap );
+
+		if ( $credentials_changed ) {
+			Mtuc_Shop_Cache::purge_all();
+		}
 
 		return true;
 	}

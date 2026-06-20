@@ -95,6 +95,9 @@ class Mtuc_Shop_Cache {
 	 * in the module. Missing cache rows and expired TTL trigger an API refresh.
 	 * Use refresh_from_api() only for explicit manual refresh (admin button).
 	 *
+	 * When CP rejects access (deleted shop, wrong unicid/secret), the cache is
+	 * purged and WP_Error is returned — stale rows are never used as fallback.
+	 *
 	 * @param string|null $unicid        Store unicid (defaults to settings).
 	 * @param bool        $force_refresh Skip cache and always call CP API.
 	 * @return array<string, mixed>|WP_Error Shop `data` object from API.
@@ -128,6 +131,9 @@ class Mtuc_Shop_Cache {
 	/**
 	 * Force fetch from CP and overwrite cache (explicit refresh only).
 	 *
+	 * On irrecoverable CP/auth failures the entire cache table is cleared so the
+	 * module cannot keep serving outdated shop data.
+	 *
 	 * @param string|null $unicid Store unicid (defaults to settings).
 	 * @return array<string, mixed>|WP_Error
 	 */
@@ -150,6 +156,7 @@ class Mtuc_Shop_Cache {
 
 		$response = Mtuc_Cp_Api_Client::fetch_shop();
 		if ( is_wp_error( $response ) ) {
+			self::purge_on_api_failure( $response );
 			if ( function_exists( 'mtuc_dev_log_cache_refresh' ) ) {
 				mtuc_dev_log_cache_refresh( $unicid, $response );
 			}
@@ -161,6 +168,7 @@ class Mtuc_Shop_Cache {
 				? $response['message']
 				: __( 'КП не върна валидни shop данни.', 'mtunicredit' );
 
+			self::purge_all();
 			$result = new WP_Error( 'mtuc_cache_invalid_shop_payload', $message );
 			if ( function_exists( 'mtuc_dev_log_cache_refresh' ) ) {
 				mtuc_dev_log_cache_refresh( $unicid, $result );
@@ -249,6 +257,29 @@ class Mtuc_Shop_Cache {
 			'expires_at' => (string) $row['expires_at'],
 			'is_fresh'   => self::is_fresh_expires( (string) $row['expires_at'] ) ? '1' : '0',
 		);
+	}
+
+	/**
+	 * Delete all rows from the cache table.
+	 *
+	 * @return void
+	 */
+	public static function clear_all(): void {
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->query( "DELETE FROM {$table}" );
+	}
+
+	/**
+	 * Purge cache and stored CP API token after irrecoverable shop/auth failure.
+	 *
+	 * @return void
+	 */
+	public static function purge_all(): void {
+		self::clear_all();
+		Mtuc_Cp_Api_Client::clear_token();
 	}
 
 	/**
@@ -394,5 +425,53 @@ class Mtuc_Shop_Cache {
 		}
 
 		return $expires_ts > time();
+	}
+
+	/**
+	 * Whether a CP/API error means local shop cache must not be used anymore.
+	 *
+	 * Transient errors (timeouts, 5xx) keep the cache for a later retry.
+	 *
+	 * @param WP_Error $error API or auth failure.
+	 * @return bool
+	 */
+	private static function is_irrecoverable_api_failure( WP_Error $error ): bool {
+		$code = $error->get_error_code();
+
+		if ( in_array(
+			$code,
+			array(
+				'mtuc_api_missing_credentials',
+				'mtuc_api_no_access_token',
+				'mtuc_api_refresh_failed',
+				'mtuc_cache_invalid_shop_payload',
+			),
+			true
+		) ) {
+			return true;
+		}
+
+		if ( 'mtuc_api_http_error' !== $code ) {
+			return false;
+		}
+
+		$data   = $error->get_error_data();
+		$status = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 0;
+
+		return in_array( $status, array( 400, 401, 403, 404 ), true );
+	}
+
+	/**
+	 * Clear cache (and API token) when CP shop data can no longer be trusted.
+	 *
+	 * @param WP_Error $error API or auth failure.
+	 * @return void
+	 */
+	private static function purge_on_api_failure( WP_Error $error ): void {
+		if ( ! self::is_irrecoverable_api_failure( $error ) ) {
+			return;
+		}
+
+		self::purge_all();
 	}
 }
