@@ -8,6 +8,8 @@
 	margin: 0;
 	padding: 0;
 	font-family: var(--mtuc-font-family, inherit);
+	--mtuc-btn-width: 290px;
+	--mtuc-btn-height: 56px;
 	/* Logo size — increase/decrease to tune (proportional width follows aspect ratio). */
 	--mtuc-logo-height: 24px;
 	--mtuc-promo-badge-size: 32px;
@@ -41,11 +43,12 @@
 	align-items: center;
 	justify-content: space-between;
 	gap: 4px;
-	flex: 0 0 290px;
-	width: 290px;
-	min-width: 290px;
-	max-width: 290px;
-	min-height: 56px;
+	flex: 0 0 auto;
+	width: var(--mtuc-btn-width);
+	min-width: var(--mtuc-btn-width);
+	max-width: var(--mtuc-btn-width);
+	min-height: var(--mtuc-btn-height);
+	height: var(--mtuc-btn-height);
 	margin: 0;
 	padding: 6px 12px 6px 16px;
 	border: 2px solid var(--mtuc-red);
@@ -137,6 +140,15 @@
 	justify-content: center;
 }
 
+.mtuc-product-calculator--stacked .mtuc-product-calculator__wrap {
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+.mtuc-product-calculator:not(.mtuc-product-calculator--stacked) button.mtuc-product-calculator__btn {
+	flex: 0 0 var(--mtuc-btn-width);
+}
+
 .mtuc-product-calculator button.mtuc-product-calculator__btn:hover,
 .mtuc-product-calculator button.mtuc-product-calculator__btn:focus-visible {
 	background: var(--mtuc-red-hover-bg);
@@ -165,13 +177,13 @@
 	border-color: #b82119;
 }
 
-@container mtuc-product-buttons (max-width: 289px) {
-	.mtuc-product-calculator__wrap {
+@container mtuc-product-buttons (max-width: calc(var(--mtuc-btn-width) - 1px)) {
+	.mtuc-product-calculator:not(.mtuc-product-calculator--stacked) .mtuc-product-calculator__wrap {
 		flex-direction: column;
 		align-items: stretch;
 	}
 
-	.mtuc-product-calculator button.mtuc-product-calculator__btn {
+	.mtuc-product-calculator:not(.mtuc-product-calculator--stacked) button.mtuc-product-calculator__btn {
 		flex: 0 0 auto;
 		width: 100%;
 		min-width: 0;

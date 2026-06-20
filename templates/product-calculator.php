@@ -15,9 +15,21 @@ $mtuc_gap              = (int) ( $context['gap'] ?? 0 );
 $mtuc_logo_url         = (string) ( $context['logo_url'] ?? mtuc_get_uni_logo_url() );
 $mtuc_is_dark_btn      = ! empty( $context['is_dark_button'] );
 $mtuc_show_installment = ! empty( $context['show_installment'] );
+$mtuc_buttons_in_row   = ! empty( $context['buttons_in_row'] );
+$mtuc_button_width     = (int) ( $context['button_width'] ?? 290 );
+$mtuc_button_height    = (int) ( $context['button_height'] ?? 56 );
 $mtuc_standard         = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
 $mtuc_promo            = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
 $mtuc_root_classes     = 'mtuc-product-calculator';
+$mtuc_root_style       = sprintf(
+	'--mtuc-btn-width:%1$dpx;--mtuc-btn-height:%2$dpx;',
+	$mtuc_button_width,
+	$mtuc_button_height
+);
+
+if ( $mtuc_gap > 0 ) {
+	$mtuc_root_style = 'margin-top:' . esc_attr( (string) $mtuc_gap ) . 'px;' . $mtuc_root_style;
+}
 
 if ( $mtuc_is_dark_btn ) {
 	$mtuc_root_classes .= ' mtuc-product-calculator--dark';
@@ -26,8 +38,12 @@ if ( $mtuc_is_dark_btn ) {
 if ( ! $mtuc_show_installment ) {
 	$mtuc_root_classes .= ' mtuc-product-calculator--no-vnoska';
 }
+
+if ( ! $mtuc_buttons_in_row ) {
+	$mtuc_root_classes .= ' mtuc-product-calculator--stacked';
+}
 ?>
-<div class="<?php echo esc_attr( $mtuc_root_classes ); ?>"<?php echo $mtuc_gap > 0 ? ' style="margin-top:' . esc_attr( (string) $mtuc_gap ) . 'px;"' : ''; ?>>
+<div class="<?php echo esc_attr( $mtuc_root_classes ); ?>" style="<?php echo esc_attr( $mtuc_root_style ); ?>">
 	<div class="mtuc-product-calculator__wrap">
 		<?php if ( null !== $mtuc_standard && ! empty( $mtuc_standard['visible'] ) ) : ?>
 			<button type="button" class="mtuc-product-calculator__btn mtuc-product-calculator__btn--standard">
