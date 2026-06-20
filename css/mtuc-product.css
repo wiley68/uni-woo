@@ -132,6 +132,11 @@
 	text-align: center;
 }
 
+.mtuc-product-calculator--no-vnoska button.mtuc-product-calculator__btn .mtuc-product-calculator__content {
+	align-self: stretch;
+	justify-content: center;
+}
+
 .mtuc-product-calculator button.mtuc-product-calculator__btn:hover,
 .mtuc-product-calculator button.mtuc-product-calculator__btn:focus-visible {
 	background: var(--mtuc-red-hover-bg);

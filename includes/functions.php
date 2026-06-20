@@ -659,12 +659,13 @@ function mtuc_get_product_calculator_context(): ?array {
 	$is_dark_button = mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 );
 
 	$context = array(
-		'offer'          => $offer,
-		'standard'       => $offer['standard'],
-		'promo'          => $offer['promo'],
-		'is_dark_button' => $is_dark_button,
-		'logo_url'       => mtuc_get_uni_logo_url( $is_dark_button ),
-		'gap'            => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
+		'offer'            => $offer,
+		'standard'         => $offer['standard'],
+		'promo'            => $offer['promo'],
+		'show_installment' => mtuc_is_yes_flag( $shop['uni_vnoska'] ?? 0 ),
+		'is_dark_button'   => $is_dark_button,
+		'logo_url'         => mtuc_get_uni_logo_url( $is_dark_button ),
+		'gap'              => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
 	);
 
 	return $context;

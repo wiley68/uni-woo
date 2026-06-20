@@ -11,15 +11,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$mtuc_gap          = (int) ( $context['gap'] ?? 0 );
-$mtuc_logo_url     = (string) ( $context['logo_url'] ?? mtuc_get_uni_logo_url() );
-$mtuc_is_dark_btn  = ! empty( $context['is_dark_button'] );
-$mtuc_standard     = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
-$mtuc_promo        = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
-$mtuc_root_classes = 'mtuc-product-calculator';
+$mtuc_gap              = (int) ( $context['gap'] ?? 0 );
+$mtuc_logo_url         = (string) ( $context['logo_url'] ?? mtuc_get_uni_logo_url() );
+$mtuc_is_dark_btn      = ! empty( $context['is_dark_button'] );
+$mtuc_show_installment = ! empty( $context['show_installment'] );
+$mtuc_standard         = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
+$mtuc_promo            = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
+$mtuc_root_classes     = 'mtuc-product-calculator';
 
 if ( $mtuc_is_dark_btn ) {
 	$mtuc_root_classes .= ' mtuc-product-calculator--dark';
+}
+
+if ( ! $mtuc_show_installment ) {
+	$mtuc_root_classes .= ' mtuc-product-calculator--no-vnoska';
 }
 ?>
 <div class="<?php echo esc_attr( $mtuc_root_classes ); ?>"<?php echo $mtuc_gap > 0 ? ' style="margin-top:' . esc_attr( (string) $mtuc_gap ) . 'px;"' : ''; ?>>
@@ -28,7 +33,9 @@ if ( $mtuc_is_dark_btn ) {
 			<button type="button" class="mtuc-product-calculator__btn mtuc-product-calculator__btn--standard">
 				<span class="mtuc-product-calculator__content">
 					<span class="mtuc-product-calculator__label"><?php esc_html_e( 'Купи на изплащане', 'mtunicredit' ); ?></span>
-					<span class="mtuc-product-calculator__price"><?php echo esc_html( (string) ( $mtuc_standard['price_text'] ?? '' ) ); ?></span>
+					<?php if ( $mtuc_show_installment ) : ?>
+						<span class="mtuc-product-calculator__price"><?php echo esc_html( (string) ( $mtuc_standard['price_text'] ?? '' ) ); ?></span>
+					<?php endif; ?>
 				</span>
 				<span class="mtuc-product-calculator__logo">
 					<img src="<?php echo esc_url( $mtuc_logo_url ); ?>" alt="<?php esc_attr_e( 'УниКредит', 'mtunicredit' ); ?>" />
@@ -40,7 +47,9 @@ if ( $mtuc_is_dark_btn ) {
 			<button type="button" class="mtuc-product-calculator__btn mtuc-product-calculator__btn--promo">
 				<span class="mtuc-product-calculator__content">
 					<span class="mtuc-product-calculator__label"><?php esc_html_e( 'Купи на изплащане', 'mtunicredit' ); ?></span>
-					<span class="mtuc-product-calculator__price"><?php echo esc_html( (string) ( $mtuc_promo['price_text'] ?? '' ) ); ?></span>
+					<?php if ( $mtuc_show_installment ) : ?>
+						<span class="mtuc-product-calculator__price"><?php echo esc_html( (string) ( $mtuc_promo['price_text'] ?? '' ) ); ?></span>
+					<?php endif; ?>
 				</span>
 				<span class="mtuc-product-calculator__promo-badge" aria-hidden="true">0%</span>
 			</button>
