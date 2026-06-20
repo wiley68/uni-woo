@@ -260,6 +260,42 @@ class Mtuc_Shop_Cache {
 	}
 
 	/**
+	 * Decode coeff_list JSON from cache for a store.
+	 *
+	 * @param string|null $unicid Store unicid (defaults to settings).
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function get_coeff_list( $unicid = null ): array {
+		if ( null === $unicid ) {
+			$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
+		}
+
+		$unicid = sanitize_text_field( (string) $unicid );
+		if ( '' === $unicid ) {
+			return array();
+		}
+
+		global $wpdb;
+
+		$table = self::table_name();
+		$row   = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT coeff_list FROM {$table} WHERE unicid = %s LIMIT 1", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$unicid
+			),
+			ARRAY_A
+		);
+
+		if ( ! is_array( $row ) || empty( $row['coeff_list'] ) || ! is_string( $row['coeff_list'] ) ) {
+			return array();
+		}
+
+		$coeff_list = json_decode( $row['coeff_list'], true );
+
+		return is_array( $coeff_list ) ? $coeff_list : array();
+	}
+
+	/**
 	 * Delete all rows from the cache table.
 	 *
 	 * @return void

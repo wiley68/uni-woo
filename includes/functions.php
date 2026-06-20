@@ -148,14 +148,13 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 }
 
 /**
- * Whether the current product price is within CP min/max limits.
+ * Current single product price including tax.
  *
- * @param array<string, mixed> $shop Shop `data` object from CP.
- * @return bool
+ * @return float|null
  */
-function mtuc_is_product_price_in_shop_range( array $shop ): bool {
+function mtuc_get_current_product_price(): ?float {
 	if ( ! function_exists( 'wc_get_product' ) || ! function_exists( 'wc_get_price_including_tax' ) ) {
-		return false;
+		return null;
 	}
 
 	global $product;
@@ -163,18 +162,30 @@ function mtuc_is_product_price_in_shop_range( array $shop ): bool {
 	if ( ! $product instanceof WC_Product ) {
 		$product_id = get_queried_object_id();
 		if ( $product_id <= 0 ) {
-			return false;
+			return null;
 		}
 
 		$product = wc_get_product( $product_id );
 	}
 
 	if ( ! $product instanceof WC_Product ) {
-		return false;
+		return null;
 	}
 
 	$price = (float) wc_get_price_including_tax( $product );
-	if ( $price <= 0 ) {
+
+	return $price > 0 ? $price : null;
+}
+
+/**
+ * Whether the current product price is within CP min/max limits.
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return bool
+ */
+function mtuc_is_product_price_in_shop_range( array $shop ): bool {
+	$price = mtuc_get_current_product_price();
+	if ( null === $price ) {
 		return false;
 	}
 
@@ -182,6 +193,279 @@ function mtuc_is_product_price_in_shop_range( array $shop ): bool {
 	$max = isset( $shop['uni_maxstojnost'] ) ? (float) $shop['uni_maxstojnost'] : 0.0;
 
 	return $price >= $min && $price <= $max;
+}
+
+/**
+ * Coefficient list for installment calculations.
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_get_shop_coeff_list( array $shop ): array {
+	if ( isset( $shop['coeff_list'] ) && is_array( $shop['coeff_list'] ) ) {
+		return $shop['coeff_list'];
+	}
+
+	return Mtuc_Shop_Cache::get_coeff_list();
+}
+
+/**
+ * Resolve product calculator buttons and installment calculations.
+ *
+ * Main entry point for deciding whether/how to show the Standard and Promo buttons.
+ * Only the default-KOP / Standard-button path is implemented for now.
+ *
+ * @param array<string, mixed>|null $shop Shop `data` object from CP (defaults to cached shop).
+ * @return array<string, mixed>|null
+ */
+function mtuc_get_product_calculator_offer( $shop = null ): ?array {
+	if ( null === $shop ) {
+		$shop = mtuc_get_shop_data();
+	}
+
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+		return null;
+	}
+
+	$price = mtuc_get_current_product_price();
+	if ( null === $price ) {
+		return null;
+	}
+
+	$coeff_list = mtuc_get_shop_coeff_list( $shop );
+	$standard   = mtuc_resolve_standard_button_offer( $shop, $coeff_list, $price );
+	$promo      = null;
+
+	if ( null === $standard && null === $promo ) {
+		return null;
+	}
+
+	return array(
+		'price'    => $price,
+		'standard' => $standard,
+		'promo'    => $promo,
+	);
+}
+
+/**
+ * Resolve Standard button offer for default KOP settings (uni_typekop = 0).
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
+ * @param float                            $price      Product price including tax.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, float $price ): ?array {
+	if ( 0 !== (int) ( $shop['uni_typekop'] ?? -1 ) ) {
+		return null;
+	}
+
+	$by_default = $shop['kop']['by_default'] ?? null;
+	if ( ! is_array( $by_default ) ) {
+		return null;
+	}
+
+	$kop_code = isset( $by_default['uni_kop_default'] ) ? trim( (string) $by_default['uni_kop_default'] ) : '';
+	if ( '' === $kop_code ) {
+		return null;
+	}
+
+	$months = (int) ( $shop['uni_shema_current'] ?? 0 );
+	if ( $months <= 0 ) {
+		return null;
+	}
+
+	$coeff_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $months );
+	if ( null === $coeff_entry ) {
+		return null;
+	}
+
+	return mtuc_build_button_offer(
+		'standard',
+		$kop_code,
+		$months,
+		$price,
+		$coeff_entry,
+		$shop
+	);
+}
+
+/**
+ * Find coeff_list row by online product code and installment count.
+ *
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows.
+ * @param string                           $kop_code   onlineProductCode.
+ * @param int                              $months     installmentCount.
+ * @return array<string, mixed>|null
+ */
+function mtuc_find_coeff_entry( array $coeff_list, string $kop_code, int $months ): ?array {
+	foreach ( $coeff_list as $entry ) {
+		if ( ! is_array( $entry ) ) {
+			continue;
+		}
+
+		$entry_code  = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
+		$entry_month = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
+
+		if ( $entry_code === $kop_code && $entry_month === $months ) {
+			return $entry;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Build button calculation payload from a coeff_list row.
+ *
+ * @param string               $type        Button type: standard|promo.
+ * @param string               $kop_code    Resolved KOP code.
+ * @param int                  $months      Installment count.
+ * @param float                $price       Product price including tax.
+ * @param array<string, mixed> $coeff_entry Matching coeff_list row.
+ * @param array<string, mixed> $shop        Shop `data` object from CP.
+ * @return array<string, mixed>|null
+ */
+function mtuc_build_button_offer( string $type, string $kop_code, int $months, float $price, array $coeff_entry, array $shop ): ?array {
+	$kimb = isset( $coeff_entry['coeff'] ) ? (float) $coeff_entry['coeff'] : 0.0;
+	if ( $kimb <= 0 ) {
+		return null;
+	}
+
+	$glp                 = isset( $coeff_entry['interestPercent'] ) ? (float) $coeff_entry['interestPercent'] : 0.0;
+	$monthly_installment = round( $price * $kimb, 2 );
+	$gpr                 = mtuc_calculate_gpr( $months, $monthly_installment, $price );
+
+	return array(
+		'type'                => $type,
+		'visible'             => true,
+		'kop_code'            => $kop_code,
+		'installment_count'   => $months,
+		'monthly_installment' => $monthly_installment,
+		'glp'                 => round( $glp, 2 ),
+		'gpr'                 => round( $gpr, 2 ),
+		'total_amount'        => round( $price, 2 ),
+		'kimb'                => $kimb,
+		'price_text'          => mtuc_format_installment_price_text( $months, $monthly_installment, $shop ),
+	);
+}
+
+/**
+ * Format button subtitle: "{months} x {amount primary} ({amount secondary})".
+ *
+ * @param int                  $months              Installment count.
+ * @param float                $monthly_installment Monthly installment amount.
+ * @param array<string, mixed> $shop                Shop `data` object from CP.
+ * @return string
+ */
+function mtuc_format_installment_price_text( int $months, float $monthly_installment, array $shop ): string {
+	$uni_eur = (int) ( $shop['uni_eur'] ?? 0 );
+	$rate    = 1.95583;
+
+	switch ( $uni_eur ) {
+		case 1:
+			$primary_amount   = $monthly_installment;
+			$secondary_amount = round( $monthly_installment / $rate, 2 );
+			$primary_sign     = __( 'лева', 'mtunicredit' );
+			$secondary_sign   = __( 'евро', 'mtunicredit' );
+			break;
+		case 2:
+			$primary_amount   = $monthly_installment;
+			$secondary_amount = round( $monthly_installment * $rate, 2 );
+			$primary_sign     = __( 'евро', 'mtunicredit' );
+			$secondary_sign   = __( 'лева', 'mtunicredit' );
+			break;
+		case 3:
+			return sprintf(
+				/* translators: 1: installment count, 2: monthly amount */
+				__( '%1$d x %2$s евро', 'mtunicredit' ),
+				$months,
+				number_format( $monthly_installment, 2, '.', '' )
+			);
+		case 0:
+		default:
+			return sprintf(
+				/* translators: 1: installment count, 2: monthly amount */
+				__( '%1$d x %2$s лв.', 'mtunicredit' ),
+				$months,
+				number_format( $monthly_installment, 2, '.', '' )
+			);
+	}
+
+	return sprintf(
+		/* translators: 1: installment count, 2: primary amount, 3: primary currency, 4: secondary amount, 5: secondary currency */
+		__( '%1$d x %2$s %3$s (%4$s %5$s)', 'mtunicredit' ),
+		$months,
+		number_format( $primary_amount, 2, '.', '' ),
+		$primary_sign,
+		number_format( $secondary_amount, 2, '.', '' ),
+		$secondary_sign
+	);
+}
+
+/**
+ * Calculate GPR from installment schedule (legacy UniCredit formula).
+ *
+ * @param int   $months              Installment count.
+ * @param float $monthly_installment Monthly installment amount.
+ * @param float $price               Product price including tax.
+ * @return float
+ */
+function mtuc_calculate_gpr( int $months, float $monthly_installment, float $price ): float {
+	if ( $months <= 0 || $price <= 0 || $monthly_installment <= 0 ) {
+		return 0.0;
+	}
+
+	$period_rate = mtuc_financial_rate( $months, -1 * $monthly_installment, $price );
+	$gprm        = ( $period_rate * $months ) / ( $months / 12 );
+
+	return abs( ( pow( ( 1 + $gprm / 12 ), 12 ) - 1 ) * 100 );
+}
+
+/**
+ * Financial rate helper (ported from legacy UNI_RATE).
+ *
+ * @param float $periods Number of periods.
+ * @param float $payment Payment per period.
+ * @param float $present_value Present value.
+ * @return float
+ */
+function mtuc_financial_rate( float $periods, float $payment, float $present_value ): float {
+	$rate = 0.1;
+	$type = 0.0;
+	$fv   = 0.0;
+
+	if ( abs( $rate ) < 1.0e-8 ) {
+		$y = $present_value * ( 1 + $periods * $rate ) + $payment * ( 1 + $rate * $type ) * $periods + $fv;
+	} else {
+		$f = exp( $periods * log( 1 + $rate ) );
+		$y = $present_value * $f + $payment * ( 1 / $rate + $type ) * ( $f - 1 ) + $fv;
+	}
+
+	$y0 = $present_value + $payment * $periods + $fv;
+	$y1 = $y;
+	$i  = 0.0;
+	$x0 = 0.0;
+	$x1 = $rate;
+
+	while ( ( abs( $y0 - $y1 ) > 1.0e-8 ) && ( $i < 128 ) ) {
+		$rate = ( $y1 * $x0 - $y0 * $x1 ) / ( $y1 - $y0 );
+		$x0   = $x1;
+		$x1   = $rate;
+
+		if ( abs( $rate ) < 1.0e-8 ) {
+			$y = $present_value * ( 1 + $periods * $rate ) + $payment * ( 1 + $rate * $type ) * $periods + $fv;
+		} else {
+			$f = exp( $periods * log( 1 + $rate ) );
+			$y = $present_value * $f + $payment * ( 1 / $rate + $type ) * ( $f - 1 ) + $fv;
+		}
+
+		$y0 = $y1;
+		$y1 = $y;
+		++$i;
+	}
+
+	return $rate;
 }
 
 /**
@@ -226,9 +510,17 @@ function mtuc_get_product_calculator_context(): ?array {
 		return null;
 	}
 
+	$offer = mtuc_get_product_calculator_offer( $shop );
+	if ( null === $offer ) {
+		return null;
+	}
+
 	$is_dark_button = mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 );
 
 	$context = array(
+		'offer'          => $offer,
+		'standard'       => $offer['standard'],
+		'promo'          => $offer['promo'],
 		'is_dark_button' => $is_dark_button,
 		'logo_url'       => mtuc_get_uni_logo_url( $is_dark_button ),
 		'gap'            => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
@@ -256,7 +548,7 @@ function mtuc_register_product_hooks(): void {
 		return;
 	}
 
-	$hook = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_HOOK );
+	$hook  = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_HOOK );
 	$hooks = Mtuc_Settings::get_hook_choices();
 
 	if ( ! array_key_exists( $hook, $hooks ) ) {
