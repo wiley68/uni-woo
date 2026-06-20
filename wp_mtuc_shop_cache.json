@@ -1,0 +1,89 @@
+{
+    "id": "4",
+    "unicid": "cd4437a8-e88f-4e94-b478-8da58286680c",
+    "shop_data": {
+		"user_id":4,
+		"name":"https://woo.avalonbg.com",
+		"type":"WooCommerce",
+		"version":null,
+		"uni_status":1,
+		"uni_email":"home@avalonbg.com",
+		"uni_vnoska":1,
+		"uni_minstojnost":50,
+		"uni_maxstojnost":37500,
+		"uni_first_vnoska":1,
+		"uni_ins":0,
+		"uni_zaglavie":"Тестово заглавие на блока",
+		"unicid":"cd4437a8-e88f-4e94-b478-8da58286680c",
+		"uni_container_status":1,
+		"uni_picture":"https://cdn.avalonbg.com/assets/uni6.20260612.png",
+		"uni_picturem":"https://cdn.avalonbg.com/assets/unim6.20260612.png",
+		"reklama_url":"https://avalonbg.com",
+		"uni_container_txt1":"Тестово заглавие",
+		"uni_container_txt2":"Тестови текст",
+		"branch_type":"Тестови",
+		"uni_backurl":"https://avalonbg.com",
+		"uni_production_service":"https://online.ucfin.bg/suos/api/otp/",
+		"uni_production_application":"https://online.ucfin.bg/sucf-online/Request/Start",
+		"uni_test_service":"https://onlinetest.ucfin.bg/suos/api/otp/",
+		"uni_test_application":"https://onlinetest.ucfin.bg/sucf-online/Request/Start",
+		"uni_env":0,"uni_proces":0,
+		"uni_user":"Wiley68",
+		"uni_password":"Avatest",
+		"uni_sertificat":1,
+		"ssl_lastchange":"2026-06-19T14:51:27+00:00",
+		"uni_shema_current":12,
+		"uni_meseci_3":1,
+		"uni_meseci_4":1,
+		"uni_meseci_5":1,
+		"uni_meseci_6":1,
+		"uni_meseci_9":1,
+		"uni_meseci_10":1,
+		"uni_meseci_12":1,
+		"uni_meseci_15":0,
+		"uni_meseci_18":1,
+		"uni_meseci_24":1,
+		"uni_meseci_30":1,
+		"uni_meseci_36":1,
+		"uni_eur":2,
+		"uni_typekop":0,
+		"uni_type_button":0,
+		"kop":{
+			"by_default":{
+				"uni_kop_default":"POS COM 50",
+				"uni_kop_promo":"POS COM 0%V1",
+				"uni_promo_price":"0.00",
+				"uni_promo_meseci_znak":"eq",
+				"uni_promo_meseci":"6"
+			},
+			"by_schema":{
+				"filters":[]
+			}
+		},
+		\"consents\":[],\"coeff_list\":[{\"coeff\":0.166667,\"interestPercent\":0,\"installmentCount\":6,\"onlineProductCode\":\"POS COM 0%V1\"},{\"coeff\":0.09333,\"interestPercent\":21.45,\"installmentCount\":12,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.076666,\"interestPercent\":21.6,\"installmentCount\":15,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.065559,\"interestPercent\":21.65,\"installmentCount\":18,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.057592,\"interestPercent\":21.57,\"installmentCount\":21,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.051666,\"interestPercent\":21.57,\"installmentCount\":24,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.04689,\"interestPercent\":21.2,\"installmentCount\":27,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.04323,\"interestPercent\":21.2,\"installmentCount\":30,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.040249,\"interestPercent\":21.2,\"installmentCount\":33,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.037778,\"interestPercent\":21.2,\"installmentCount\":36,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.350137,\"interestPercent\":30,\"installmentCount\":3,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.265818,\"interestPercent\":30,\"installmentCount\":4,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.215247,\"interestPercent\":30,\"installmentCount\":5,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.18155,\"interestPercent\":30,\"installmentCount\":6,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.157495,\"interestPercent\":30,\"installmentCount\":7,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.139467,\"interestPercent\":30,\"installmentCount\":8,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.125457,\"interestPercent\":30,\"installmentCount\":9,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.114259,\"interestPercent\":30,\"installmentCount\":10,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.105106,\"interestPercent\":30,\"installmentCount\":11,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.097487,\"interestPercent\":30,\"installmentCount\":12,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.091048,\"interestPercent\":30,\"installmentCount\":13,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.085537,\"interestPercent\":30,\"installmentCount\":14,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.080766,\"interestPercent\":30,\"installmentCount\":15,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.076599,\"interestPercent\":30,\"installmentCount\":16,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.072928,\"interestPercent\":30,\"installmentCount\":17,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.06967,\"interestPercent\":30,\"installmentCount\":18,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.066761,\"interestPercent\":30,\"installmentCount\":19,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.064147,\"interestPercent\":30,\"installmentCount\":20,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.061787,\"interestPercent\":30,\"installmentCount\":21,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.059647,\"interestPercent\":30,\"installmentCount\":22,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.057696,\"interestPercent\":30,\"installmentCount\":23,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.055913,\"interestPercent\":30,\"installmentCount\":24,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.054276,\"interestPercent\":30,\"installmentCount\":25,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.052769,\"interestPercent\":30,\"installmentCount\":26,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.051377,\"interestPercent\":30,\"installmentCount\":27,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.050088,\"interestPercent\":30,\"installmentCount\":28,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.048891,\"interestPercent\":30,\"installmentCount\":29,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.047778,\"interestPercent\":30,\"installmentCount\":30,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.046739,\"interestPercent\":30,\"installmentCount\":31,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.045768,\"interestPercent\":30,\"installmentCount\":32,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.044859,\"interestPercent\":30,\"installmentCount\":33,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.044007,\"interestPercent\":30,\"installmentCount\":34,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.043206,\"interestPercent\":30,\"installmentCount\":35,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.042452,\"interestPercent\":30,\"installmentCount\":36,\"onlineProductCode\":\"POS COM 50\"}]}",
+    "coeff_list": "
+	[
+	{
+		"coeff":0.166667,
+		"interestPercent":0,
+		"installmentCount":6,
+		"onlineProductCode":"POS COM 0%V1"
+	},{
+		"coeff":0.09333,
+		"interestPercent":21.45,
+		"installmentCount":12,
+		"onlineProductCode":"POS COM 100"
+	},
+	{
+		"coeff":0.076666,
+		"interestPercent":21.6,
+		"installmentCount":15,
+		"onlineProductCode":"POS COM 100"
+	},{\"coeff\":0.065559,\"interestPercent\":21.65,\"installmentCount\":18,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.057592,\"interestPercent\":21.57,\"installmentCount\":21,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.051666,\"interestPercent\":21.57,\"installmentCount\":24,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.04689,\"interestPercent\":21.2,\"installmentCount\":27,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.04323,\"interestPercent\":21.2,\"installmentCount\":30,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.040249,\"interestPercent\":21.2,\"installmentCount\":33,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.037778,\"interestPercent\":21.2,\"installmentCount\":36,\"onlineProductCode\":\"POS COM 100\"},{\"coeff\":0.350137,\"interestPercent\":30,\"installmentCount\":3,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.265818,\"interestPercent\":30,\"installmentCount\":4,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.215247,\"interestPercent\":30,\"installmentCount\":5,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.18155,\"interestPercent\":30,\"installmentCount\":6,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.157495,\"interestPercent\":30,\"installmentCount\":7,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.139467,\"interestPercent\":30,\"installmentCount\":8,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.125457,\"interestPercent\":30,\"installmentCount\":9,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.114259,\"interestPercent\":30,\"installmentCount\":10,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.105106,\"interestPercent\":30,\"installmentCount\":11,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.097487,\"interestPercent\":30,\"installmentCount\":12,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.091048,\"interestPercent\":30,\"installmentCount\":13,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.085537,\"interestPercent\":30,\"installmentCount\":14,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.080766,\"interestPercent\":30,\"installmentCount\":15,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.076599,\"interestPercent\":30,\"installmentCount\":16,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.072928,\"interestPercent\":30,\"installmentCount\":17,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.06967,\"interestPercent\":30,\"installmentCount\":18,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.066761,\"interestPercent\":30,\"installmentCount\":19,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.064147,\"interestPercent\":30,\"installmentCount\":20,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.061787,\"interestPercent\":30,\"installmentCount\":21,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.059647,\"interestPercent\":30,\"installmentCount\":22,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.057696,\"interestPercent\":30,\"installmentCount\":23,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.055913,\"interestPercent\":30,\"installmentCount\":24,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.054276,\"interestPercent\":30,\"installmentCount\":25,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.052769,\"interestPercent\":30,\"installmentCount\":26,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.051377,\"interestPercent\":30,\"installmentCount\":27,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.050088,\"interestPercent\":30,\"installmentCount\":28,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.048891,\"interestPercent\":30,\"installmentCount\":29,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.047778,\"interestPercent\":30,\"installmentCount\":30,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.046739,\"interestPercent\":30,\"installmentCount\":31,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.045768,\"interestPercent\":30,\"installmentCount\":32,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.044859,\"interestPercent\":30,\"installmentCount\":33,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.044007,\"interestPercent\":30,\"installmentCount\":34,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.043206,\"interestPercent\":30,\"installmentCount\":35,\"onlineProductCode\":\"POS COM 50\"},{\"coeff\":0.042452,\"interestPercent\":30,\"installmentCount\":36,\"onlineProductCode\":\"POS COM 50\"}]",
+    "kop_data": "{\"by_default\":{\"uni_kop_default\":\"POS COM 50\",\"uni_kop_promo\":\"POS COM 0%V1\",\"uni_promo_price\":\"0.00\",\"uni_promo_meseci_znak\":\"eq\",\"uni_promo_meseci\":\"6\"},\"by_schema\":{\"filters\":[]}}",
+    "consents": "[]",
+    "uni_picture": "https:\/\/cdn.avalonbg.com\/assets\/uni6.20260612.png",
+    "uni_picturem": "https:\/\/cdn.avalonbg.com\/assets\/unim6.20260612.png",
+    "fetched_at": "2026-06-20 06:08:12",
+    "expires_at": "2026-06-21 06:08:12"
+}

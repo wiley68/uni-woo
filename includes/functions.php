@@ -213,7 +213,6 @@ function mtuc_get_shop_coeff_list( array $shop ): array {
  * Resolve product calculator buttons and installment calculations.
  *
  * Main entry point for deciding whether/how to show the Standard and Promo buttons.
- * Only the default-KOP / Standard-button path is implemented for now.
  *
  * @param array<string, mixed>|null $shop Shop `data` object from CP (defaults to cached shop).
  * @return array<string, mixed>|null
@@ -234,7 +233,7 @@ function mtuc_get_product_calculator_offer( $shop = null ): ?array {
 
 	$coeff_list = mtuc_get_shop_coeff_list( $shop );
 	$standard   = mtuc_resolve_standard_button_offer( $shop, $coeff_list, $price );
-	$promo      = null;
+	$promo      = mtuc_resolve_promo_button_offer( $shop, $coeff_list, $price );
 
 	if ( null === $standard && null === $promo ) {
 		return null;
@@ -288,6 +287,148 @@ function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, flo
 		$coeff_entry,
 		$shop
 	);
+}
+
+/**
+ * Resolve Promo button offer for default KOP settings (uni_typekop = 0, 0% promo).
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
+ * @param float                            $price      Product price including tax.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_promo_button_offer( array $shop, array $coeff_list, float $price ): ?array {
+	if ( 0 !== (int) ( $shop['uni_typekop'] ?? -1 ) ) {
+		return null;
+	}
+
+	$by_default = $shop['kop']['by_default'] ?? null;
+	if ( ! is_array( $by_default ) ) {
+		return null;
+	}
+
+	$kop_code = isset( $by_default['uni_kop_promo'] ) ? trim( (string) $by_default['uni_kop_promo'] ) : '';
+	if ( '' === $kop_code ) {
+		return null;
+	}
+
+	$promo_price = isset( $by_default['uni_promo_price'] ) ? (float) $by_default['uni_promo_price'] : 0.0;
+	if ( $promo_price > 0 && $price < $promo_price ) {
+		return null;
+	}
+
+	$meseci_znak = isset( $by_default['uni_promo_meseci_znak'] ) ? strtolower( trim( (string) $by_default['uni_promo_meseci_znak'] ) ) : '';
+	$meseci_raw  = isset( $by_default['uni_promo_meseci'] ) ? trim( (string) $by_default['uni_promo_meseci'] ) : '';
+	if ( '' === $meseci_znak || '' === $meseci_raw ) {
+		return null;
+	}
+
+	$coeff_entry = mtuc_find_best_promo_coeff_entry( $coeff_list, $kop_code, $meseci_znak, $meseci_raw );
+	if ( null === $coeff_entry ) {
+		return null;
+	}
+
+	$glp = isset( $coeff_entry['interestPercent'] ) ? (float) $coeff_entry['interestPercent'] : -1.0;
+	if ( abs( $glp ) > 0.00001 ) {
+		return null;
+	}
+
+	$months = isset( $coeff_entry['installmentCount'] ) ? (int) $coeff_entry['installmentCount'] : 0;
+	if ( $months <= 0 ) {
+		return null;
+	}
+
+	return mtuc_build_button_offer(
+		'promo',
+		$kop_code,
+		$months,
+		$price,
+		$coeff_entry,
+		$shop
+	);
+}
+
+/**
+ * Find the best promo coeff_list row (highest installment count among matches).
+ *
+ * @param array<int, array<string, mixed>> $coeff_list  Coefficient rows.
+ * @param string                           $kop_code    onlineProductCode.
+ * @param string                           $meseci_znak eq|greateq.
+ * @param string                           $meseci_raw  Month filter from CP.
+ * @return array<string, mixed>|null
+ */
+function mtuc_find_best_promo_coeff_entry( array $coeff_list, string $kop_code, string $meseci_znak, string $meseci_raw ): ?array {
+	$best        = null;
+	$best_months = 0;
+
+	if ( 'eq' === $meseci_znak ) {
+		$allowed_months = array();
+
+		foreach ( explode( '_', $meseci_raw ) as $part ) {
+			$month = (int) trim( $part );
+			if ( $month > 0 ) {
+				$allowed_months[] = $month;
+			}
+		}
+
+		if ( empty( $allowed_months ) ) {
+			return null;
+		}
+
+		foreach ( $coeff_list as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+
+			$entry_code  = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
+			$entry_month = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
+
+			if ( $entry_code !== $kop_code || ! in_array( $entry_month, $allowed_months, true ) ) {
+				continue;
+			}
+
+			if ( $entry_month > $best_months ) {
+				$best_months = $entry_month;
+				$best        = $entry;
+			}
+		}
+
+		return $best;
+	}
+
+	if ( 'greateq' === $meseci_znak ) {
+		$min_months = (int) $meseci_raw;
+		if ( $min_months <= 0 ) {
+			$parts      = explode( '_', $meseci_raw );
+			$min_months = isset( $parts[0] ) ? (int) trim( $parts[0] ) : 0;
+		}
+
+		if ( $min_months <= 0 ) {
+			return null;
+		}
+
+		foreach ( $coeff_list as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+
+			$entry_code  = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
+			$entry_month = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
+
+			if ( $entry_code !== $kop_code || $entry_month < $min_months ) {
+				continue;
+			}
+
+			if ( $entry_month > $best_months ) {
+				$best_months = $entry_month;
+				$best        = $entry;
+			}
+		}
+
+		return $best;
+	}
+
+	return null;
 }
 
 /**
