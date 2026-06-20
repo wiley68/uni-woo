@@ -328,6 +328,10 @@ function get_current_user_id(): int
 function is_user_logged_in() {}
 function is_admin() {}
 function is_front_page() {}
+function get_queried_object_id(): int
+{
+	return 0;
+}
 function wp_is_mobile(): bool
 {
 	return false;
@@ -763,6 +767,41 @@ function is_checkout() {}
 function is_account_page() {}
 function is_wc_endpoint_url($endpoint = '') {}
 function is_product() {}
+
+/**
+ * @param mixed $product
+ * @param array<string, mixed> $args
+ */
+function wc_get_price_including_tax($product, $args = array()): float
+{
+	unset($product, $args);
+
+	return 0.0;
+}
+
+/**
+ * @param mixed $the_product
+ * @param array<string, mixed> $deprecated
+ */
+function wc_get_product($the_product = false, $deprecated = array()): ?WC_Product
+{
+	unset($the_product, $deprecated);
+
+	return null;
+}
+
+class WC_Product
+{
+	public function get_id(): int
+	{
+		return 0;
+	}
+
+	public function get_price(): string
+	{
+		return '';
+	}
+}
 
 class WC_Cart
 {

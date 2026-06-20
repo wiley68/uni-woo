@@ -148,6 +148,43 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 }
 
 /**
+ * Whether the current product price is within CP min/max limits.
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return bool
+ */
+function mtuc_is_product_price_in_shop_range( array $shop ): bool {
+	if ( ! function_exists( 'wc_get_product' ) || ! function_exists( 'wc_get_price_including_tax' ) ) {
+		return false;
+	}
+
+	global $product;
+
+	if ( ! $product instanceof WC_Product ) {
+		$product_id = get_queried_object_id();
+		if ( $product_id <= 0 ) {
+			return false;
+		}
+
+		$product = wc_get_product( $product_id );
+	}
+
+	if ( ! $product instanceof WC_Product ) {
+		return false;
+	}
+
+	$price = (float) wc_get_price_including_tax( $product );
+	if ( $price <= 0 ) {
+		return false;
+	}
+
+	$min = isset( $shop['uni_minstojnost'] ) ? (float) $shop['uni_minstojnost'] : 0.0;
+	$max = isset( $shop['uni_maxstojnost'] ) ? (float) $shop['uni_maxstojnost'] : 0.0;
+
+	return $price >= $min && $price <= $max;
+}
+
+/**
  * Build product calculator context when the template should be shown.
  *
  * @return array<string, mixed>|null
@@ -182,6 +219,10 @@ function mtuc_get_product_calculator_context(): ?array {
 	}
 
 	if ( ! mtuc_is_yes_flag( $shop['uni_status'] ?? 0 ) ) {
+		return null;
+	}
+
+	if ( ! mtuc_is_product_price_in_shop_range( $shop ) ) {
 		return null;
 	}
 
