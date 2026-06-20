@@ -10,6 +10,8 @@
 	font-family: var(--mtuc-font-family, inherit);
 	/* Logo size — increase/decrease to tune (proportional width follows aspect ratio). */
 	--mtuc-logo-height: 24px;
+	--mtuc-promo-badge-size: 32px;
+	--mtuc-promo-side-width: calc(var(--mtuc-logo-height) * 400 / 124);
 	--mtuc-red: #ee2e24;
 	--mtuc-red-text: #d92a21;
 	--mtuc-red-hover-bg: rgba(238, 46, 36, 0.1);
@@ -39,10 +41,10 @@
 	align-items: center;
 	justify-content: space-between;
 	gap: 4px;
-	flex: 0 0 270px;
-	width: 270px;
-	min-width: 270px;
-	max-width: 270px;
+	flex: 0 0 290px;
+	width: 290px;
+	min-width: 290px;
+	max-width: 290px;
 	min-height: 56px;
 	margin: 0;
 	padding: 6px 12px 6px 16px;
@@ -91,8 +93,23 @@
 	width: auto;
 	height: var(--mtuc-logo-height);
 	max-height: var(--mtuc-logo-height);
-	max-width: calc(var(--mtuc-logo-height) * 400 / 124);
+	max-width: var(--mtuc-promo-side-width);
 	object-fit: contain;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn--promo .mtuc-product-calculator__promo-badge {
+	display: flex;
+	flex: 0 0 var(--mtuc-promo-side-width);
+	align-items: center;
+	justify-content: center;
+	width: var(--mtuc-promo-side-width);
+	min-width: var(--mtuc-promo-side-width);
+	max-width: var(--mtuc-promo-side-width);
+	color: var(--mtuc-red-text);
+	font-size: var(--mtuc-promo-badge-size);
+	font-weight: 700;
+	line-height: 1;
+	text-align: center;
 }
 
 .mtuc-product-calculator button.mtuc-product-calculator__btn .mtuc-product-calculator__label {
@@ -132,6 +149,10 @@
 	color: #fff;
 }
 
+.mtuc-product-calculator--dark button.mtuc-product-calculator__btn--promo .mtuc-product-calculator__promo-badge {
+	color: #fff;
+}
+
 .mtuc-product-calculator--dark button.mtuc-product-calculator__btn:hover,
 .mtuc-product-calculator--dark button.mtuc-product-calculator__btn:focus-visible {
 	background: #d9261f;
@@ -139,7 +160,7 @@
 	border-color: #b82119;
 }
 
-@container mtuc-product-buttons (max-width: 269px) {
+@container mtuc-product-buttons (max-width: 289px) {
 	.mtuc-product-calculator__wrap {
 		flex-direction: column;
 		align-items: stretch;

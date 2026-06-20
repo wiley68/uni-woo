@@ -42,9 +42,7 @@ if ( $mtuc_is_dark_btn ) {
 					<span class="mtuc-product-calculator__label"><?php esc_html_e( 'Купи на изплащане', 'mtunicredit' ); ?></span>
 					<span class="mtuc-product-calculator__price"><?php echo esc_html( (string) ( $mtuc_promo['price_text'] ?? '' ) ); ?></span>
 				</span>
-				<span class="mtuc-product-calculator__logo">
-					<img src="<?php echo esc_url( $mtuc_logo_url ); ?>" alt="<?php esc_attr_e( 'УниКредит', 'mtunicredit' ); ?>" />
-				</span>
+				<span class="mtuc-product-calculator__promo-badge" aria-hidden="true">0%</span>
 			</button>
 		<?php endif; ?>
 	</div>
