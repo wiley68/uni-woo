@@ -55,7 +55,7 @@ function mtuc_get_shop_enabled_months( array $shop ): array {
  * @param float                            $price      Product price including tax.
  * @param string                           $offer_type standard|promo.
  * @param WC_Product|null                  $product    Product instance.
- * @return array<int, array{months:int,kop_code:string}>
+ * @return array<int, array{months:int,kop_code:string,desc:string}>
  */
 function mtuc_get_popup_enabled_months(
 	array $shop,
@@ -76,6 +76,7 @@ function mtuc_get_popup_enabled_months(
 		$enabled[] = array(
 			'months'   => $months,
 			'kop_code' => (string) ( $scheme['kop_code'] ?? '' ),
+			'desc'     => (string) ( $scheme['kop_desc'] ?? '' ),
 		);
 	}
 
@@ -85,7 +86,7 @@ function mtuc_get_popup_enabled_months(
 /**
  * Extract month values from popup month option rows.
  *
- * @param array<int, array{months:int,kop_code:string}|int> $enabled_options Popup month options.
+ * @param array<int, array{months:int,kop_code:string,desc:string}|int> $enabled_options Popup month options.
  * @return array<int, int>
  */
 function mtuc_extract_popup_month_values( array $enabled_options ): array {
@@ -109,7 +110,7 @@ function mtuc_extract_popup_month_values( array $enabled_options ): array {
  * Default installment count for popup select.
  *
  * @param array<string, mixed>                              $shop            Shop `data` object from CP.
- * @param array<int, array{months:int,kop_code:string}|int> $enabled_options Allowed month options for the offer.
+ * @param array<int, array{months:int,kop_code:string,desc:string}|int> $enabled_options Allowed month options for the offer.
  * @return int
  */
 function mtuc_pick_default_popup_month( array $shop, array $enabled_options ): int {
@@ -451,6 +452,7 @@ function mtuc_find_schema_filter_for_month(
 				'filter'      => $filter,
 				'coeff_entry' => $coeff_entry,
 				'kop_code'    => $kop_code,
+				'kop_desc'    => isset( $filter['uni_kop_desc'] ) ? trim( (string) $filter['uni_kop_desc'] ) : '',
 			);
 		}
 	}
@@ -506,8 +508,10 @@ function mtuc_resolve_popup_scheme(
 			return null;
 		}
 		$kop_code = isset( $by_default['uni_kop_promo'] ) ? trim( (string) $by_default['uni_kop_promo'] ) : '';
+		$kop_desc = isset( $by_default['uni_kop_promo_desc'] ) ? trim( (string) $by_default['uni_kop_promo_desc'] ) : '';
 	} else {
 		$kop_code = isset( $by_default['uni_kop_default'] ) ? trim( (string) $by_default['uni_kop_default'] ) : '';
+		$kop_desc = isset( $by_default['uni_kop_default_desc'] ) ? trim( (string) $by_default['uni_kop_default_desc'] ) : '';
 	}
 
 	if ( '' === $kop_code ) {
@@ -530,6 +534,7 @@ function mtuc_resolve_popup_scheme(
 		'filter'      => null,
 		'coeff_entry' => $coeff_entry,
 		'kop_code'    => $kop_code,
+		'kop_desc'    => $kop_desc,
 	);
 }
 

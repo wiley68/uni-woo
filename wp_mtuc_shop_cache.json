@@ -70,7 +70,9 @@
           "kop": {
             "by_default": {
               "uni_kop_default": "POS COM 50",
+              "uni_kop_default_desc": "",
               "uni_kop_promo": "POS COM 0%V1",
+              "uni_kop_promo_desc": "0% лихва",
               "uni_promo_price": "0.00",
               "uni_promo_meseci_znak": "eq",
               "uni_promo_meseci": "6"
@@ -89,7 +91,8 @@
                   "uni_parva": 0,
                   "uni_date_from": null,
                   "uni_date_to": null,
-                  "uni_kop": "POS COM 50"
+                  "uni_kop": "POS COM 50",
+                  "uni_kop_desc": "Промо 22%"
                 },
                 {
                   "id": 6,
@@ -103,7 +106,8 @@
                   "uni_parva": 0,
                   "uni_date_from": null,
                   "uni_date_to": null,
-                  "uni_kop": "POS COM 100"
+                  "uni_kop": "POS COM 100",
+                  "uni_kop_desc": "Промо 22%"
                 },
                 {
                   "id": 7,
@@ -117,7 +121,8 @@
                   "uni_parva": 0,
                   "uni_date_from": null,
                   "uni_date_to": null,
-                  "uni_kop": "POS COM 0%V1"
+                  "uni_kop": "POS COM 0%V1",
+                  "uni_kop_desc": "0% лихва"
                 }
               ]
             }

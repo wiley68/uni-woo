@@ -60,14 +60,14 @@
 			$step1.prop("hidden", false).addClass("mtuc-popup__step--active");
 		};
 
-		const formatMonthLabel = (months, kopCode) => {
+		const formatMonthLabel = (months, desc) => {
 			let label = (mtucPopup.i18n.monthsLabel || "%d месеца").replace(
 				"%d",
 				String(months),
 			);
 
-			if (kopCode) {
-				label += " (" + kopCode + ")";
+			if (desc) {
+				label += " - " + desc;
 			}
 
 			return label;
@@ -81,9 +81,9 @@
 			return parseInt(entry, 10);
 		};
 
-		const getMonthOptionKop = (entry) => {
-			if (entry && typeof entry === "object" && entry.kop_code) {
-				return String(entry.kop_code);
+		const getMonthOptionDesc = (entry) => {
+			if (entry && typeof entry === "object" && entry.desc) {
+				return String(entry.desc);
 			}
 
 			return "";
@@ -116,7 +116,7 @@
 
 			enabled.forEach((entry) => {
 				const months = getMonthOptionValue(entry);
-				const kopCode = getMonthOptionKop(entry);
+				const desc = getMonthOptionDesc(entry);
 
 				if (!months) {
 					return;
@@ -126,7 +126,7 @@
 				$months.append(
 					$("<option>", {
 						value: months,
-						text: formatMonthLabel(months, kopCode),
+						text: formatMonthLabel(months, desc),
 					}),
 				);
 			});
