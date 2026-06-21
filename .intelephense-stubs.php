@@ -801,6 +801,12 @@ class WC_Product
 	{
 		return '';
 	}
+
+	/** @return array<int, int> */
+	public function get_category_ids(): array
+	{
+		return array();
+	}
 }
 
 class WC_Cart

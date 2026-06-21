@@ -148,26 +148,65 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 }
 
 /**
- * Current single product price including tax.
+ * Current WooCommerce product on a single product page.
  *
- * @return float|null
+ * @return WC_Product|null
  */
-function mtuc_get_current_product_price(): ?float {
-	if ( ! function_exists( 'wc_get_product' ) || ! function_exists( 'wc_get_price_including_tax' ) ) {
+function mtuc_get_current_wc_product(): ?WC_Product {
+	if ( ! function_exists( 'wc_get_product' ) ) {
 		return null;
 	}
 
 	global $product;
 
-	if ( ! $product instanceof WC_Product ) {
-		$product_id = get_queried_object_id();
-		if ( $product_id <= 0 ) {
-			return null;
-		}
-
-		$product = wc_get_product( $product_id );
+	if ( $product instanceof WC_Product ) {
+		return $product;
 	}
 
+	$product_id = get_queried_object_id();
+	if ( $product_id <= 0 ) {
+		return null;
+	}
+
+	$loaded = wc_get_product( $product_id );
+
+	return $loaded instanceof WC_Product ? $loaded : null;
+}
+
+/**
+ * Category term IDs for a product (includes parent categories in WC).
+ *
+ * @param WC_Product|null $product Product instance (defaults to current product).
+ * @return array<int, int>
+ */
+function mtuc_get_product_category_ids( ?WC_Product $product = null ): array {
+	if ( null === $product ) {
+		$product = mtuc_get_current_wc_product();
+	}
+
+	if ( ! $product instanceof WC_Product ) {
+		return array();
+	}
+
+	$ids = $product->get_category_ids();
+	if ( ! is_array( $ids ) ) {
+		return array();
+	}
+
+	return array_map( 'intval', $ids );
+}
+
+/**
+ * Current single product price including tax.
+ *
+ * @return float|null
+ */
+function mtuc_get_current_product_price(): ?float {
+	if ( ! function_exists( 'wc_get_price_including_tax' ) ) {
+		return null;
+	}
+
+	$product = mtuc_get_current_wc_product();
 	if ( ! $product instanceof WC_Product ) {
 		return null;
 	}
@@ -247,7 +286,7 @@ function mtuc_get_product_calculator_offer( $shop = null ): ?array {
 }
 
 /**
- * Resolve Standard button offer for default KOP settings (uni_typekop = 0).
+ * Resolve Standard button offer (default or schema KOP).
  *
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
@@ -255,10 +294,28 @@ function mtuc_get_product_calculator_offer( $shop = null ): ?array {
  * @return array<string, mixed>|null
  */
 function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, float $price ): ?array {
-	if ( 0 !== (int) ( $shop['uni_typekop'] ?? -1 ) ) {
-		return null;
+	$typekop = (int) ( $shop['uni_typekop'] ?? -1 );
+
+	if ( 0 === $typekop ) {
+		return mtuc_resolve_standard_default_button_offer( $shop, $coeff_list, $price );
 	}
 
+	if ( 1 === $typekop ) {
+		return mtuc_resolve_standard_schema_button_offer( $shop, $coeff_list, $price );
+	}
+
+	return null;
+}
+
+/**
+ * Resolve Standard button offer for default KOP settings (uni_typekop = 0).
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
+ * @param float                            $price      Product price including tax.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_standard_default_button_offer( array $shop, array $coeff_list, float $price ): ?array {
 	$by_default = $shop['kop']['by_default'] ?? null;
 	if ( ! is_array( $by_default ) ) {
 		return null;
@@ -290,7 +347,287 @@ function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, flo
 }
 
 /**
- * Resolve Promo button offer for default KOP settings (uni_typekop = 0, 0% promo).
+ * Resolve Standard button offer for schema KOP settings (uni_typekop = 1).
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
+ * @param float                            $price      Product price including tax.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_standard_schema_button_offer( array $shop, array $coeff_list, float $price ): ?array {
+	return mtuc_resolve_schema_button_offer( $shop, $coeff_list, $price, 'standard', 0, false );
+}
+
+/**
+ * Resolve Promo button offer for schema KOP settings (uni_typekop = 1, 0% promo).
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
+ * @param float                            $price      Product price including tax.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_promo_schema_button_offer( array $shop, array $coeff_list, float $price ): ?array {
+	return mtuc_resolve_schema_button_offer( $shop, $coeff_list, $price, 'promo', 1, true );
+}
+
+/**
+ * Resolve a calculator button offer from schema KOP filters.
+ *
+ * @param array<string, mixed>             $shop                  Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list            Coefficient rows from cache.
+ * @param float                            $price                 Product price including tax.
+ * @param string                           $button_type           standard|promo.
+ * @param int                              $uni_promo_filter      Filter rows where uni_promo equals this value.
+ * @param bool                             $require_zero_interest Require interestPercent == 0 on the coeff row.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_schema_button_offer(
+	array $shop,
+	array $coeff_list,
+	float $price,
+	string $button_type,
+	int $uni_promo_filter,
+	bool $require_zero_interest = false
+): ?array {
+	$product = mtuc_get_current_wc_product();
+	if ( ! $product instanceof WC_Product ) {
+		return null;
+	}
+
+	$by_schema = $shop['kop']['by_schema'] ?? null;
+	if ( ! is_array( $by_schema ) ) {
+		return null;
+	}
+
+	$filters = $by_schema['filters'] ?? null;
+	if ( ! is_array( $filters ) ) {
+		return null;
+	}
+
+	$product_id   = $product->get_id();
+	$category_ids = mtuc_get_product_category_ids( $product );
+	$best_offer   = null;
+	$best_months  = 0;
+
+	foreach ( $filters as $filter ) {
+		if ( ! is_array( $filter ) ) {
+			continue;
+		}
+
+		if ( $uni_promo_filter !== (int) ( $filter['uni_promo'] ?? 0 ) ) {
+			continue;
+		}
+
+		if ( ! mtuc_schema_filter_matches_product( $filter, $product_id, $category_ids, $price ) ) {
+			continue;
+		}
+
+		$kop_code = isset( $filter['uni_kop'] ) ? trim( (string) $filter['uni_kop'] ) : '';
+		if ( '' === $kop_code ) {
+			continue;
+		}
+
+		$allowed_months = mtuc_parse_underscore_ints( isset( $filter['uni_meseci'] ) ? (string) $filter['uni_meseci'] : '' );
+		if ( empty( $allowed_months ) ) {
+			continue;
+		}
+
+		$coeff_entry = mtuc_find_best_coeff_for_months( $coeff_list, $kop_code, $allowed_months );
+		if ( null === $coeff_entry ) {
+			continue;
+		}
+
+		if ( $require_zero_interest ) {
+			$glp = isset( $coeff_entry['interestPercent'] ) ? (float) $coeff_entry['interestPercent'] : -1.0;
+			if ( abs( $glp ) > 0.00001 ) {
+				continue;
+			}
+		}
+
+		$months = isset( $coeff_entry['installmentCount'] ) ? (int) $coeff_entry['installmentCount'] : 0;
+		if ( $months <= 0 ) {
+			continue;
+		}
+
+		$calc_price = $price;
+		if ( 1 === (int) ( $filter['uni_parva'] ?? 0 ) ) {
+			$parva      = round( $price / $months, 2 );
+			$calc_price = round( $price - $parva, 2 );
+			if ( $calc_price <= 0 ) {
+				continue;
+			}
+		}
+
+		if ( $months <= $best_months ) {
+			continue;
+		}
+
+		$offer = mtuc_build_button_offer(
+			$button_type,
+			$kop_code,
+			$months,
+			$calc_price,
+			$coeff_entry,
+			$shop
+		);
+
+		if ( null === $offer ) {
+			continue;
+		}
+
+		$best_months = $months;
+		$best_offer  = $offer;
+	}
+
+	return $best_offer;
+}
+
+/**
+ * Whether a schema filter row matches the current product and price.
+ *
+ * @param array<string, mixed> $filter       Schema filter row from CP.
+ * @param int                  $product_id   Current product ID.
+ * @param array<int, int>      $category_ids Product category term IDs.
+ * @param float                $price        Product price including tax.
+ * @return bool
+ */
+function mtuc_schema_filter_matches_product( array $filter, int $product_id, array $category_ids, float $price ): bool {
+	$has_category = mtuc_schema_filter_field_has_value( $filter['category_id'] ?? null );
+	$has_product  = mtuc_schema_filter_field_has_value( $filter['product_id'] ?? null );
+
+	if ( $has_category && $has_product ) {
+		return false;
+	}
+
+	if ( $has_category ) {
+		$filter_category_id = (int) $filter['category_id'];
+		$category_match     = false;
+
+		foreach ( $category_ids as $category_id ) {
+			if ( $filter_category_id === (int) $category_id ) {
+				$category_match = true;
+				break;
+			}
+		}
+
+		if ( ! $category_match ) {
+			return false;
+		}
+	}
+
+	if ( $has_product && (int) $filter['product_id'] !== $product_id ) {
+		return false;
+	}
+
+	if ( mtuc_schema_filter_field_has_value( $filter['uni_price_from'] ?? null ) ) {
+		if ( $price < (float) $filter['uni_price_from'] ) {
+			return false;
+		}
+	}
+
+	if ( mtuc_schema_filter_field_has_value( $filter['uni_price_to'] ?? null ) ) {
+		if ( $price > (float) $filter['uni_price_to'] ) {
+			return false;
+		}
+	}
+
+	return mtuc_schema_filter_dates_match( $filter );
+}
+
+/**
+ * Whether a schema filter value is set (non-null, non-empty).
+ *
+ * @param mixed $value Filter field value.
+ * @return bool
+ */
+function mtuc_schema_filter_field_has_value( $value ): bool {
+	if ( null === $value ) {
+		return false;
+	}
+
+	return '' !== trim( (string) $value );
+}
+
+/**
+ * Whether the current date falls within a schema filter date range.
+ *
+ * @param array<string, mixed> $filter Schema filter row from CP.
+ * @return bool
+ */
+function mtuc_schema_filter_dates_match( array $filter ): bool {
+	$today = current_time( 'Y-m-d' );
+
+	if ( mtuc_schema_filter_field_has_value( $filter['uni_date_from'] ?? null ) ) {
+		$date_from = substr( trim( (string) $filter['uni_date_from'] ), 0, 10 );
+		if ( $today < $date_from ) {
+			return false;
+		}
+	}
+
+	if ( mtuc_schema_filter_field_has_value( $filter['uni_date_to'] ?? null ) ) {
+		$date_to = substr( trim( (string) $filter['uni_date_to'] ), 0, 10 );
+		if ( $today > $date_to ) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/**
+ * Parse underscore-separated positive integers (e.g. schema uni_meseci).
+ *
+ * @param string $raw Raw value from CP.
+ * @return array<int, int>
+ */
+function mtuc_parse_underscore_ints( string $raw ): array {
+	$values = array();
+
+	foreach ( explode( '_', $raw ) as $part ) {
+		$value = (int) trim( $part );
+		if ( $value > 0 ) {
+			$values[] = $value;
+		}
+	}
+
+	return $values;
+}
+
+/**
+ * Find the best coeff_list row for a KOP code and allowed months (highest installment count).
+ *
+ * @param array<int, array<string, mixed>> $coeff_list     Coefficient rows.
+ * @param string                           $kop_code       onlineProductCode.
+ * @param array<int, int>                  $allowed_months Allowed installment counts.
+ * @return array<string, mixed>|null
+ */
+function mtuc_find_best_coeff_for_months( array $coeff_list, string $kop_code, array $allowed_months ): ?array {
+	$best        = null;
+	$best_months = 0;
+
+	foreach ( $coeff_list as $entry ) {
+		if ( ! is_array( $entry ) ) {
+			continue;
+		}
+
+		$entry_code  = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
+		$entry_month = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
+
+		if ( $entry_code !== $kop_code || ! in_array( $entry_month, $allowed_months, true ) ) {
+			continue;
+		}
+
+		if ( $entry_month > $best_months ) {
+			$best_months = $entry_month;
+			$best        = $entry;
+		}
+	}
+
+	return $best;
+}
+
+/**
+ * Resolve Promo button offer (default or schema KOP).
  *
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
@@ -298,10 +635,28 @@ function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, flo
  * @return array<string, mixed>|null
  */
 function mtuc_resolve_promo_button_offer( array $shop, array $coeff_list, float $price ): ?array {
-	if ( 0 !== (int) ( $shop['uni_typekop'] ?? -1 ) ) {
-		return null;
+	$typekop = (int) ( $shop['uni_typekop'] ?? -1 );
+
+	if ( 0 === $typekop ) {
+		return mtuc_resolve_promo_default_button_offer( $shop, $coeff_list, $price );
 	}
 
+	if ( 1 === $typekop ) {
+		return mtuc_resolve_promo_schema_button_offer( $shop, $coeff_list, $price );
+	}
+
+	return null;
+}
+
+/**
+ * Resolve Promo button offer for default KOP settings (uni_typekop = 0, 0% promo).
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
+ * @param float                            $price      Product price including tax.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_promo_default_button_offer( array $shop, array $coeff_list, float $price ): ?array {
 	$by_default = $shop['kop']['by_default'] ?? null;
 	if ( ! is_array( $by_default ) ) {
 		return null;
