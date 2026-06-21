@@ -25,6 +25,10 @@
 		let calculateTimer = null;
 		let lastCalculation = null;
 
+		const resetParvaInput = () => {
+			$parva.val("0").prop("readonly", false);
+		};
+
 		const setDualAmount = (prefix, display) => {
 			const $primary = $("#mtuc-popup-" + prefix + "-primary");
 			const $secondary = $("#mtuc-popup-" + prefix + "-secondary");
@@ -173,6 +177,8 @@
 		const openPopup = (offerType) => {
 			$offerType.val(offerType);
 			showStep(1);
+			resetParvaInput();
+			lastCalculation = null;
 			rebuildMonthsSelect(offerType);
 			$popup
 				.removeAttr("hidden")
@@ -196,6 +202,8 @@
 				.attr("hidden", "hidden");
 			document.body.classList.remove("mtuc-popup-open");
 			showStep(1);
+			resetParvaInput();
+			lastCalculation = null;
 		};
 
 		const applyCalculation = (data) => {
@@ -289,7 +297,10 @@
 
 		$popup.on("click", "[data-mtuc-popup-close]", closePopup);
 
-		$months.on("change", calculateNow);
+		$months.on("change", function () {
+			resetParvaInput();
+			calculateNow();
+		});
 
 		$parva.on("change blur", function () {
 			if ($(this).prop("readonly")) {
