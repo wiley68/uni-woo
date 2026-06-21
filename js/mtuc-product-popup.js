@@ -99,8 +99,19 @@
 		};
 
 		const parseSchemeKey = (schemeKey) => {
-			const parts = String(schemeKey || "").split(":");
+			const key = String(schemeKey || "");
+			if (key.indexOf("p:") === 0) {
+				const parts = key.slice(2).split(":");
+				return {
+					schemeType: "promo",
+					months: parseInt(parts[0], 10) || 0,
+					filterId: parseInt(parts[1], 10) || 0,
+				};
+			}
+
+			const parts = key.split(":");
 			return {
+				schemeType: "standard",
 				months: parseInt(parts[0], 10) || 0,
 				filterId: parseInt(parts[1], 10) || 0,
 			};
@@ -233,6 +244,7 @@
 					mtucPopup.productId,
 				offer_type: $offerType.val(),
 				scheme_key: schemeKey,
+				scheme_type: scheme.schemeType,
 				months: scheme.months,
 				filter_id: scheme.filterId,
 				parva: parva.toFixed(2),
