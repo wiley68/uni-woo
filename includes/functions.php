@@ -439,8 +439,8 @@ function mtuc_resolve_schema_button_offer(
 
 	$product_id   = $product->get_id();
 	$category_ids = mtuc_get_product_category_ids( $product );
-	$best_offer   = null;
-	$best_months  = 0;
+	$candidates   = array();
+	$preferred    = (int) ( $shop['uni_shema_current'] ?? 0 );
 
 	foreach ( $filters as $filter ) {
 		if ( ! is_array( $filter ) ) {
@@ -465,7 +465,7 @@ function mtuc_resolve_schema_button_offer(
 			continue;
 		}
 
-		$coeff_entry = mtuc_find_best_coeff_for_months( $coeff_list, $kop_code, $allowed_months );
+		$coeff_entry = mtuc_find_coeff_for_allowed_months( $coeff_list, $kop_code, $allowed_months, $preferred );
 		if ( null === $coeff_entry ) {
 			continue;
 		}
@@ -491,10 +491,6 @@ function mtuc_resolve_schema_button_offer(
 			}
 		}
 
-		if ( $months <= $best_months ) {
-			continue;
-		}
-
 		$offer = mtuc_build_button_offer(
 			$button_type,
 			$kop_code,
@@ -504,15 +500,12 @@ function mtuc_resolve_schema_button_offer(
 			$shop
 		);
 
-		if ( null === $offer ) {
-			continue;
+		if ( null !== $offer ) {
+			$candidates[] = $offer;
 		}
-
-		$best_months = $months;
-		$best_offer  = $offer;
 	}
 
-	return $best_offer;
+	return mtuc_pick_preferred_button_offer( $candidates, $shop );
 }
 
 /**
@@ -627,6 +620,67 @@ function mtuc_parse_underscore_ints( string $raw ): array {
 }
 
 /**
+ * Pick button offer: prefer uni_shema_current when available, else highest month count.
+ *
+ * @param array<int, array<string, mixed>> $candidates Resolved button offers.
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @return array<string, mixed>|null
+ */
+function mtuc_pick_preferred_button_offer( array $candidates, array $shop ): ?array {
+	if ( empty( $candidates ) ) {
+		return null;
+	}
+
+	$preferred = (int) ( $shop['uni_shema_current'] ?? 0 );
+
+	if ( $preferred > 0 ) {
+		foreach ( $candidates as $offer ) {
+			if ( $preferred === (int) ( $offer['installment_count'] ?? 0 ) ) {
+				return $offer;
+			}
+		}
+	}
+
+	$best        = null;
+	$best_months = 0;
+
+	foreach ( $candidates as $offer ) {
+		$months = (int) ( $offer['installment_count'] ?? 0 );
+		if ( $months > $best_months ) {
+			$best_months = $months;
+			$best        = $offer;
+		}
+	}
+
+	return $best;
+}
+
+/**
+ * Find coeff_list row for allowed months, preferring a specific installment count.
+ *
+ * @param array<int, array<string, mixed>> $coeff_list      Coefficient rows.
+ * @param string                           $kop_code        onlineProductCode.
+ * @param array<int, int>                  $allowed_months  Allowed installment counts.
+ * @param int                              $preferred_month Preferred installment count from CP.
+ * @return array<string, mixed>|null
+ */
+function mtuc_find_coeff_for_allowed_months(
+	array $coeff_list,
+	string $kop_code,
+	array $allowed_months,
+	int $preferred_month = 0
+): ?array {
+	if ( $preferred_month > 0 && in_array( $preferred_month, $allowed_months, true ) ) {
+		$preferred_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $preferred_month );
+		if ( null !== $preferred_entry ) {
+			return $preferred_entry;
+		}
+	}
+
+	return mtuc_find_best_coeff_for_months( $coeff_list, $kop_code, $allowed_months );
+}
+
+/**
  * Find the best coeff_list row for a KOP code and allowed months (highest installment count).
  *
  * @param array<int, array<string, mixed>> $coeff_list     Coefficient rows.
@@ -711,7 +765,13 @@ function mtuc_resolve_promo_default_button_offer( array $shop, array $coeff_list
 		return null;
 	}
 
-	$coeff_entry = mtuc_find_best_promo_coeff_entry( $coeff_list, $kop_code, $meseci_znak, $meseci_raw );
+	$coeff_entry = mtuc_find_best_promo_coeff_entry(
+		$coeff_list,
+		$kop_code,
+		$meseci_znak,
+		$meseci_raw,
+		(int) ( $shop['uni_shema_current'] ?? 0 )
+	);
 	if ( null === $coeff_entry ) {
 		return null;
 	}
@@ -743,9 +803,16 @@ function mtuc_resolve_promo_default_button_offer( array $shop, array $coeff_list
  * @param string                           $kop_code    onlineProductCode.
  * @param string                           $meseci_znak eq|greateq.
  * @param string                           $meseci_raw  Month filter from CP.
+ * @param int                              $preferred_month Preferred installment count from CP.
  * @return array<string, mixed>|null
  */
-function mtuc_find_best_promo_coeff_entry( array $coeff_list, string $kop_code, string $meseci_znak, string $meseci_raw ): ?array {
+function mtuc_find_best_promo_coeff_entry(
+	array $coeff_list,
+	string $kop_code,
+	string $meseci_znak,
+	string $meseci_raw,
+	int $preferred_month = 0
+): ?array {
 	$best        = null;
 	$best_months = 0;
 
@@ -761,6 +828,13 @@ function mtuc_find_best_promo_coeff_entry( array $coeff_list, string $kop_code, 
 
 		if ( empty( $allowed_months ) ) {
 			return null;
+		}
+
+		if ( $preferred_month > 0 && in_array( $preferred_month, $allowed_months, true ) ) {
+			$preferred_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $preferred_month );
+			if ( null !== $preferred_entry ) {
+				return $preferred_entry;
+			}
 		}
 
 		foreach ( $coeff_list as $entry ) {
@@ -793,6 +867,13 @@ function mtuc_find_best_promo_coeff_entry( array $coeff_list, string $kop_code, 
 
 		if ( $min_months <= 0 ) {
 			return null;
+		}
+
+		if ( $preferred_month >= $min_months ) {
+			$preferred_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $preferred_month );
+			if ( null !== $preferred_entry ) {
+				return $preferred_entry;
+			}
 		}
 
 		foreach ( $coeff_list as $entry ) {
