@@ -29,11 +29,3 @@ if ( ! defined( 'MTUC_CONTROL_PANEL_URL' ) ) {
 if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
 	define( 'MTUC_API_BASE_URL', untrailingslashit( MTUC_CONTROL_PANEL_URL ) . '/api/v1' );
 }
-
-/**
- * TEMPORARY — включи за dev статистика на cache refresh (изтрий преди production).
- * Изисква файла dev-cache-refresh-log.php в корена на плъгина.
- */
-if ( ! defined( 'MTUC_DEV_CACHE_REFRESH_LOG' ) ) {
-	define( 'MTUC_DEV_CACHE_REFRESH_LOG', true );
-}

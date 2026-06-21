@@ -10,7 +10,6 @@ Thumbs.db
 
 # Logs
 *.log
-dev-cache-refresh-stats.log
 error.log
 error_log
 **/error_log
