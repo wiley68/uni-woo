@@ -12,10 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$popup               = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
-$enabled_months      = isset( $popup['enabled_months'] ) && is_array( $popup['enabled_months'] ) ? $popup['enabled_months'] : array();
-$default_months      = (int) ( $popup['default_months'] ?? 0 );
-$show_first_vnoska   = ! empty( $popup['show_first_vnoska'] );
+$popup                    = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
+$show_first_vnoska        = ! empty( $popup['show_first_vnoska'] );
 $currency            = isset( $popup['currency'] ) && is_array( $popup['currency'] ) ? $popup['currency'] : mtuc_get_currency_display_config( array( 'uni_eur' => 0 ) );
 $customer            = isset( $popup['customer'] ) && is_array( $popup['customer'] ) ? $popup['customer'] : mtuc_get_popup_customer_defaults();
 $banner_url          = isset( $popup['banner_url'] ) ? (string) $popup['banner_url'] : '';
@@ -67,21 +65,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 										<span class="mtuc-popup__label-mobile"><?php esc_html_e( 'Срок (мес.)', 'mtunicredit' ); ?></span>
 									</div>
 									<div class="mtuc-popup__value">
-										<select id="mtuc-popup-months" class="mtuc-popup__select">
-											<?php foreach ( $enabled_months as $months ) : ?>
-												<option value="<?php echo esc_attr( (string) $months ); ?>" <?php selected( $default_months, $months ); ?>>
-													<?php
-													echo esc_html(
-														sprintf(
-															/* translators: %d: number of months */
-															__( '%d месеца', 'mtunicredit' ),
-															(int) $months
-														)
-													);
-													?>
-												</option>
-											<?php endforeach; ?>
-										</select>
+										<select id="mtuc-popup-months" class="mtuc-popup__select"></select>
 									</div>
 								</div>
 

@@ -197,16 +197,36 @@ function mtuc_get_product_category_ids( ?WC_Product $product = null ): array {
 }
 
 /**
- * Current single product price including tax.
+ * Load a WooCommerce product by ID.
  *
+ * @param int $product_id Product or variation ID.
+ * @return WC_Product|null
+ */
+function mtuc_get_wc_product_by_id( int $product_id ): ?WC_Product {
+	if ( $product_id <= 0 || ! function_exists( 'wc_get_product' ) ) {
+		return null;
+	}
+
+	$product = wc_get_product( $product_id );
+
+	return $product instanceof WC_Product ? $product : null;
+}
+
+/**
+ * Product price including tax.
+ *
+ * @param WC_Product|null $product Product instance (defaults to current product page).
  * @return float|null
  */
-function mtuc_get_current_product_price(): ?float {
+function mtuc_get_product_price( ?WC_Product $product = null ): ?float {
 	if ( ! function_exists( 'wc_get_price_including_tax' ) ) {
 		return null;
 	}
 
-	$product = mtuc_get_current_wc_product();
+	if ( null === $product ) {
+		$product = mtuc_get_current_wc_product();
+	}
+
 	if ( ! $product instanceof WC_Product ) {
 		return null;
 	}
@@ -217,13 +237,26 @@ function mtuc_get_current_product_price(): ?float {
 }
 
 /**
- * Whether the current product price is within CP min/max limits.
+ * Current single product price including tax.
  *
- * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return float|null
+ */
+function mtuc_get_current_product_price(): ?float {
+	return mtuc_get_product_price();
+}
+
+/**
+ * Whether a product price is within CP min/max limits.
+ *
+ * @param array<string, mixed> $shop  Shop `data` object from CP.
+ * @param float|null           $price Product price including tax (defaults to current product).
  * @return bool
  */
-function mtuc_is_product_price_in_shop_range( array $shop ): bool {
-	$price = mtuc_get_current_product_price();
+function mtuc_is_product_price_in_shop_range( array $shop, ?float $price = null ): bool {
+	if ( null === $price ) {
+		$price = mtuc_get_current_product_price();
+	}
+
 	if ( null === $price ) {
 		return false;
 	}
@@ -1125,14 +1158,22 @@ function mtuc_enqueue_product_assets(): void {
 		'mtuc-product-popup',
 		'mtucPopup',
 		array(
-			'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
-			'nonce'         => wp_create_nonce( 'mtuc_popup' ),
-			'defaultMonths' => (int) ( $popup_context['default_months'] ?? 0 ),
-			'currencyDual'  => ! empty( $popup_context['currency']['dual'] ),
-			'i18n'          => array(
+			'ajaxUrl'                => admin_url( 'admin-ajax.php' ),
+			'nonce'                  => wp_create_nonce( 'mtuc_popup' ),
+			'productId'              => (int) ( $popup_context['product_id'] ?? 0 ),
+			'enabledMonthsByOffer'   => isset( $popup_context['enabled_months_by_offer'] ) && is_array( $popup_context['enabled_months_by_offer'] )
+				? $popup_context['enabled_months_by_offer']
+				: array(),
+			'defaultMonthsByOffer'   => isset( $popup_context['default_months_by_offer'] ) && is_array( $popup_context['default_months_by_offer'] )
+				? $popup_context['default_months_by_offer']
+				: array(),
+			'currencyDual'           => ! empty( $popup_context['currency']['dual'] ),
+			'i18n'                   => array(
 				'calcError'      => __( 'Неуспешно изчисление. Моля, опитайте отново.', 'mtunicredit' ),
 				'addToCartError' => __( 'Не може да се добави в количката. Проверете опциите на продукта.', 'mtunicredit' ),
 				'submitPending'  => __( 'Изпращането на заявката ще бъде добавено на следващ етап.', 'mtunicredit' ),
+				'monthsLabel'    => __( '%d месеца', 'mtunicredit' ),
+				'noMonths'       => __( 'Няма налични срокове за този продукт.', 'mtunicredit' ),
 			),
 		)
 	);
@@ -1305,5 +1346,3 @@ function mtuc_render_reklama_button(): void {
 	</div>
 	<?php
 }
-
-require_once MTUC_INCLUDES_DIR . '/mtuc-product-popup.php';

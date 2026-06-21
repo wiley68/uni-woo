@@ -10,14 +10,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Register popup hooks (AJAX, footer render).
+ * Register popup AJAX handlers (must run on admin-ajax requests too).
+ *
+ * @return void
+ */
+function mtuc_register_product_popup_ajax_hooks(): void {
+	add_action( 'wp_ajax_mtuc_popup_calculate', 'mtuc_ajax_popup_calculate' );
+	add_action( 'wp_ajax_nopriv_mtuc_popup_calculate', 'mtuc_ajax_popup_calculate' );
+}
+
+/**
+ * Register popup frontend hooks (footer markup).
  *
  * @return void
  */
 function mtuc_register_product_popup_hooks(): void {
-	add_action( 'wp_ajax_mtuc_popup_calculate', 'mtuc_ajax_popup_calculate' );
-	add_action( 'wp_ajax_nopriv_mtuc_popup_calculate', 'mtuc_ajax_popup_calculate' );
-	add_action( 'wp_footer', 'mtuc_render_product_popup', 20 );
+	add_action( 'wp_footer', 'mtuc_render_product_popup', 5 );
 }
 
 /**
@@ -37,6 +45,56 @@ function mtuc_get_shop_enabled_months( array $shop ): array {
 	}
 
 	return $enabled;
+}
+
+/**
+ * Popup month choices: shop uni_meseci_* intersect valid KOP/coeff matches.
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows.
+ * @param float                            $price      Product price including tax.
+ * @param string                           $offer_type standard|promo.
+ * @param WC_Product|null                  $product    Product instance.
+ * @return array<int, int>
+ */
+function mtuc_get_popup_enabled_months(
+	array $shop,
+	array $coeff_list,
+	float $price,
+	string $offer_type,
+	?WC_Product $product = null
+): array {
+	$shop_months = mtuc_get_shop_enabled_months( $shop );
+	$enabled     = array();
+
+	foreach ( $shop_months as $months ) {
+		if ( null !== mtuc_resolve_popup_scheme( $shop, $coeff_list, $price, $months, $offer_type, $product ) ) {
+			$enabled[] = $months;
+		}
+	}
+
+	return $enabled;
+}
+
+/**
+ * Default installment count for popup select.
+ *
+ * @param array<string, mixed> $shop           Shop `data` object from CP.
+ * @param array<int, int>      $enabled_months Allowed months for the offer.
+ * @return int
+ */
+function mtuc_pick_default_popup_month( array $shop, array $enabled_months ): int {
+	$preferred = (int) ( $shop['uni_shema_current'] ?? 0 );
+
+	if ( in_array( $preferred, $enabled_months, true ) ) {
+		return $preferred;
+	}
+
+	if ( ! empty( $enabled_months ) ) {
+		return (int) $enabled_months[0];
+	}
+
+	return 0;
 }
 
 /**
@@ -181,13 +239,42 @@ function mtuc_get_popup_customer_defaults(): array {
  * @return array<string, mixed>
  */
 function mtuc_get_product_popup_context( array $shop, array $context ): array {
-	$product = mtuc_get_current_wc_product();
-	$enabled = mtuc_get_shop_enabled_months( $shop );
-	$default = (int) ( $shop['uni_shema_current'] ?? 0 );
+	$product     = mtuc_get_current_wc_product();
+	$price       = $product instanceof WC_Product ? mtuc_get_product_price( $product ) : null;
+	$coeff_list  = mtuc_get_shop_coeff_list( $shop );
+	$shop_months = mtuc_get_shop_enabled_months( $shop );
 
-	if ( ! in_array( $default, $enabled, true ) && ! empty( $enabled ) ) {
-		$default = (int) $enabled[0];
+	$enabled_by_offer = array(
+		'standard' => array(),
+		'promo'    => array(),
+	);
+
+	if ( $product instanceof WC_Product && null !== $price && $price > 0 ) {
+		if ( ! empty( $context['standard']['visible'] ) ) {
+			$enabled_by_offer['standard'] = mtuc_get_popup_enabled_months(
+				$shop,
+				$coeff_list,
+				$price,
+				'standard',
+				$product
+			);
+		}
+
+		if ( ! empty( $context['promo']['visible'] ) ) {
+			$enabled_by_offer['promo'] = mtuc_get_popup_enabled_months(
+				$shop,
+				$coeff_list,
+				$price,
+				'promo',
+				$product
+			);
+		}
 	}
+
+	$default_by_offer = array(
+		'standard' => mtuc_pick_default_popup_month( $shop, $enabled_by_offer['standard'] ),
+		'promo'    => mtuc_pick_default_popup_month( $shop, $enabled_by_offer['promo'] ),
+	);
 
 	$reklama_url = '';
 	if ( ! empty( $shop['reklama_url'] ) && is_string( $shop['reklama_url'] ) ) {
@@ -197,16 +284,17 @@ function mtuc_get_product_popup_context( array $shop, array $context ): array {
 	}
 
 	return array(
-		'product_id'        => $product instanceof WC_Product ? $product->get_id() : 0,
-		'banner_url'        => mtuc_get_shop_picture_url( $shop, false ),
-		'reklama_url'       => $reklama_url,
-		'show_first_vnoska' => mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 ),
-		'default_months'    => $default,
-		'enabled_months'    => $enabled,
-		'currency'          => mtuc_get_currency_display_config( $shop ),
-		'customer'          => mtuc_get_popup_customer_defaults(),
-		'has_standard'      => ! empty( $context['standard']['visible'] ),
-		'has_promo'         => ! empty( $context['promo']['visible'] ),
+		'product_id'             => $product instanceof WC_Product ? $product->get_id() : 0,
+		'banner_url'             => mtuc_get_shop_picture_url( $shop, false ),
+		'reklama_url'            => $reklama_url,
+		'show_first_vnoska'      => mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 ),
+		'shop_months'            => $shop_months,
+		'enabled_months_by_offer' => $enabled_by_offer,
+		'default_months_by_offer' => $default_by_offer,
+		'currency'               => mtuc_get_currency_display_config( $shop ),
+		'customer'               => mtuc_get_popup_customer_defaults(),
+		'has_standard'           => ! empty( $context['standard']['visible'] ),
+		'has_promo'              => ! empty( $context['promo']['visible'] ),
 	);
 }
 
@@ -265,9 +353,13 @@ function mtuc_find_schema_filter_for_month(
 	float $price,
 	int $months,
 	int $uni_promo_filter,
-	bool $require_zero_interest = false
+	bool $require_zero_interest = false,
+	?WC_Product $product = null
 ): ?array {
-	$product = mtuc_get_current_wc_product();
+	if ( null === $product ) {
+		$product = mtuc_get_current_wc_product();
+	}
+
 	if ( ! $product instanceof WC_Product ) {
 		return null;
 	}
@@ -351,7 +443,8 @@ function mtuc_resolve_popup_scheme(
 	array $coeff_list,
 	float $price,
 	int $months,
-	string $offer_type
+	string $offer_type,
+	?WC_Product $product = null
 ): ?array {
 	$uni_promo_filter      = ( 'promo' === $offer_type ) ? 1 : 0;
 	$require_zero_interest = ( 'promo' === $offer_type );
@@ -364,7 +457,8 @@ function mtuc_resolve_popup_scheme(
 			$price,
 			$months,
 			$uni_promo_filter,
-			$require_zero_interest
+			$require_zero_interest,
+			$product
 		);
 	}
 
@@ -426,14 +520,15 @@ function mtuc_calculate_popup_credit(
 	float $price,
 	int $months,
 	string $offer_type,
-	float $parva = 0.0
+	float $parva = 0.0,
+	?WC_Product $product = null
 ) {
-	$enabled_months = mtuc_get_shop_enabled_months( $shop );
+	$enabled_months = mtuc_get_popup_enabled_months( $shop, $coeff_list, $price, $offer_type, $product );
 	if ( ! in_array( $months, $enabled_months, true ) ) {
 		return new WP_Error( 'mtuc_popup_invalid_months', __( 'Избраният срок не е наличен.', 'mtunicredit' ) );
 	}
 
-	$scheme = mtuc_resolve_popup_scheme( $shop, $coeff_list, $price, $months, $offer_type );
+	$scheme = mtuc_resolve_popup_scheme( $shop, $coeff_list, $price, $months, $offer_type, $product );
 	if ( null === $scheme ) {
 		return new WP_Error( 'mtuc_popup_no_scheme', __( 'Няма налична схема за избраните параметри.', 'mtunicredit' ) );
 	}
@@ -518,6 +613,15 @@ function mtuc_ajax_popup_calculate(): void {
 	$parva_raw = isset( $_POST['parva'] ) ? wp_unslash( $_POST['parva'] ) : '0';
 	$parva     = is_numeric( $parva_raw ) ? (float) $parva_raw : 0.0;
 
+	$product_id = isset( $_POST['product_id'] ) ? absint( wp_unslash( $_POST['product_id'] ) ) : 0;
+	$product    = mtuc_get_wc_product_by_id( $product_id );
+	if ( ! $product instanceof WC_Product ) {
+		wp_send_json_error(
+			array( 'message' => __( 'Невалиден продукт.', 'mtunicredit' ) ),
+			400
+		);
+	}
+
 	$shop = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
 		wp_send_json_error(
@@ -526,7 +630,7 @@ function mtuc_ajax_popup_calculate(): void {
 		);
 	}
 
-	$price = mtuc_get_current_product_price();
+	$price = mtuc_get_product_price( $product );
 	if ( null === $price ) {
 		wp_send_json_error(
 			array( 'message' => __( 'Не може да се определи цената на продукта.', 'mtunicredit' ) ),
@@ -534,7 +638,7 @@ function mtuc_ajax_popup_calculate(): void {
 		);
 	}
 
-	if ( ! mtuc_is_product_price_in_shop_range( $shop ) ) {
+	if ( ! mtuc_is_product_price_in_shop_range( $shop, $price ) ) {
 		wp_send_json_error(
 			array( 'message' => __( 'Цената на продукта е извън допустимия диапазон.', 'mtunicredit' ) ),
 			400
@@ -542,7 +646,7 @@ function mtuc_ajax_popup_calculate(): void {
 	}
 
 	$coeff_list = mtuc_get_shop_coeff_list( $shop );
-	$result     = mtuc_calculate_popup_credit( $shop, $coeff_list, $price, $months, $type, $parva );
+	$result     = mtuc_calculate_popup_credit( $shop, $coeff_list, $price, $months, $type, $parva, $product );
 
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error(

@@ -1321,3 +1321,10 @@ class Borica_Woo_Payment_Gateway extends WC_Payment_Gateway
 		return array();
 	}
 }
+
+/**
+ * MTUC plugin bootstrap helpers.
+ */
+function mtuc_register_product_popup_ajax_hooks(): void {}
+function mtuc_register_product_hooks(): void {}
+function mtuc_register_reklama_hooks(): void {}
