@@ -29,33 +29,131 @@ function mtuc_register_product_popup_hooks(): void {
 }
 
 /**
- * Enabled installment counts from shop settings.
+ * Build a stable popup scheme option key (months + schema filter id).
  *
- * @param array<string, mixed> $shop Shop `data` object from CP.
- * @return array<int, int>
+ * @param int $months    Installment count.
+ * @param int $filter_id Schema filter id (0 for default KOP).
+ * @return string
  */
-function mtuc_get_shop_enabled_months( array $shop ): array {
-	$choices = array( 3, 4, 5, 6, 9, 10, 12, 15, 18, 24, 30, 36 );
-	$enabled = array();
+function mtuc_build_popup_scheme_option_key( int $months, int $filter_id = 0 ): string {
+	return $months . ':' . $filter_id;
+}
 
-	foreach ( $choices as $months ) {
-		if ( mtuc_is_yes_flag( $shop[ 'uni_meseci_' . $months ] ?? 0 ) ) {
-			$enabled[] = $months;
+/**
+ * Parse popup scheme option key into months and filter id.
+ *
+ * @param string $key Option key from select value.
+ * @return array{months:int,filter_id:int}
+ */
+function mtuc_parse_popup_scheme_option_key( string $key ): array {
+	$parts = explode( ':', $key, 2 );
+
+	return array(
+		'months'    => isset( $parts[0] ) ? absint( $parts[0] ) : 0,
+		'filter_id' => isset( $parts[1] ) ? absint( $parts[1] ) : 0,
+	);
+}
+
+/**
+ * All standard schema popup options for matching filters (one row per filter/month).
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows.
+ * @param float                            $price      Product price including tax.
+ * @param WC_Product|null                  $product    Product instance.
+ * @return array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int}>
+ */
+function mtuc_get_popup_standard_schema_options(
+	array $shop,
+	array $coeff_list,
+	float $price,
+	?WC_Product $product = null
+): array {
+	if ( null === $product ) {
+		$product = mtuc_get_current_wc_product();
+	}
+
+	if ( ! $product instanceof WC_Product ) {
+		return array();
+	}
+
+	$by_schema = $shop['kop']['by_schema'] ?? null;
+	if ( ! is_array( $by_schema ) ) {
+		return array();
+	}
+
+	$filters = $by_schema['filters'] ?? null;
+	if ( ! is_array( $filters ) ) {
+		return array();
+	}
+
+	$product_id   = $product->get_id();
+	$category_ids = mtuc_get_product_category_ids( $product );
+	$options      = array();
+
+	foreach ( $filters as $filter ) {
+		if ( ! is_array( $filter ) ) {
+			continue;
+		}
+
+		if ( 0 !== (int) ( $filter['uni_promo'] ?? 0 ) ) {
+			continue;
+		}
+
+		if ( ! mtuc_schema_filter_matches_product( $filter, $product_id, $category_ids, $price ) ) {
+			continue;
+		}
+
+		$kop_code = isset( $filter['uni_kop'] ) ? trim( (string) $filter['uni_kop'] ) : '';
+		if ( '' === $kop_code ) {
+			continue;
+		}
+
+		$filter_id      = (int) ( $filter['id'] ?? 0 );
+		$allowed_months = mtuc_get_schema_filter_allowed_months( $filter, $shop );
+
+		foreach ( $allowed_months as $months ) {
+			$coeff_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $months );
+			if ( null === $coeff_entry ) {
+				continue;
+			}
+
+			$options[] = array(
+				'key'       => mtuc_build_popup_scheme_option_key( $months, $filter_id ),
+				'months'    => $months,
+				'kop_code'  => $kop_code,
+				'desc'      => isset( $filter['uni_kop_desc'] ) ? trim( (string) $filter['uni_kop_desc'] ) : '',
+				'filter_id' => $filter_id,
+			);
 		}
 	}
 
-	return $enabled;
+	usort(
+		$options,
+		static function ( array $a, array $b ): int {
+			if ( $a['months'] !== $b['months'] ) {
+				return $a['months'] <=> $b['months'];
+			}
+
+			return $a['filter_id'] <=> $b['filter_id'];
+		}
+	);
+
+	return $options;
 }
 
 /**
  * Popup month choices: shop uni_meseci_* intersect valid KOP/coeff matches.
+ *
+ * Standard + schema KOP returns all matching filters (duplicate months allowed).
+ * Promo and default KOP keep one option per month.
  *
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list Coefficient rows.
  * @param float                            $price      Product price including tax.
  * @param string                           $offer_type standard|promo.
  * @param WC_Product|null                  $product    Product instance.
- * @return array<int, array{months:int,kop_code:string,desc:string}>
+ * @return array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int}>
  */
 function mtuc_get_popup_enabled_months(
 	array $shop,
@@ -64,6 +162,12 @@ function mtuc_get_popup_enabled_months(
 	string $offer_type,
 	?WC_Product $product = null
 ): array {
+	$typekop = (int) ( $shop['uni_typekop'] ?? -1 );
+
+	if ( 'standard' === $offer_type && 1 === $typekop ) {
+		return mtuc_get_popup_standard_schema_options( $shop, $coeff_list, $price, $product );
+	}
+
 	$shop_months = mtuc_get_shop_enabled_months( $shop );
 	$enabled     = array();
 
@@ -73,10 +177,17 @@ function mtuc_get_popup_enabled_months(
 			continue;
 		}
 
+		$filter_id = 0;
+		if ( isset( $scheme['filter'] ) && is_array( $scheme['filter'] ) ) {
+			$filter_id = (int) ( $scheme['filter']['id'] ?? 0 );
+		}
+
 		$enabled[] = array(
-			'months'   => $months,
-			'kop_code' => (string) ( $scheme['kop_code'] ?? '' ),
-			'desc'     => (string) ( $scheme['kop_desc'] ?? '' ),
+			'key'       => mtuc_build_popup_scheme_option_key( $months, $filter_id ),
+			'months'    => $months,
+			'kop_code'  => (string) ( $scheme['kop_code'] ?? '' ),
+			'desc'      => (string) ( $scheme['kop_desc'] ?? '' ),
+			'filter_id' => $filter_id,
 		);
 	}
 
@@ -84,48 +195,75 @@ function mtuc_get_popup_enabled_months(
 }
 
 /**
- * Extract month values from popup month option rows.
+ * Whether a popup scheme option is in the enabled list.
  *
- * @param array<int, array{months:int,kop_code:string,desc:string}|int> $enabled_options Popup month options.
- * @return array<int, int>
+ * @param array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int}> $enabled_options Popup scheme options.
+ * @param int                                                                                 $months          Installment count.
+ * @param int                                                                                 $filter_id       Schema filter id (0 for default KOP).
+ * @return bool
  */
-function mtuc_extract_popup_month_values( array $enabled_options ): array {
-	$values = array();
+function mtuc_is_popup_scheme_option_enabled( array $enabled_options, int $months, int $filter_id = 0 ): bool {
+	$key = mtuc_build_popup_scheme_option_key( $months, $filter_id );
 
 	foreach ( $enabled_options as $option ) {
-		if ( is_array( $option ) && isset( $option['months'] ) ) {
-			$values[] = (int) $option['months'];
+		if ( ! is_array( $option ) ) {
 			continue;
 		}
 
-		if ( is_numeric( $option ) ) {
-			$values[] = (int) $option;
+		if ( (string) ( $option['key'] ?? '' ) === $key ) {
+			return true;
 		}
 	}
 
-	return $values;
+	return false;
 }
 
 /**
- * Default installment count for popup select.
+ * Default popup scheme option key for select.
  *
- * @param array<string, mixed>                              $shop            Shop `data` object from CP.
- * @param array<int, array{months:int,kop_code:string,desc:string}|int> $enabled_options Allowed month options for the offer.
- * @return int
+ * @param array<string, mixed>                                                              $shop            Shop `data` object from CP.
+ * @param array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int}> $enabled_options Allowed scheme options for the offer.
+ * @param array<string, mixed>|null                                                         $button_offer    Calculator button offer for this type.
+ * @return string
  */
-function mtuc_pick_default_popup_month( array $shop, array $enabled_options ): int {
-	$enabled_months = mtuc_extract_popup_month_values( $enabled_options );
-	$preferred      = (int) ( $shop['uni_shema_current'] ?? 0 );
-
-	if ( in_array( $preferred, $enabled_months, true ) ) {
-		return $preferred;
+function mtuc_pick_default_popup_scheme_key( array $shop, array $enabled_options, ?array $button_offer = null ): string {
+	if ( empty( $enabled_options ) ) {
+		return '';
 	}
 
-	if ( ! empty( $enabled_months ) ) {
-		return (int) $enabled_months[0];
+	if ( is_array( $button_offer ) ) {
+		$btn_months = (int) ( $button_offer['installment_count'] ?? 0 );
+		$btn_kop    = isset( $button_offer['kop_code'] ) ? trim( (string) $button_offer['kop_code'] ) : '';
+
+		if ( $btn_months > 0 && '' !== $btn_kop ) {
+			foreach ( $enabled_options as $option ) {
+				if ( ! is_array( $option ) ) {
+					continue;
+				}
+
+				if ( $btn_months === (int) ( $option['months'] ?? 0 ) && $btn_kop === (string) ( $option['kop_code'] ?? '' ) ) {
+					return (string) ( $option['key'] ?? mtuc_build_popup_scheme_option_key( $btn_months, (int) ( $option['filter_id'] ?? 0 ) ) );
+				}
+			}
+		}
 	}
 
-	return 0;
+	$preferred = (int) ( $shop['uni_shema_current'] ?? 0 );
+	if ( $preferred > 0 ) {
+		foreach ( $enabled_options as $option ) {
+			if ( ! is_array( $option ) ) {
+				continue;
+			}
+
+			if ( $preferred === (int) ( $option['months'] ?? 0 ) ) {
+				return (string) ( $option['key'] ?? mtuc_build_popup_scheme_option_key( $preferred, (int) ( $option['filter_id'] ?? 0 ) ) );
+			}
+		}
+	}
+
+	$first = $enabled_options[0];
+
+	return (string) ( $first['key'] ?? mtuc_build_popup_scheme_option_key( (int) ( $first['months'] ?? 0 ), (int) ( $first['filter_id'] ?? 0 ) ) );
 }
 
 /**
@@ -303,8 +441,8 @@ function mtuc_get_product_popup_context( array $shop, array $context ): array {
 	}
 
 	$default_by_offer = array(
-		'standard' => mtuc_pick_default_popup_month( $shop, $enabled_by_offer['standard'] ),
-		'promo'    => mtuc_pick_default_popup_month( $shop, $enabled_by_offer['promo'] ),
+		'standard' => mtuc_pick_default_popup_scheme_key( $shop, $enabled_by_offer['standard'], $context['standard'] ?? null ),
+		'promo'    => mtuc_pick_default_popup_scheme_key( $shop, $enabled_by_offer['promo'], $context['promo'] ?? null ),
 	);
 
 	$reklama_url = '';
@@ -321,7 +459,7 @@ function mtuc_get_product_popup_context( array $shop, array $context ): array {
 		'show_first_vnoska'      => mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 ),
 		'shop_months'            => $shop_months,
 		'enabled_months_by_offer' => $enabled_by_offer,
-		'default_months_by_offer' => $default_by_offer,
+		'default_scheme_by_offer' => $default_by_offer,
 		'currency'               => mtuc_get_currency_display_config( $shop ),
 		'customer'               => mtuc_get_popup_customer_defaults(),
 		'has_standard'           => ! empty( $context['standard']['visible'] ),
@@ -368,7 +506,7 @@ function mtuc_is_default_promo_month_allowed( array $by_default, int $months, fl
 }
 
 /**
- * Find a schema filter row for a specific installment count.
+ * Find all schema filter rows for a specific installment count.
  *
  * @param array<string, mixed>             $shop                  Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list            Coefficient rows.
@@ -376,9 +514,9 @@ function mtuc_is_default_promo_month_allowed( array $by_default, int $months, fl
  * @param int                              $months                Selected installment count.
  * @param int                              $uni_promo_filter      Filter rows where uni_promo equals this value.
  * @param bool                             $require_zero_interest Require interestPercent == 0.
- * @return array<string, mixed>|null
+ * @return array<int, array{filter:array<string,mixed>,coeff_entry:array<string,mixed>,kop_code:string,kop_desc:string}>
  */
-function mtuc_find_schema_filter_for_month(
+function mtuc_find_all_schema_filters_for_month(
 	array $shop,
 	array $coeff_list,
 	float $price,
@@ -386,29 +524,28 @@ function mtuc_find_schema_filter_for_month(
 	int $uni_promo_filter,
 	bool $require_zero_interest = false,
 	?WC_Product $product = null
-): ?array {
+): array {
 	if ( null === $product ) {
 		$product = mtuc_get_current_wc_product();
 	}
 
 	if ( ! $product instanceof WC_Product ) {
-		return null;
+		return array();
 	}
 
 	$by_schema = $shop['kop']['by_schema'] ?? null;
 	if ( ! is_array( $by_schema ) ) {
-		return null;
+		return array();
 	}
 
 	$filters = $by_schema['filters'] ?? null;
 	if ( ! is_array( $filters ) ) {
-		return null;
+		return array();
 	}
 
 	$product_id   = $product->get_id();
 	$category_ids = mtuc_get_product_category_ids( $product );
-	$best         = null;
-	$best_score   = -1;
+	$matches      = array();
 
 	foreach ( $filters as $filter ) {
 		if ( ! is_array( $filter ) ) {
@@ -423,7 +560,7 @@ function mtuc_find_schema_filter_for_month(
 			continue;
 		}
 
-		$allowed_months = mtuc_parse_underscore_ints( isset( $filter['uni_meseci'] ) ? (string) $filter['uni_meseci'] : '' );
+		$allowed_months = mtuc_get_schema_filter_allowed_months( $filter, $shop );
 		if ( ! in_array( $months, $allowed_months, true ) ) {
 			continue;
 		}
@@ -445,19 +582,100 @@ function mtuc_find_schema_filter_for_month(
 			}
 		}
 
-		$score = 1 === (int) ( $filter['uni_parva'] ?? 0 ) ? 2 : 1;
+		$matches[] = array(
+			'filter'      => $filter,
+			'coeff_entry' => $coeff_entry,
+			'kop_code'    => $kop_code,
+			'kop_desc'    => isset( $filter['uni_kop_desc'] ) ? trim( (string) $filter['uni_kop_desc'] ) : '',
+		);
+	}
+
+	return $matches;
+}
+
+/**
+ * Find a schema filter row for a specific installment count.
+ *
+ * @param array<string, mixed>             $shop                  Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list            Coefficient rows.
+ * @param float                            $price                 Product price including tax.
+ * @param int                              $months                Selected installment count.
+ * @param int                              $uni_promo_filter      Filter rows where uni_promo equals this value.
+ * @param bool                             $require_zero_interest Require interestPercent == 0.
+ * @return array<string, mixed>|null
+ */
+function mtuc_find_schema_filter_for_month(
+	array $shop,
+	array $coeff_list,
+	float $price,
+	int $months,
+	int $uni_promo_filter,
+	bool $require_zero_interest = false,
+	?WC_Product $product = null
+): ?array {
+	$matches    = mtuc_find_all_schema_filters_for_month(
+		$shop,
+		$coeff_list,
+		$price,
+		$months,
+		$uni_promo_filter,
+		$require_zero_interest,
+		$product
+	);
+	$best       = null;
+	$best_score = -1;
+
+	foreach ( $matches as $match ) {
+		$filter = $match['filter'];
+		$score  = 1 === (int) ( $filter['uni_parva'] ?? 0 ) ? 2 : 1;
 		if ( $score > $best_score ) {
 			$best_score = $score;
-			$best       = array(
-				'filter'      => $filter,
-				'coeff_entry' => $coeff_entry,
-				'kop_code'    => $kop_code,
-				'kop_desc'    => isset( $filter['uni_kop_desc'] ) ? trim( (string) $filter['uni_kop_desc'] ) : '',
-			);
+			$best       = $match;
 		}
 	}
 
 	return $best;
+}
+
+/**
+ * Find a specific schema filter row by id for an installment count.
+ *
+ * @param array<string, mixed>             $shop                  Shop `data` object from CP.
+ * @param array<int, array<string, mixed>> $coeff_list            Coefficient rows.
+ * @param float                            $price                 Product price including tax.
+ * @param int                              $months                Selected installment count.
+ * @param int                              $filter_id             Schema filter id.
+ * @param int                              $uni_promo_filter      Filter rows where uni_promo equals this value.
+ * @param bool                             $require_zero_interest Require interestPercent == 0.
+ * @return array<string, mixed>|null
+ */
+function mtuc_find_schema_filter_by_id_for_month(
+	array $shop,
+	array $coeff_list,
+	float $price,
+	int $months,
+	int $filter_id,
+	int $uni_promo_filter,
+	bool $require_zero_interest = false,
+	?WC_Product $product = null
+): ?array {
+	foreach (
+		mtuc_find_all_schema_filters_for_month(
+			$shop,
+			$coeff_list,
+			$price,
+			$months,
+			$uni_promo_filter,
+			$require_zero_interest,
+			$product
+		) as $match
+	) {
+		if ( $filter_id === (int) ( $match['filter']['id'] ?? 0 ) ) {
+			return $match;
+		}
+	}
+
+	return null;
 }
 
 /**
@@ -468,6 +686,7 @@ function mtuc_find_schema_filter_for_month(
  * @param float                            $price      Product price including tax.
  * @param int                              $months     Selected installment count.
  * @param string                           $offer_type standard|promo.
+ * @param int                              $filter_id  Schema filter id (0 = best match).
  * @return array<string, mixed>|null
  */
 function mtuc_resolve_popup_scheme(
@@ -476,13 +695,27 @@ function mtuc_resolve_popup_scheme(
 	float $price,
 	int $months,
 	string $offer_type,
-	?WC_Product $product = null
+	?WC_Product $product = null,
+	int $filter_id = 0
 ): ?array {
 	$uni_promo_filter      = ( 'promo' === $offer_type ) ? 1 : 0;
 	$require_zero_interest = ( 'promo' === $offer_type );
 	$typekop               = (int) ( $shop['uni_typekop'] ?? -1 );
 
 	if ( 1 === $typekop ) {
+		if ( $filter_id > 0 ) {
+			return mtuc_find_schema_filter_by_id_for_month(
+				$shop,
+				$coeff_list,
+				$price,
+				$months,
+				$filter_id,
+				$uni_promo_filter,
+				$require_zero_interest,
+				$product
+			);
+		}
+
 		return mtuc_find_schema_filter_for_month(
 			$shop,
 			$coeff_list,
@@ -547,6 +780,7 @@ function mtuc_resolve_popup_scheme(
  * @param int                              $months     Selected installment count.
  * @param string                           $offer_type standard|promo.
  * @param float                            $parva      User-entered initial payment.
+ * @param int                              $filter_id  Schema filter id (0 for default KOP / promo best match).
  * @return array<string, mixed>|WP_Error
  */
 function mtuc_calculate_popup_credit(
@@ -556,16 +790,15 @@ function mtuc_calculate_popup_credit(
 	int $months,
 	string $offer_type,
 	float $parva = 0.0,
-	?WC_Product $product = null
+	?WC_Product $product = null,
+	int $filter_id = 0
 ) {
-	$enabled_months = mtuc_extract_popup_month_values(
-		mtuc_get_popup_enabled_months( $shop, $coeff_list, $price, $offer_type, $product )
-	);
-	if ( ! in_array( $months, $enabled_months, true ) ) {
+	$enabled_options = mtuc_get_popup_enabled_months( $shop, $coeff_list, $price, $offer_type, $product );
+	if ( ! mtuc_is_popup_scheme_option_enabled( $enabled_options, $months, $filter_id ) ) {
 		return new WP_Error( 'mtuc_popup_invalid_months', __( 'Избраният срок не е наличен.', 'mtunicredit' ) );
 	}
 
-	$scheme = mtuc_resolve_popup_scheme( $shop, $coeff_list, $price, $months, $offer_type, $product );
+	$scheme = mtuc_resolve_popup_scheme( $shop, $coeff_list, $price, $months, $offer_type, $product, $filter_id );
 	if ( null === $scheme ) {
 		return new WP_Error( 'mtuc_popup_no_scheme', __( 'Няма налична схема за избраните параметри.', 'mtunicredit' ) );
 	}
@@ -604,6 +837,8 @@ function mtuc_calculate_popup_credit(
 	return array(
 		'months'              => $months,
 		'offer_type'          => $offer_type,
+		'filter_id'           => $filter_id,
+		'scheme_key'          => mtuc_build_popup_scheme_option_key( $months, $filter_id ),
 		'kop_code'            => (string) $scheme['kop_code'],
 		'price'               => round( $price, 2 ),
 		'parva'               => $parva,
@@ -637,8 +872,17 @@ function mtuc_ajax_popup_calculate(): void {
 		);
 	}
 
-	$months = isset( $_POST['months'] ) ? absint( wp_unslash( $_POST['months'] ) ) : 0;
-	$type   = isset( $_POST['offer_type'] ) ? sanitize_key( wp_unslash( $_POST['offer_type'] ) ) : 'standard';
+	$scheme_key = isset( $_POST['scheme_key'] ) ? sanitize_text_field( wp_unslash( $_POST['scheme_key'] ) ) : '';
+	$filter_id  = isset( $_POST['filter_id'] ) ? absint( wp_unslash( $_POST['filter_id'] ) ) : 0;
+	$months     = isset( $_POST['months'] ) ? absint( wp_unslash( $_POST['months'] ) ) : 0;
+
+	if ( '' !== $scheme_key ) {
+		$parsed    = mtuc_parse_popup_scheme_option_key( $scheme_key );
+		$months    = (int) $parsed['months'];
+		$filter_id = (int) $parsed['filter_id'];
+	}
+
+	$type = isset( $_POST['offer_type'] ) ? sanitize_key( wp_unslash( $_POST['offer_type'] ) ) : 'standard';
 
 	if ( ! in_array( $type, array( 'standard', 'promo' ), true ) ) {
 		wp_send_json_error(
@@ -683,7 +927,7 @@ function mtuc_ajax_popup_calculate(): void {
 	}
 
 	$coeff_list = mtuc_get_shop_coeff_list( $shop );
-	$result     = mtuc_calculate_popup_credit( $shop, $coeff_list, $price, $months, $type, $parva, $product );
+	$result     = mtuc_calculate_popup_credit( $shop, $coeff_list, $price, $months, $type, $parva, $product, $filter_id );
 
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error(

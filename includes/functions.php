@@ -460,7 +460,7 @@ function mtuc_resolve_schema_button_offer(
 			continue;
 		}
 
-		$allowed_months = mtuc_parse_underscore_ints( isset( $filter['uni_meseci'] ) ? (string) $filter['uni_meseci'] : '' );
+		$allowed_months = mtuc_get_schema_filter_allowed_months( $filter, $shop );
 		if ( empty( $allowed_months ) ) {
 			continue;
 		}
@@ -620,7 +620,73 @@ function mtuc_parse_underscore_ints( string $raw ): array {
 }
 
 /**
+ * Enabled installment counts from shop settings.
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return array<int, int>
+ */
+function mtuc_get_shop_enabled_months( array $shop ): array {
+	$choices = array( 3, 4, 5, 6, 9, 10, 12, 15, 18, 24, 30, 36 );
+	$enabled = array();
+
+	foreach ( $choices as $months ) {
+		if ( mtuc_is_yes_flag( $shop[ 'uni_meseci_' . $months ] ?? 0 ) ) {
+			$enabled[] = $months;
+		}
+	}
+
+	return $enabled;
+}
+
+/**
+ * Allowed installment months for a schema filter row.
+ *
+ * Empty/null uni_meseci means all shop-enabled months (catch-all filter).
+ *
+ * @param array<string, mixed> $filter Schema filter row from CP.
+ * @param array<string, mixed> $shop   Shop `data` object from CP.
+ * @return array<int, int>
+ */
+function mtuc_get_schema_filter_allowed_months( array $filter, array $shop ): array {
+	$shop_months = mtuc_get_shop_enabled_months( $shop );
+
+	if ( ! mtuc_schema_filter_field_has_value( $filter['uni_meseci'] ?? null ) ) {
+		return $shop_months;
+	}
+
+	$filter_months = mtuc_parse_underscore_ints( (string) $filter['uni_meseci'] );
+
+	return array_values( array_intersect( $shop_months, $filter_months ) );
+}
+
+/**
+ * Pick the button offer with the lowest monthly installment.
+ *
+ * @param array<int, array<string, mixed>> $offers Resolved button offers.
+ * @return array<string, mixed>|null
+ */
+function mtuc_pick_lowest_monthly_button_offer( array $offers ): ?array {
+	if ( empty( $offers ) ) {
+		return null;
+	}
+
+	$best             = null;
+	$best_installment = null;
+
+	foreach ( $offers as $offer ) {
+		$installment = (float) ( $offer['monthly_installment'] ?? 0 );
+		if ( null === $best_installment || $installment < $best_installment ) {
+			$best_installment = $installment;
+			$best             = $offer;
+		}
+	}
+
+	return $best;
+}
+
+/**
  * Pick button offer: prefer uni_shema_current when available, else highest month count.
+ * When multiple offers tie on those criteria, pick the lowest monthly installment.
  *
  * @param array<int, array<string, mixed>> $candidates Resolved button offers.
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
@@ -634,25 +700,37 @@ function mtuc_pick_preferred_button_offer( array $candidates, array $shop ): ?ar
 	$preferred = (int) ( $shop['uni_shema_current'] ?? 0 );
 
 	if ( $preferred > 0 ) {
+		$preferred_matches = array();
+
 		foreach ( $candidates as $offer ) {
 			if ( $preferred === (int) ( $offer['installment_count'] ?? 0 ) ) {
-				return $offer;
+				$preferred_matches[] = $offer;
 			}
+		}
+
+		if ( ! empty( $preferred_matches ) ) {
+			return mtuc_pick_lowest_monthly_button_offer( $preferred_matches );
 		}
 	}
 
-	$best        = null;
 	$best_months = 0;
 
 	foreach ( $candidates as $offer ) {
 		$months = (int) ( $offer['installment_count'] ?? 0 );
 		if ( $months > $best_months ) {
 			$best_months = $months;
-			$best        = $offer;
 		}
 	}
 
-	return $best;
+	$max_month_matches = array();
+
+	foreach ( $candidates as $offer ) {
+		if ( $best_months === (int) ( $offer['installment_count'] ?? 0 ) ) {
+			$max_month_matches[] = $offer;
+		}
+	}
+
+	return mtuc_pick_lowest_monthly_button_offer( $max_month_matches );
 }
 
 /**
@@ -1245,8 +1323,8 @@ function mtuc_enqueue_product_assets(): void {
 			'enabledMonthsByOffer'   => isset( $popup_context['enabled_months_by_offer'] ) && is_array( $popup_context['enabled_months_by_offer'] )
 				? $popup_context['enabled_months_by_offer']
 				: array(),
-			'defaultMonthsByOffer'   => isset( $popup_context['default_months_by_offer'] ) && is_array( $popup_context['default_months_by_offer'] )
-				? $popup_context['default_months_by_offer']
+			'defaultSchemeByOffer'   => isset( $popup_context['default_scheme_by_offer'] ) && is_array( $popup_context['default_scheme_by_offer'] )
+				? $popup_context['default_scheme_by_offer']
 				: array(),
 			'currencyDual'           => ! empty( $popup_context['currency']['dual'] ),
 			'i18n'                   => array(

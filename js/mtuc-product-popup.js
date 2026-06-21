@@ -89,15 +89,32 @@
 			return "";
 		};
 
+		const getMonthOptionKey = (entry) => {
+			if (entry && typeof entry === "object" && entry.key) {
+				return String(entry.key);
+			}
+
+			const months = getMonthOptionValue(entry);
+			return months ? String(months) + ":0" : "";
+		};
+
+		const parseSchemeKey = (schemeKey) => {
+			const parts = String(schemeKey || "").split(":");
+			return {
+				months: parseInt(parts[0], 10) || 0,
+				filterId: parseInt(parts[1], 10) || 0,
+			};
+		};
+
 		const rebuildMonthsSelect = (offerType) => {
 			const enabled =
 				(mtucPopup.enabledMonthsByOffer &&
 					mtucPopup.enabledMonthsByOffer[offerType]) ||
 				[];
 			const preferred =
-				(mtucPopup.defaultMonthsByOffer &&
-					mtucPopup.defaultMonthsByOffer[offerType]) ||
-				0;
+				(mtucPopup.defaultSchemeByOffer &&
+					mtucPopup.defaultSchemeByOffer[offerType]) ||
+				"";
 
 			$months.empty();
 
@@ -109,36 +126,37 @@
 					}),
 				);
 				$months.prop("disabled", true);
-				return 0;
+				return "";
 			}
 
-			const monthValues = [];
+			const schemeKeys = [];
 
 			enabled.forEach((entry) => {
 				const months = getMonthOptionValue(entry);
 				const desc = getMonthOptionDesc(entry);
+				const schemeKey = getMonthOptionKey(entry);
 
-				if (!months) {
+				if (!months || !schemeKey) {
 					return;
 				}
 
-				monthValues.push(String(months));
+				schemeKeys.push(schemeKey);
 				$months.append(
 					$("<option>", {
-						value: months,
+						value: schemeKey,
 						text: formatMonthLabel(months, desc),
 					}),
 				);
 			});
 
 			$months.prop("disabled", false);
-			if (monthValues.indexOf(String(preferred)) !== -1) {
+			if (schemeKeys.indexOf(String(preferred)) !== -1) {
 				$months.val(String(preferred));
-			} else if (monthValues.length) {
-				$months.val(monthValues[0]);
+			} else if (schemeKeys.length) {
+				$months.val(schemeKeys[0]);
 			}
 
-			return parseInt($months.val(), 10) || 0;
+			return String($months.val() || "");
 		};
 
 		const openPopup = (offerType) => {
@@ -198,8 +216,9 @@
 		};
 
 		const calculateNow = () => {
-			const months = parseInt($months.val(), 10);
-			if (!months) {
+			const schemeKey = String($months.val() || "");
+			const scheme = parseSchemeKey(schemeKey);
+			if (!scheme.months) {
 				return;
 			}
 			const parva = parseFloat($parva.val()) || 0;
@@ -213,7 +232,9 @@
 					parseInt($("#mtuc-popup-product-id").val(), 10) ||
 					mtucPopup.productId,
 				offer_type: $offerType.val(),
-				months: months,
+				scheme_key: schemeKey,
+				months: scheme.months,
+				filter_id: scheme.filterId,
 				parva: parva.toFixed(2),
 			})
 				.done((response) => {
