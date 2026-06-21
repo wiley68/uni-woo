@@ -8,11 +8,19 @@
 		}
 
 		const movePopupToBody = () => {
+			if (!document.body) {
+				return;
+			}
+
 			if (popup.parentNode !== document.body) {
+				document.body.insertBefore(popup, document.body.firstChild);
+				return;
+			}
+
+			if (document.body.firstChild !== popup) {
 				document.body.insertBefore(popup, document.body.firstChild);
 			}
 		};
-		movePopupToBody();
 
 		const $popup = $(popup);
 		const $step1 = $("#mtuc-popup-step-1");
@@ -175,6 +183,7 @@
 		};
 
 		const openPopup = (offerType) => {
+			movePopupToBody();
 			$offerType.val(offerType);
 			showStep(1);
 			resetParvaInput();
