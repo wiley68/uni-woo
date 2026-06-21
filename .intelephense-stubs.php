@@ -358,6 +358,15 @@ function sanitize_text_field(string $str): string
 	return $str;
 }
 
+/**
+ * @param string $key
+ * @return string
+ */
+function sanitize_key( $key ): string
+{
+	return (string) $key;
+}
+
 function sanitize_email($email) {}
 function absint($maybeint) {}
 
@@ -504,7 +513,13 @@ function trailingslashit(string $string): string
 	return $string;
 }
 
-function wp_get_current_user() {}
+/**
+ * @return WP_User
+ */
+function wp_get_current_user(): WP_User
+{
+	return new WP_User();
+}
 function wp_kses(string $content, array $allowed_html, array $allowed_protocols = array()): string
 {
 	unset($allowed_html, $allowed_protocols);
@@ -568,6 +583,15 @@ class WP_User
 {
 	/** @var int */
 	public $ID;
+
+	/** @var string */
+	public $first_name = '';
+
+	/** @var string */
+	public $last_name = '';
+
+	/** @var string */
+	public $user_email = '';
 }
 
 class WP_Screen
@@ -806,6 +830,60 @@ class WC_Product
 	public function get_category_ids(): array
 	{
 		return array();
+	}
+}
+
+/**
+ * @param int|false $customer_id
+ * @return WC_Customer|false
+ */
+function wc_get_customer($customer_id = false)
+{
+	unset($customer_id);
+
+	return false;
+}
+
+class WC_Customer
+{
+	public function get_billing_first_name(): string
+	{
+		return '';
+	}
+
+	public function get_billing_last_name(): string
+	{
+		return '';
+	}
+
+	public function get_billing_email(): string
+	{
+		return '';
+	}
+
+	public function get_billing_phone(): string
+	{
+		return '';
+	}
+
+	public function get_billing_address_1(): string
+	{
+		return '';
+	}
+
+	public function get_billing_address_2(): string
+	{
+		return '';
+	}
+
+	public function get_billing_city(): string
+	{
+		return '';
+	}
+
+	public function get_billing_postcode(): string
+	{
+		return '';
 	}
 }
 

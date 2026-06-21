@@ -1035,6 +1035,10 @@ function mtuc_get_product_calculator_context(): ?array {
 		'is_dark_button'   => $is_dark_button,
 		'logo_url'         => mtuc_get_uni_logo_url( $is_dark_button ),
 		'gap'              => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
+		'popup'            => mtuc_get_product_popup_context( $shop, array(
+			'standard' => $offer['standard'],
+			'promo'    => $offer['promo'],
+		) ),
 	);
 
 	return $context;
@@ -1068,6 +1072,8 @@ function mtuc_register_product_hooks(): void {
 
 	add_action( $hook, 'mtuc_render_product_calculator', 15 );
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_product_assets' );
+
+	mtuc_register_product_popup_hooks();
 }
 
 /**
@@ -1080,7 +1086,14 @@ function mtuc_enqueue_product_assets(): void {
 		return;
 	}
 
-	$css_file = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
+	$context = mtuc_get_product_calculator_context();
+	if ( null === $context ) {
+		return;
+	}
+
+	$css_file  = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
+	$popup_css = MTUC_PLUGIN_DIR . '/css/mtuc-popup.css';
+	$popup_js  = MTUC_PLUGIN_DIR . '/js/mtuc-product-popup.js';
 
 	mtuc_enqueue_fonts();
 
@@ -1089,6 +1102,39 @@ function mtuc_enqueue_product_assets(): void {
 		MTUC_CSS_URI . '/mtuc-product.css',
 		array( 'mtuc-fonts' ),
 		file_exists( $css_file ) ? (string) filemtime( $css_file ) : MTUC_VERSION
+	);
+
+	wp_enqueue_style(
+		'mtuc-popup',
+		MTUC_CSS_URI . '/mtuc-popup.css',
+		array( 'mtuc-product' ),
+		file_exists( $popup_css ) ? (string) filemtime( $popup_css ) : MTUC_VERSION
+	);
+
+	wp_enqueue_script(
+		'mtuc-product-popup',
+		MTUC_JS_URI . '/mtuc-product-popup.js',
+		array( 'jquery' ),
+		file_exists( $popup_js ) ? (string) filemtime( $popup_js ) : MTUC_VERSION,
+		true
+	);
+
+	$popup_context = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
+
+	wp_localize_script(
+		'mtuc-product-popup',
+		'mtucPopup',
+		array(
+			'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+			'nonce'         => wp_create_nonce( 'mtuc_popup' ),
+			'defaultMonths' => (int) ( $popup_context['default_months'] ?? 0 ),
+			'currencyDual'  => ! empty( $popup_context['currency']['dual'] ),
+			'i18n'          => array(
+				'calcError'      => __( 'Неуспешно изчисление. Моля, опитайте отново.', 'mtunicredit' ),
+				'addToCartError' => __( 'Не може да се добави в количката. Проверете опциите на продукта.', 'mtunicredit' ),
+				'submitPending'  => __( 'Изпращането на заявката ще бъде добавено на следващ етап.', 'mtunicredit' ),
+			),
+		)
 	);
 }
 
@@ -1259,3 +1305,5 @@ function mtuc_render_reklama_button(): void {
 	</div>
 	<?php
 }
+
+require_once MTUC_INCLUDES_DIR . '/mtuc-product-popup.php';
