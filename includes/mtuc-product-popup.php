@@ -55,7 +55,7 @@ function mtuc_get_shop_enabled_months( array $shop ): array {
  * @param float                            $price      Product price including tax.
  * @param string                           $offer_type standard|promo.
  * @param WC_Product|null                  $product    Product instance.
- * @return array<int, int>
+ * @return array<int, array{months:int,kop_code:string}>
  */
 function mtuc_get_popup_enabled_months(
 	array $shop,
@@ -68,23 +68,53 @@ function mtuc_get_popup_enabled_months(
 	$enabled     = array();
 
 	foreach ( $shop_months as $months ) {
-		if ( null !== mtuc_resolve_popup_scheme( $shop, $coeff_list, $price, $months, $offer_type, $product ) ) {
-			$enabled[] = $months;
+		$scheme = mtuc_resolve_popup_scheme( $shop, $coeff_list, $price, $months, $offer_type, $product );
+		if ( null === $scheme ) {
+			continue;
 		}
+
+		$enabled[] = array(
+			'months'   => $months,
+			'kop_code' => (string) ( $scheme['kop_code'] ?? '' ),
+		);
 	}
 
 	return $enabled;
 }
 
 /**
+ * Extract month values from popup month option rows.
+ *
+ * @param array<int, array{months:int,kop_code:string}|int> $enabled_options Popup month options.
+ * @return array<int, int>
+ */
+function mtuc_extract_popup_month_values( array $enabled_options ): array {
+	$values = array();
+
+	foreach ( $enabled_options as $option ) {
+		if ( is_array( $option ) && isset( $option['months'] ) ) {
+			$values[] = (int) $option['months'];
+			continue;
+		}
+
+		if ( is_numeric( $option ) ) {
+			$values[] = (int) $option;
+		}
+	}
+
+	return $values;
+}
+
+/**
  * Default installment count for popup select.
  *
- * @param array<string, mixed> $shop           Shop `data` object from CP.
- * @param array<int, int>      $enabled_months Allowed months for the offer.
+ * @param array<string, mixed>                              $shop            Shop `data` object from CP.
+ * @param array<int, array{months:int,kop_code:string}|int> $enabled_options Allowed month options for the offer.
  * @return int
  */
-function mtuc_pick_default_popup_month( array $shop, array $enabled_months ): int {
-	$preferred = (int) ( $shop['uni_shema_current'] ?? 0 );
+function mtuc_pick_default_popup_month( array $shop, array $enabled_options ): int {
+	$enabled_months = mtuc_extract_popup_month_values( $enabled_options );
+	$preferred      = (int) ( $shop['uni_shema_current'] ?? 0 );
 
 	if ( in_array( $preferred, $enabled_months, true ) ) {
 		return $preferred;
@@ -523,7 +553,9 @@ function mtuc_calculate_popup_credit(
 	float $parva = 0.0,
 	?WC_Product $product = null
 ) {
-	$enabled_months = mtuc_get_popup_enabled_months( $shop, $coeff_list, $price, $offer_type, $product );
+	$enabled_months = mtuc_extract_popup_month_values(
+		mtuc_get_popup_enabled_months( $shop, $coeff_list, $price, $offer_type, $product )
+	);
 	if ( ! in_array( $months, $enabled_months, true ) ) {
 		return new WP_Error( 'mtuc_popup_invalid_months', __( 'Избраният срок не е наличен.', 'mtunicredit' ) );
 	}

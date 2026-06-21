@@ -60,11 +60,33 @@
 			$step1.prop("hidden", false).addClass("mtuc-popup__step--active");
 		};
 
-		const formatMonthLabel = (months) => {
-			return (mtucPopup.i18n.monthsLabel || "%d месеца").replace(
+		const formatMonthLabel = (months, kopCode) => {
+			let label = (mtucPopup.i18n.monthsLabel || "%d месеца").replace(
 				"%d",
 				String(months),
 			);
+
+			if (kopCode) {
+				label += " (" + kopCode + ")";
+			}
+
+			return label;
+		};
+
+		const getMonthOptionValue = (entry) => {
+			if (entry && typeof entry === "object") {
+				return parseInt(entry.months, 10);
+			}
+
+			return parseInt(entry, 10);
+		};
+
+		const getMonthOptionKop = (entry) => {
+			if (entry && typeof entry === "object" && entry.kop_code) {
+				return String(entry.kop_code);
+			}
+
+			return "";
 		};
 
 		const rebuildMonthsSelect = (offerType) => {
@@ -90,24 +112,30 @@
 				return 0;
 			}
 
-			enabled.forEach((monthValue) => {
-				const months = parseInt(monthValue, 10);
+			const monthValues = [];
+
+			enabled.forEach((entry) => {
+				const months = getMonthOptionValue(entry);
+				const kopCode = getMonthOptionKop(entry);
+
+				if (!months) {
+					return;
+				}
+
+				monthValues.push(String(months));
 				$months.append(
 					$("<option>", {
 						value: months,
-						text: formatMonthLabel(months),
+						text: formatMonthLabel(months, kopCode),
 					}),
 				);
 			});
 
 			$months.prop("disabled", false);
-			if (
-				enabled.indexOf(preferred) !== -1 ||
-				enabled.indexOf(String(preferred)) !== -1
-			) {
+			if (monthValues.indexOf(String(preferred)) !== -1) {
 				$months.val(String(preferred));
-			} else {
-				$months.val(String(enabled[0]));
+			} else if (monthValues.length) {
+				$months.val(monthValues[0]);
 			}
 
 			return parseInt($months.val(), 10) || 0;
