@@ -234,6 +234,20 @@
 			$buyBtn.prop("disabled", false).removeClass("is-disabled");
 		};
 
+		const getProductLineContext = () => {
+			if (typeof window.mtucGetProductLineContext === "function") {
+				return window.mtucGetProductLineContext();
+			}
+
+			return {
+				linePrice: 0,
+				variationId: 0,
+				productId:
+					parseInt($("#mtuc-popup-product-id").val(), 10) ||
+					mtucPopup.productId,
+			};
+		};
+
 		const calculateNow = () => {
 			const schemeKey = String($months.val() || "");
 			const scheme = parseSchemeKey(schemeKey);
@@ -241,15 +255,16 @@
 				return;
 			}
 			const parva = parseFloat($parva.val()) || 0;
+			const lineContext = getProductLineContext();
 
 			$buyBtn.prop("disabled", true).addClass("is-disabled");
 
 			$.post(mtucPopup.ajaxUrl, {
 				action: "mtuc_popup_calculate",
 				security: mtucPopup.nonce,
-				product_id:
-					parseInt($("#mtuc-popup-product-id").val(), 10) ||
-					mtucPopup.productId,
+				product_id: lineContext.productId,
+				variation_id: lineContext.variationId,
+				line_price: lineContext.linePrice.toFixed(2),
 				offer_type: $offerType.val(),
 				scheme_key: schemeKey,
 				scheme_type: scheme.schemeType,
@@ -342,5 +357,50 @@
 				closePopup();
 			}
 		});
+
+		document.addEventListener(
+			"mtuc-calculator-refreshed",
+			function (event) {
+				const data =
+					event && event.detail && typeof event.detail === "object"
+						? event.detail
+						: null;
+
+				if (!data || !data.visible) {
+					if ($popup.hasClass("is-open")) {
+						closePopup();
+					}
+					return;
+				}
+
+				if (data.enabledMonthsByOffer) {
+					mtucPopup.enabledMonthsByOffer = data.enabledMonthsByOffer;
+				}
+
+				if (data.defaultSchemeByOffer) {
+					mtucPopup.defaultSchemeByOffer = data.defaultSchemeByOffer;
+				}
+
+				if (data.product_id) {
+					mtucPopup.productId = parseInt(data.product_id, 10);
+					$("#mtuc-popup-product-id").val(mtucPopup.productId);
+				}
+
+				if (!$popup.hasClass("is-open")) {
+					return;
+				}
+
+				resetParvaInput();
+				lastCalculation = null;
+				rebuildMonthsSelect($offerType.val());
+
+				if ($months.prop("disabled")) {
+					closePopup();
+					return;
+				}
+
+				calculateNow();
+			},
+		);
 	});
 })(jQuery);

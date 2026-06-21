@@ -286,10 +286,12 @@ function mtuc_get_shop_coeff_list( array $shop ): array {
  *
  * Main entry point for deciding whether/how to show the Standard and Promo buttons.
  *
- * @param array<string, mixed>|null $shop Shop `data` object from CP (defaults to cached shop).
+ * @param array<string, mixed>|null $shop    Shop `data` object from CP (defaults to cached shop).
+ * @param WC_Product|null           $product Product instance (defaults to current product page).
+ * @param float|null                $price   Line price including tax (defaults to current product price).
  * @return array<string, mixed>|null
  */
-function mtuc_get_product_calculator_offer( $shop = null ): ?array {
+function mtuc_get_product_calculator_offer( $shop = null, ?WC_Product $product = null, ?float $price = null ): ?array {
 	if ( null === $shop ) {
 		$shop = mtuc_get_shop_data();
 	}
@@ -298,14 +300,21 @@ function mtuc_get_product_calculator_offer( $shop = null ): ?array {
 		return null;
 	}
 
-	$price = mtuc_get_current_product_price();
+	if ( null === $product ) {
+		$product = mtuc_get_current_wc_product();
+	}
+
+	if ( null === $price ) {
+		$price = mtuc_get_product_price( $product );
+	}
+
 	if ( null === $price ) {
 		return null;
 	}
 
 	$coeff_list = mtuc_get_shop_coeff_list( $shop );
-	$standard   = mtuc_resolve_standard_button_offer( $shop, $coeff_list, $price );
-	$promo      = mtuc_resolve_promo_button_offer( $shop, $coeff_list, $price );
+	$standard   = mtuc_resolve_standard_button_offer( $shop, $coeff_list, $price, $product );
+	$promo      = mtuc_resolve_promo_button_offer( $shop, $coeff_list, $price, $product );
 
 	if ( null === $standard && null === $promo ) {
 		return null;
@@ -323,10 +332,11 @@ function mtuc_get_product_calculator_offer( $shop = null ): ?array {
  *
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
- * @param float                            $price      Product price including tax.
+ * @param float                            $price      Product line price including tax.
+ * @param WC_Product|null                  $product    Product instance for schema filters.
  * @return array<string, mixed>|null
  */
-function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, float $price ): ?array {
+function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, float $price, ?WC_Product $product = null ): ?array {
 	$typekop = (int) ( $shop['uni_typekop'] ?? -1 );
 
 	if ( 0 === $typekop ) {
@@ -334,7 +344,7 @@ function mtuc_resolve_standard_button_offer( array $shop, array $coeff_list, flo
 	}
 
 	if ( 1 === $typekop ) {
-		return mtuc_resolve_standard_schema_button_offer( $shop, $coeff_list, $price );
+		return mtuc_resolve_standard_schema_button_offer( $shop, $coeff_list, $price, $product );
 	}
 
 	return null;
@@ -384,11 +394,12 @@ function mtuc_resolve_standard_default_button_offer( array $shop, array $coeff_l
  *
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
- * @param float                            $price      Product price including tax.
+ * @param float                            $price      Product line price including tax.
+ * @param WC_Product|null                  $product    Product instance for schema filters.
  * @return array<string, mixed>|null
  */
-function mtuc_resolve_standard_schema_button_offer( array $shop, array $coeff_list, float $price ): ?array {
-	return mtuc_resolve_schema_button_offer( $shop, $coeff_list, $price, 'standard', 0, false );
+function mtuc_resolve_standard_schema_button_offer( array $shop, array $coeff_list, float $price, ?WC_Product $product = null ): ?array {
+	return mtuc_resolve_schema_button_offer( $shop, $coeff_list, $price, 'standard', 0, false, $product );
 }
 
 /**
@@ -396,11 +407,12 @@ function mtuc_resolve_standard_schema_button_offer( array $shop, array $coeff_li
  *
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
- * @param float                            $price      Product price including tax.
+ * @param float                            $price      Product line price including tax.
+ * @param WC_Product|null                  $product    Product instance for schema filters.
  * @return array<string, mixed>|null
  */
-function mtuc_resolve_promo_schema_button_offer( array $shop, array $coeff_list, float $price ): ?array {
-	return mtuc_resolve_schema_button_offer( $shop, $coeff_list, $price, 'promo', 1, true );
+function mtuc_resolve_promo_schema_button_offer( array $shop, array $coeff_list, float $price, ?WC_Product $product = null ): ?array {
+	return mtuc_resolve_schema_button_offer( $shop, $coeff_list, $price, 'promo', 1, true, $product );
 }
 
 /**
@@ -412,6 +424,7 @@ function mtuc_resolve_promo_schema_button_offer( array $shop, array $coeff_list,
  * @param string                           $button_type           standard|promo.
  * @param int                              $uni_promo_filter      Filter rows where uni_promo equals this value.
  * @param bool                             $require_zero_interest Require interestPercent == 0 on the coeff row.
+ * @param WC_Product|null                  $product               Product instance for schema filters.
  * @return array<string, mixed>|null
  */
 function mtuc_resolve_schema_button_offer(
@@ -420,9 +433,13 @@ function mtuc_resolve_schema_button_offer(
 	float $price,
 	string $button_type,
 	int $uni_promo_filter,
-	bool $require_zero_interest = false
+	bool $require_zero_interest = false,
+	?WC_Product $product = null
 ): ?array {
-	$product = mtuc_get_current_wc_product();
+	if ( null === $product ) {
+		$product = mtuc_get_current_wc_product();
+	}
+
 	if ( ! $product instanceof WC_Product ) {
 		return null;
 	}
@@ -796,10 +813,11 @@ function mtuc_find_best_coeff_for_months( array $coeff_list, string $kop_code, a
  *
  * @param array<string, mixed>             $shop       Shop `data` object from CP.
  * @param array<int, array<string, mixed>> $coeff_list Coefficient rows from cache.
- * @param float                            $price      Product price including tax.
+ * @param float                            $price      Product line price including tax.
+ * @param WC_Product|null                  $product    Product instance for schema filters.
  * @return array<string, mixed>|null
  */
-function mtuc_resolve_promo_button_offer( array $shop, array $coeff_list, float $price ): ?array {
+function mtuc_resolve_promo_button_offer( array $shop, array $coeff_list, float $price, ?WC_Product $product = null ): ?array {
 	$typekop = (int) ( $shop['uni_typekop'] ?? -1 );
 
 	if ( 0 === $typekop ) {
@@ -807,7 +825,7 @@ function mtuc_resolve_promo_button_offer( array $shop, array $coeff_list, float 
 	}
 
 	if ( 1 === $typekop ) {
-		return mtuc_resolve_promo_schema_button_offer( $shop, $coeff_list, $price );
+		return mtuc_resolve_promo_schema_button_offer( $shop, $coeff_list, $price, $product );
 	}
 
 	return null;
@@ -1216,7 +1234,10 @@ function mtuc_get_product_calculator_context(): ?array {
 		$button_height = 56;
 	}
 
+	$current_product = mtuc_get_current_wc_product();
+
 	$context = array(
+		'product_id'       => $current_product instanceof WC_Product ? $current_product->get_id() : 0,
 		'offer'            => $offer,
 		'standard'         => $offer['standard'],
 		'promo'            => $offer['promo'],
@@ -1283,9 +1304,12 @@ function mtuc_enqueue_product_assets(): void {
 		return;
 	}
 
-	$css_file  = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
-	$popup_css = MTUC_PLUGIN_DIR . '/css/mtuc-popup.css';
-	$popup_js  = MTUC_PLUGIN_DIR . '/js/mtuc-product-popup.js';
+	$css_file         = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
+	$popup_css        = MTUC_PLUGIN_DIR . '/css/mtuc-popup.css';
+	$calculator_js    = MTUC_PLUGIN_DIR . '/js/mtuc-product-calculator.js';
+	$popup_js         = MTUC_PLUGIN_DIR . '/js/mtuc-product-popup.js';
+	$current_product  = mtuc_get_current_wc_product();
+	$product_id       = $current_product instanceof WC_Product ? $current_product->get_id() : (int) ( $context['product_id'] ?? 0 );
 
 	mtuc_enqueue_fonts();
 
@@ -1304,9 +1328,17 @@ function mtuc_enqueue_product_assets(): void {
 	);
 
 	wp_enqueue_script(
+		'mtuc-product-calculator',
+		MTUC_JS_URI . '/mtuc-product-calculator.js',
+		array( 'jquery' ),
+		file_exists( $calculator_js ) ? (string) filemtime( $calculator_js ) : MTUC_VERSION,
+		true
+	);
+
+	wp_enqueue_script(
 		'mtuc-product-popup',
 		MTUC_JS_URI . '/mtuc-product-popup.js',
-		array( 'jquery' ),
+		array( 'jquery', 'mtuc-product-calculator' ),
 		file_exists( $popup_js ) ? (string) filemtime( $popup_js ) : MTUC_VERSION,
 		true
 	);
@@ -1314,12 +1346,22 @@ function mtuc_enqueue_product_assets(): void {
 	$popup_context = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
 
 	wp_localize_script(
+		'mtuc-product-calculator',
+		'mtucCalculator',
+		array(
+			'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+			'nonce'     => wp_create_nonce( 'mtuc_popup' ),
+			'productId' => $product_id,
+		)
+	);
+
+	wp_localize_script(
 		'mtuc-product-popup',
 		'mtucPopup',
 		array(
 			'ajaxUrl'                => admin_url( 'admin-ajax.php' ),
 			'nonce'                  => wp_create_nonce( 'mtuc_popup' ),
-			'productId'              => (int) ( $popup_context['product_id'] ?? 0 ),
+			'productId'              => $product_id,
 			'enabledMonthsByOffer'   => isset( $popup_context['enabled_months_by_offer'] ) && is_array( $popup_context['enabled_months_by_offer'] )
 				? $popup_context['enabled_months_by_offer']
 				: array(),

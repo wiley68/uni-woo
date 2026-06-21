@@ -821,6 +821,11 @@ class WC_Product
 		return 0;
 	}
 
+	public function get_parent_id(): int
+	{
+		return 0;
+	}
+
 	public function get_price(): string
 	{
 		return '';
