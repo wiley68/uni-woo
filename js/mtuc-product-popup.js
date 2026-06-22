@@ -42,6 +42,7 @@
 		const $phoneError = $("#mtuc-popup-phone-error");
 		const $emailError = $("#mtuc-popup-email-error");
 		let calculateTimer = null;
+		const PARVA_CALCULATE_DELAY = 900;
 		let lastCalculation = null;
 		let lastOpenTrigger = null;
 
@@ -414,6 +415,8 @@
 		};
 
 		const closePopup = () => {
+			window.clearTimeout(calculateTimer);
+			calculateTimer = null;
 			releasePopupFocus();
 			$popup
 				.removeClass("is-open")
@@ -518,7 +521,10 @@
 
 		const scheduleCalculate = () => {
 			window.clearTimeout(calculateTimer);
-			calculateTimer = window.setTimeout(calculateNow, 250);
+			calculateTimer = window.setTimeout(
+				calculateNow,
+				PARVA_CALCULATE_DELAY,
+			);
 		};
 
 		$(document).on(
@@ -538,7 +544,7 @@
 			calculateNow();
 		});
 
-		$parva.on("change blur", function () {
+		$parva.on("input change", function () {
 			if ($(this).prop("readonly")) {
 				return;
 			}
