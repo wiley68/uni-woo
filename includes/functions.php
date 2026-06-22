@@ -72,6 +72,15 @@ function mtuc_get_uni_logo_url( bool $for_dark_button = false ): string {
 }
 
 /**
+ * Mini UniCredit logo URL for popup buy button badge.
+ *
+ * @return string
+ */
+function mtuc_get_uni_mini_logo_url(): string {
+	return esc_url( MTUC_PLUGIN_URL . '/images/uni_mini_logo.png' );
+}
+
+/**
  * Build reklama context when the floating button should be shown.
  *
  * @param bool $settings_only Skip shop cache lookup (for asset enqueue).

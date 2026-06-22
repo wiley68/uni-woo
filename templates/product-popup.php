@@ -22,7 +22,7 @@ $banner_src         = '' !== $banner_url ? $banner_url : $banner_url_mobile;
 $has_banner         = '' !== $banner_src;
 $reklama_url         = isset( $popup['reklama_url'] ) ? (string) $popup['reklama_url'] : '';
 $product_id          = (int) ( $popup['product_id'] ?? 0 );
-$logo_url            = mtuc_get_uni_logo_url();
+$badge_logo_url      = mtuc_get_uni_mini_logo_url();
 $parva_row_class     = $show_first_vnoska ? '' : ' mtuc-popup__row--hidden';
 $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual' : '';
 ?>
@@ -147,10 +147,10 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 								</span>
 							</button>
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary" id="mtuc-popup-buy">
-								<span class="mtuc-popup__btn-badge" style="background-image:url('<?php echo esc_url( $logo_url ); ?>')"></span>
 								<span class="mtuc-popup__btn-inner">
 									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Купи на изплащане', 'mtunicredit' ); ?></span>
 								</span>
+								<span class="mtuc-popup__btn-badge" style="background-image:url('<?php echo esc_url( $badge_logo_url ); ?>')"></span>
 							</button>
 						</div>
 					</div>

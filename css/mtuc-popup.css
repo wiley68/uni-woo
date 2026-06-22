@@ -302,6 +302,7 @@ body.mtuc-popup-open {
 	position: relative;
 	top: var(--mtuc-btn-offset);
 	left: var(--mtuc-btn-offset);
+	z-index: 1;
 	display: block;
 	padding: 0 var(--mtuc-btn-reveal) var(--mtuc-btn-reveal) 0;
 	border: 3px solid var(--mtuc-popup-border);
@@ -422,13 +423,16 @@ body.mtuc-popup-open {
 	position: absolute;
 	left: -10px;
 	top: -10px;
+	z-index: 20;
 	width: 40px;
 	height: 40px;
 	border-radius: 20px;
+	background-color: #fff;
 	background-repeat: no-repeat;
 	background-position: center;
 	background-size: contain;
 	box-shadow: 6px 6px 7px rgba(105, 105, 105, 0.75);
+	pointer-events: none;
 }
 
 .mtuc-popup__step[hidden] {
