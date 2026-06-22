@@ -707,6 +707,7 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
 	return array(
 		'product_id'             => $product instanceof WC_Product ? $product->get_id() : 0,
 		'banner_url'             => mtuc_get_shop_picture_url( $shop, false ),
+		'banner_url_mobile'      => mtuc_get_shop_picture_url( $shop, true ),
 		'reklama_url'            => $reklama_url,
 		'show_first_vnoska'      => mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 ),
 		'shop_months'            => $shop_months,

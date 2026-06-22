@@ -15,30 +15,46 @@
 	font-family: var(--mtuc-font-family, "Roboto Condensed", sans-serif);
 }
 
-.mtuc-popup.is-open {
-	display: block;
-}
-
 .mtuc-popup *,
 .mtuc-popup *::before,
 .mtuc-popup *::after {
 	box-sizing: border-box;
 }
 
+.mtuc-popup.is-open {
+	display: block;
+	overflow: hidden;
+	height: 100%;
+	max-height: 100vh;
+	max-height: 100dvh;
+}
+
+body.mtuc-popup-open {
+	overflow: hidden;
+}
+
 .mtuc-popup__overlay {
 	position: absolute;
 	inset: 0;
+	z-index: 0;
 	background: rgba(0, 0, 0, 0.4);
 }
 
 .mtuc-popup__dialog {
 	position: relative;
+	z-index: 1;
 	display: flex;
 	align-items: flex-start;
 	justify-content: center;
-	min-height: 100%;
+	box-sizing: border-box;
+	width: 100%;
+	height: 100%;
+	max-height: 100%;
 	padding: 24px 12px;
-	overflow: auto;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
 }
 
 .mtuc-popup__content {
@@ -56,6 +72,10 @@
 
 .mtuc-popup__banner {
 	line-height: 0;
+}
+
+.mtuc-popup__banner picture {
+	display: block;
 }
 
 .mtuc-popup__banner-image {
@@ -262,38 +282,140 @@
 }
 
 .mtuc-popup__btn {
+	--mtuc-btn-offset: 4px;
+	--mtuc-btn-reveal: 1px;
 	position: relative;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
+	display: inline-block;
 	min-width: 140px;
-	padding: 8px 20px;
+	padding: 0 var(--mtuc-btn-reveal) var(--mtuc-btn-reveal) 0;
+	border: 0;
+	border-radius: 6px;
+	background: #a1a1aa;
+	font: inherit;
+	text-align: center;
+	cursor: pointer;
+	appearance: none;
+	-webkit-appearance: none;
+}
+
+.mtuc-popup__btn-inner {
+	position: relative;
+	top: var(--mtuc-btn-offset);
+	left: var(--mtuc-btn-offset);
+	display: block;
+	padding: 0 var(--mtuc-btn-reveal) var(--mtuc-btn-reveal) 0;
 	border: 3px solid var(--mtuc-popup-border);
 	border-radius: 6px;
 	box-shadow: 1px 1px 1px 1px var(--mtuc-popup-shadow);
-	font: inherit;
+	background: #fff;
+}
+
+.mtuc-popup__btn-label {
+	display: block;
+	padding: 8px 20px;
+	background: #a1a1aa;
+	color: #fff;
 	font-size: 18px;
 	font-weight: 400;
 	line-height: 1.2;
-	cursor: pointer;
+	text-align: center;
+	text-shadow: 1px 1px #729696;
 }
 
 .mtuc-popup__btn--secondary {
 	background: #a1a1aa;
 	color: #fff;
-	text-shadow: 1px 1px #729696;
 }
 
 .mtuc-popup__btn--primary {
 	background: var(--mtuc-popup-red);
 	color: #fff;
-	text-shadow: 1px 1px #729696;
+}
+
+.mtuc-popup__btn--primary .mtuc-popup__btn-label {
+	background: var(--mtuc-popup-red);
 }
 
 .mtuc-popup__btn--primary.is-disabled,
 .mtuc-popup__btn--primary:disabled {
 	background: #a1a1aa;
 	cursor: not-allowed;
+}
+
+.mtuc-popup__btn--primary.is-disabled .mtuc-popup__btn-label,
+.mtuc-popup__btn--primary:disabled .mtuc-popup__btn-label {
+	background: #a1a1aa;
+}
+
+.mtuc-popup button.mtuc-popup__btn,
+.mtuc-popup button.mtuc-popup__btn:hover,
+.mtuc-popup button.mtuc-popup__btn:focus,
+.mtuc-popup button.mtuc-popup__btn:focus-visible,
+.mtuc-popup button.mtuc-popup__btn:active {
+	transition: none;
+	outline: none;
+	box-shadow: none;
+	filter: none;
+	text-decoration: none;
+	background-image: none;
+}
+
+.mtuc-popup button.mtuc-popup__btn--secondary:hover,
+.mtuc-popup button.mtuc-popup__btn--secondary:focus,
+.mtuc-popup button.mtuc-popup__btn--secondary:focus-visible,
+.mtuc-popup button.mtuc-popup__btn--secondary:active {
+	background: #a1a1aa;
+	color: #fff;
+}
+
+.mtuc-popup button.mtuc-popup__btn--secondary:hover .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--secondary:focus .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--secondary:focus-visible .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--secondary:active .mtuc-popup__btn-label {
+	background: #a1a1aa;
+	color: #fff;
+}
+
+.mtuc-popup button.mtuc-popup__btn--primary:hover:not(:disabled):not(.is-disabled),
+.mtuc-popup button.mtuc-popup__btn--primary:focus:not(:disabled):not(.is-disabled),
+.mtuc-popup button.mtuc-popup__btn--primary:focus-visible:not(:disabled):not(.is-disabled),
+.mtuc-popup button.mtuc-popup__btn--primary:active:not(:disabled):not(.is-disabled) {
+	background: var(--mtuc-popup-red);
+	color: #fff;
+}
+
+.mtuc-popup button.mtuc-popup__btn--primary:hover:not(:disabled):not(.is-disabled) .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary:focus:not(:disabled):not(.is-disabled) .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary:focus-visible:not(:disabled):not(.is-disabled) .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary:active:not(:disabled):not(.is-disabled) .mtuc-popup__btn-label {
+	background: var(--mtuc-popup-red);
+	color: #fff;
+}
+
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:hover,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:hover,
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:focus,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:focus,
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:active,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:active {
+	background: #a1a1aa;
+}
+
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:hover .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:hover .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:focus .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:focus .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:active .mtuc-popup__btn-label,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:active .mtuc-popup__btn-label {
+	background: #a1a1aa;
+}
+
+.mtuc-popup button.mtuc-popup__btn:hover .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn:focus .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn:focus-visible .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn:active .mtuc-popup__btn-inner {
+	border-color: var(--mtuc-popup-border);
+	box-shadow: 1px 1px 1px 1px var(--mtuc-popup-shadow);
 }
 
 .mtuc-popup__btn-badge {
@@ -324,9 +446,9 @@
 
 	.mtuc-popup__calc-fields {
 		width: 100%;
-		padding: 12px 12px 12px 100px;
+		padding: 12px;
 		border-radius: 14px;
-		background-size: 120px 120px;
+		background-image: none;
 	}
 
 	.mtuc-popup__row {
@@ -356,6 +478,13 @@
 
 	.mtuc-popup__btn {
 		width: 100%;
+		--mtuc-btn-offset: 3px;
+		border-radius: 3px;
+	}
+
+	.mtuc-popup__btn-inner {
+		border-width: 2px;
+		border-radius: 3px;
 	}
 }
 
