@@ -72,6 +72,7 @@ $mtuc_files = array(
 	'/admin.php',
 	'/functions.php',
 	'/mtuc-product-popup.php',
+	'/mtuc-popup-order.php',
 );
 
 foreach ( $mtuc_files as $file ) {
@@ -128,6 +129,7 @@ function mtuc_plugin_bootstrap() {
 
 	Mtuc_Rest_Api::init();
 	mtuc_register_product_popup_ajax_hooks();
+	mtuc_register_popup_order_hooks();
 	mtuc_register_product_hooks();
 	mtuc_register_reklama_hooks();
 }

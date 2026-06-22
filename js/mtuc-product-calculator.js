@@ -282,12 +282,19 @@
 		}
 
 		window.mtucGetProductLineContext = function () {
+			const quantity = parseInt(
+				$('input[name="quantity"]').first().val(),
+				10,
+			);
+			const qty = Number.isNaN(quantity) || quantity <= 0 ? 1 : quantity;
+
 			return {
 				linePrice: getLinePrice(),
 				variationId: variationId || 0,
 				productId:
 					parseInt($root.data("mtuc-product-id"), 10) ||
 					mtucCalculator.productId,
+				quantity: qty,
 			};
 		};
 

@@ -694,6 +694,18 @@ function wc_get_order($order = false): ?WC_Order
 
 	return null;
 }
+
+/**
+ * @param array<string, mixed> $args
+ * @return WC_Order|WP_Error
+ */
+function wc_create_order($args = array())
+{
+	unset($args);
+
+	return new WC_Order();
+}
+
 function wc_create_refund($args = array())
 {
 	unset($args);
@@ -803,6 +815,22 @@ function wc_get_price_including_tax($product, $args = array()): float
 	return 0.0;
 }
 
+function wc_prices_include_tax(): bool
+{
+	return false;
+}
+
+/**
+ * @param mixed $product
+ * @param array<string, mixed> $args
+ */
+function wc_get_price_excluding_tax($product, $args = array()): float
+{
+	unset($product, $args);
+
+	return 0.0;
+}
+
 /**
  * @param mixed $the_product
  * @param array<string, mixed> $deprecated
@@ -835,6 +863,23 @@ class WC_Product
 	public function get_category_ids(): array
 	{
 		return array();
+	}
+
+	public function is_type(string $type): bool
+	{
+		unset($type);
+
+		return false;
+	}
+
+	public function is_purchasable(): bool
+	{
+		return true;
+	}
+
+	public function is_in_stock(): bool
+	{
+		return true;
 	}
 }
 
@@ -886,7 +931,57 @@ class WC_Customer
 		return '';
 	}
 
+	public function get_billing_state(): string
+	{
+		return '';
+	}
+
 	public function get_billing_postcode(): string
+	{
+		return '';
+	}
+
+	public function get_billing_country(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_first_name(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_last_name(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_address_1(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_address_2(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_city(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_state(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_postcode(): string
+	{
+		return '';
+	}
+
+	public function get_shipping_country(): string
 	{
 		return '';
 	}
@@ -931,10 +1026,21 @@ class WC_Payment_Gateways
 	}
 }
 
+class WC_Session
+{
+	public function get_customer_id(): string
+	{
+		return '';
+	}
+}
+
 class WooCommerce
 {
 	/** @var WC_Cart|null */
 	public $cart;
+
+	/** @var WC_Session|null */
+	public $session;
 
 	public function payment_gateways(): WC_Payment_Gateways
 	{
@@ -990,6 +1096,26 @@ class WC_Order_Item_Product
 	public function get_total(): string
 	{
 		return '0';
+	}
+
+	public function get_product(): ?WC_Product
+	{
+		return null;
+	}
+
+	public function set_subtotal(float|string $subtotal): void
+	{
+		unset($subtotal);
+	}
+
+	public function set_total(float|string $total): void
+	{
+		unset($total);
+	}
+
+	public function save(): int
+	{
+		return 0;
 	}
 
 	public function get_meta(string $key = '', bool $single = true)
@@ -1074,6 +1200,53 @@ class WC_Order
 	public function needs_payment(): bool
 	{
 		return false;
+	}
+
+	/**
+	 * @param array<string, string> $address
+	 */
+	public function set_address(array $address, string $type = 'billing'): void
+	{
+		unset($address, $type);
+	}
+
+	/**
+	 * @param WC_Product $product
+	 * @param int $quantity
+	 * @param array<string, mixed> $args
+	 */
+	public function add_product($product, int $quantity = 1, array $args = array()): int|false
+	{
+		unset($product, $quantity, $args);
+
+		return 0;
+	}
+
+	public function calculate_totals(bool $and_taxes = true): void
+	{
+		unset($and_taxes);
+	}
+
+	public function set_payment_method(string $payment_method = ''): void
+	{
+		unset($payment_method);
+	}
+
+	public function set_created_via(string $created_via = ''): void
+	{
+		unset($created_via);
+	}
+
+	public function set_status(string $new_status, string $note = '', bool $manual_update = false): void
+	{
+		unset($new_status, $note, $manual_update);
+	}
+
+	public function delete(bool $force_delete = false): bool
+	{
+		unset($force_delete);
+
+		return true;
 	}
 
 	public function save(): int

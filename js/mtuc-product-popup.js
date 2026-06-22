@@ -45,6 +45,7 @@
 		const PARVA_CALCULATE_DELAY = 900;
 		let lastCalculation = null;
 		let lastOpenTrigger = null;
+		let submitInFlight = false;
 
 		const resetParvaInput = () => {
 			$parva.val("0").prop("readonly", false);
@@ -53,6 +54,103 @@
 		const formatPercent = (value) => {
 			const num = Math.abs(parseFloat(value) || 0);
 			return num.toFixed(2);
+		};
+
+		const setSubmittingState = (isSubmitting) => {
+			$submitBtn
+				.toggleClass("is-submitting", isSubmitting)
+				.attr("aria-busy", isSubmitting ? "true" : "false");
+
+			if (isSubmitting) {
+				$submitBtn.data(
+					"mtuc-submit-label",
+					$submitBtn.find(".mtuc-popup__btn-label").text(),
+				);
+				$submitBtn
+					.find(".mtuc-popup__btn-label")
+					.text(mtucPopup.i18n.submitting || "Изпращане...");
+				return;
+			}
+
+			const previousLabel = $submitBtn.data("mtuc-submit-label");
+			if (previousLabel) {
+				$submitBtn.find(".mtuc-popup__btn-label").text(previousLabel);
+			}
+		};
+
+		const getSubmitPayload = () => {
+			const schemeKey = String($months.val() || "");
+			const scheme = parseSchemeKey(schemeKey);
+			const lineContext = getProductLineContext();
+			const parva = parseFloat($parva.val()) || 0;
+
+			return {
+				action: "mtuc_popup_submit",
+				security: mtucPopup.nonce,
+				product_id: lineContext.productId,
+				variation_id: lineContext.variationId,
+				quantity: lineContext.quantity || 1,
+				line_price: lineContext.linePrice.toFixed(2),
+				offer_type: $offerType.val(),
+				scheme_key: schemeKey,
+				scheme_type: scheme.schemeType,
+				months: scheme.months,
+				filter_id: scheme.filterId,
+				parva: parva.toFixed(2),
+				first_name: String($firstName.val() || "").trim(),
+				last_name: String($lastName.val() || "").trim(),
+				address: String($address.val() || "").trim(),
+				phone: String($phone.val() || "").trim(),
+				email: String($email.val() || "").trim(),
+			};
+		};
+
+		const submitPopupOrder = () => {
+			if (submitInFlight) {
+				return;
+			}
+			if (!lastCalculation) {
+				window.alert(
+					mtucPopup.i18n.submitNoCalc ||
+						"Липсват данни за изчисление.",
+				);
+				return;
+			}
+
+			submitInFlight = true;
+			setSubmittingState(true);
+
+			$.post(mtucPopup.ajaxUrl, getSubmitPayload())
+				.done((response) => {
+					if (response && response.success && response.data) {
+						window.alert(
+							response.data.message ||
+								mtucPopup.i18n.submitPending,
+						);
+						closePopup();
+						return;
+					}
+
+					window.alert(
+						(response && response.data && response.data.message) ||
+							mtucPopup.i18n.submitError,
+					);
+				})
+				.fail((xhr) => {
+					let message = mtucPopup.i18n.submitError;
+					if (
+						xhr.responseJSON &&
+						xhr.responseJSON.data &&
+						xhr.responseJSON.data.message
+					) {
+						message = xhr.responseJSON.data.message;
+					}
+					window.alert(message);
+				})
+				.always(() => {
+					submitInFlight = false;
+					setSubmittingState(false);
+				});
 		};
 
 		const setDualAmount = (prefix, display) => {
@@ -477,6 +575,7 @@
 				productId:
 					parseInt($("#mtuc-popup-product-id").val(), 10) ||
 					mtucPopup.productId,
+				quantity: 1,
 			};
 		};
 
@@ -588,10 +687,13 @@
 		updateSubmitState();
 
 		$("#mtuc-popup-submit").on("click", function () {
+			if (submitInFlight) {
+				return;
+			}
 			if (!validateStep2Form(true)) {
 				return;
 			}
-			window.alert(mtucPopup.i18n.submitPending);
+			submitPopupOrder();
 		});
 
 		$("#mtuc-popup-add-to-cart").on("click", function () {

@@ -1396,6 +1396,9 @@ function mtuc_enqueue_product_assets(): void {
 				'fieldRequired'  => __( 'Полето е задължително.', 'mtunicredit' ),
 				'phoneInvalid'   => __( 'Въведете валиден телефонен номер.', 'mtunicredit' ),
 				'emailInvalid'   => __( 'Въведете валиден e-mail адрес.', 'mtunicredit' ),
+				'submitError'    => __( 'Заявката не може да бъде изпратена. Моля, опитайте отново.', 'mtunicredit' ),
+				'submitNoCalc'   => __( 'Липсват данни за изчисление. Моля, върнете се и изберете схема отново.', 'mtunicredit' ),
+				'submitting'     => __( 'Изпращане...', 'mtunicredit' ),
 			),
 		)
 	);

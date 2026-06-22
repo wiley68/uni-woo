@@ -393,6 +393,14 @@ body.mtuc-popup-open {
 	cursor: pointer;
 }
 
+.mtuc-popup__btn--primary.is-submitting,
+.mtuc-popup__btn--primary.is-submitting:hover,
+.mtuc-popup__btn--primary.is-submitting:focus,
+.mtuc-popup__btn--primary.is-submitting:active {
+	cursor: wait;
+	pointer-events: none;
+}
+
 .mtuc-popup__btn--primary.is-disabled,
 .mtuc-popup__btn--primary:disabled {
 	--mtuc-btn-disabled-bg: #d4d4d8;
