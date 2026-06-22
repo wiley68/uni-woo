@@ -44,7 +44,7 @@
 .mtuc-popup__content {
 	position: relative;
 	width: 100%;
-	max-width: 640px;
+	max-width: 900px;
 	margin: auto;
 	background: #fefefe;
 	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.19);
@@ -80,23 +80,21 @@
 }
 
 .mtuc-popup__calc {
-	display: flex;
 	width: 100%;
 }
 
-.mtuc-popup__calc-logo {
-	flex: 1 1 auto;
-	min-width: 0;
-}
-
 .mtuc-popup__calc-fields {
-	flex: 0 1 auto;
-	width: max-content;
-	max-width: 100%;
-	padding: 8px 25px 5px 15px;
+	box-sizing: border-box;
+	width: 100%;
+	padding: 8px 25px 5px 100px;
 	border: 2px solid var(--mtuc-popup-border);
 	border-radius: 14.5px 14.5px 80px 14.5px;
 	box-shadow: 1px 1px 1px 1px var(--mtuc-popup-shadow);
+	background-color: #fff;
+	background-image: url('../images/popup-calc-bg.png');
+	background-repeat: no-repeat;
+	background-position: left center;
+	background-size: 150px 150px;
 }
 
 .mtuc-popup__row {
@@ -156,14 +154,32 @@
 
 .mtuc-popup__select,
 .mtuc-popup__input {
+	box-sizing: border-box;
 	width: 100%;
 	min-width: 120px;
+	padding: 0 16px;
 	border: 0;
 	border-bottom: 1px solid #b0b0b0;
-	background: #fff;
+	background-color: #fff;
 	color: var(--mtuc-popup-red);
 	font: inherit;
 	font-size: 20px;
+	text-align: right;
+}
+
+.mtuc-popup__select {
+	appearance: none;
+	-webkit-appearance: none;
+	padding-right: 28px;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23b0b0b0' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 10px center;
+	background-size: 10px 6px;
+}
+
+/* Native <option> styling is limited; padding helps in Chromium/Firefox. */
+.mtuc-popup__select option {
+	padding-right: 12px;
 	text-align: right;
 }
 
@@ -275,15 +291,11 @@
 		max-width: 100%;
 	}
 
-	.mtuc-popup__calc {
-		flex-direction: column;
-		background: none;
-	}
-
 	.mtuc-popup__calc-fields {
 		width: 100%;
-		padding: 12px;
+		padding: 12px 12px 12px 100px;
 		border-radius: 14px;
+		background-size: 120px 120px;
 	}
 
 	.mtuc-popup__row {

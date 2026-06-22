@@ -49,7 +49,6 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 						<h2 id="mtuc-popup-title" class="mtuc-popup__step-title"><?php esc_html_e( 'Избор на схема за лизинг', 'mtunicredit' ); ?></h2>
 
 						<div class="mtuc-popup__calc">
-							<div class="mtuc-popup__calc-logo" aria-hidden="true"></div>
 							<div class="mtuc-popup__calc-fields">
 								<div class="mtuc-popup__row">
 									<div class="mtuc-popup__label"><?php esc_html_e( 'Цена на продукта', 'mtunicredit' ); ?></div>

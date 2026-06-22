@@ -85,6 +85,11 @@
 			return label;
 		};
 
+		// Native <option> padding is unreliable — trailing spaces offset text from the right edge.
+		const formatMonthOptionLabel = (months, desc) => {
+			return formatMonthLabel(months, desc) + "\u00A0\u00A0\u00A0";
+		};
+
 		const getMonthOptionValue = (entry) => {
 			if (entry && typeof entry === "object") {
 				return parseInt(entry.months, 10);
@@ -167,7 +172,7 @@
 				$months.append(
 					$("<option>", {
 						value: schemeKey,
-						text: formatMonthLabel(months, desc),
+						text: formatMonthOptionLabel(months, desc),
 					}),
 				);
 			});
