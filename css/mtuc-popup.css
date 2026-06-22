@@ -389,17 +389,37 @@ body.mtuc-popup-open {
 	color: var(--mtuc-popup-red);
 }
 
+.mtuc-popup__btn--primary:not(.is-disabled):not(:disabled) {
+	cursor: pointer;
+}
+
 .mtuc-popup__btn--primary.is-disabled,
 .mtuc-popup__btn--primary:disabled {
-	background: #a1a1aa;
-	color: #fff;
+	--mtuc-btn-disabled-bg: #d4d4d8;
+	--mtuc-btn-disabled-text: #a1a1aa;
+	background: var(--mtuc-btn-disabled-bg);
+	color: var(--mtuc-btn-disabled-text);
 	cursor: not-allowed;
+	opacity: 0.93;
+}
+
+.mtuc-popup__btn--primary.is-disabled .mtuc-popup__btn-inner,
+.mtuc-popup__btn--primary:disabled .mtuc-popup__btn-inner {
+	border-color: #e4e4e7;
+	box-shadow: none;
 }
 
 .mtuc-popup__btn--primary.is-disabled .mtuc-popup__btn-label,
 .mtuc-popup__btn--primary:disabled .mtuc-popup__btn-label {
-	background: #a1a1aa;
-	color: #fff;
+	background: var(--mtuc-btn-disabled-bg);
+	color: var(--mtuc-btn-disabled-text);
+	text-shadow: none;
+}
+
+.mtuc-popup__btn--primary.is-disabled .mtuc-popup__btn-badge,
+.mtuc-popup__btn--primary:disabled .mtuc-popup__btn-badge {
+	opacity: 0.4;
+	filter: grayscale(1);
 }
 
 .mtuc-popup button.mtuc-popup__btn,
@@ -453,8 +473,8 @@ body.mtuc-popup-open {
 .mtuc-popup button.mtuc-popup__btn--primary:disabled:focus,
 .mtuc-popup button.mtuc-popup__btn--primary.is-disabled:active,
 .mtuc-popup button.mtuc-popup__btn--primary:disabled:active {
-	background: #a1a1aa;
-	color: #fff;
+	background: var(--mtuc-btn-disabled-bg, #d4d4d8);
+	color: var(--mtuc-btn-disabled-text, #a1a1aa);
 }
 
 .mtuc-popup button.mtuc-popup__btn--primary.is-disabled:hover .mtuc-popup__btn-label,
@@ -463,8 +483,8 @@ body.mtuc-popup-open {
 .mtuc-popup button.mtuc-popup__btn--primary:disabled:focus .mtuc-popup__btn-label,
 .mtuc-popup button.mtuc-popup__btn--primary.is-disabled:active .mtuc-popup__btn-label,
 .mtuc-popup button.mtuc-popup__btn--primary:disabled:active .mtuc-popup__btn-label {
-	background: #a1a1aa;
-	color: #fff;
+	background: var(--mtuc-btn-disabled-bg, #d4d4d8);
+	color: var(--mtuc-btn-disabled-text, #a1a1aa);
 }
 
 .mtuc-popup button.mtuc-popup__btn:hover .mtuc-popup__btn-inner,
@@ -473,6 +493,18 @@ body.mtuc-popup-open {
 .mtuc-popup button.mtuc-popup__btn:active .mtuc-popup__btn-inner {
 	border-color: var(--mtuc-popup-border);
 	box-shadow: 1px 1px 1px 1px var(--mtuc-popup-shadow);
+}
+
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:hover .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:focus .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:focus-visible .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn--primary.is-disabled:active .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:hover .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:focus .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:focus-visible .mtuc-popup__btn-inner,
+.mtuc-popup button.mtuc-popup__btn--primary:disabled:active .mtuc-popup__btn-inner {
+	border-color: #e4e4e7;
+	box-shadow: none;
 }
 
 .mtuc-popup__btn-badge {

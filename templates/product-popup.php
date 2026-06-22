@@ -218,6 +218,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 								<span class="mtuc-popup__btn-inner">
 									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Изпрати', 'mtunicredit' ); ?></span>
 								</span>
+								<span class="mtuc-popup__btn-badge" style="background-image:url('<?php echo esc_url( $badge_logo_url ); ?>')"></span>
 							</button>
 						</div>
 					</div>
