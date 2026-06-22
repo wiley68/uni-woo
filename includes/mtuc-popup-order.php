@@ -235,6 +235,87 @@ function mtuc_resolve_popup_order_addresses( array $customer ): array {
 }
 
 /**
+ * Format WooCommerce billing or shipping address for CP (max 256 chars).
+ *
+ * @param WC_Order $order Order instance.
+ * @param string   $type  `shipping` or `billing`.
+ * @return string
+ */
+function mtuc_format_order_address_for_cp( WC_Order $order, string $type ): string {
+	if ( 'shipping' === $type ) {
+		$parts = array_filter(
+			array(
+				(string) $order->get_shipping_address_1(),
+				(string) $order->get_shipping_address_2(),
+				(string) $order->get_shipping_city(),
+				(string) $order->get_shipping_postcode(),
+				(string) $order->get_shipping_state(),
+			)
+		);
+	} else {
+		$parts = array_filter(
+			array(
+				(string) $order->get_billing_address_1(),
+				(string) $order->get_billing_address_2(),
+				(string) $order->get_billing_city(),
+				(string) $order->get_billing_postcode(),
+				(string) $order->get_billing_state(),
+			)
+		);
+	}
+
+	$formatted = implode( ', ', $parts );
+	if ( strlen( $formatted ) > 256 ) {
+		$formatted = substr( $formatted, 0, 256 );
+	}
+
+	return $formatted;
+}
+
+/**
+ * Resolve CP address fields: shipping → address, billing → address2.
+ *
+ * @param WC_Order              $order    Order with billing/shipping set.
+ * @param array<string, string> $customer Validated popup customer fields.
+ * @return array{address: string, address2: string}
+ */
+function mtuc_resolve_cp_order_addresses( WC_Order $order, array $customer ): array {
+	$shipping_address = mtuc_format_order_address_for_cp( $order, 'shipping' );
+	$billing_address  = mtuc_format_order_address_for_cp( $order, 'billing' );
+	$fallback         = (string) $customer['address'];
+
+	if ( '' === $shipping_address ) {
+		$shipping_address = $fallback;
+	}
+	if ( '' === $billing_address ) {
+		$billing_address = $fallback;
+	}
+	if ( '' === $shipping_address && '' !== $billing_address ) {
+		$shipping_address = $billing_address;
+	}
+	if ( '' === $billing_address && '' !== $shipping_address ) {
+		$billing_address = $shipping_address;
+	}
+
+	// КП DB: address2 е NOT NULL; Laravel конвертира празен string в null.
+	if ( '' === $billing_address ) {
+		$billing_address = '-';
+	}
+
+	if ( strlen( $shipping_address ) > 256 ) {
+		$shipping_address = substr( $shipping_address, 0, 256 );
+	}
+	if ( strlen( $billing_address ) > 256 ) {
+		$billing_address = substr( $billing_address, 0, 256 );
+	}
+
+	return array(
+		'address'  => $shipping_address,
+		'address2' => $billing_address,
+	);
+}
+
+/**
  * Adjust the first line item total to match the calculator line price (incl. tax).
  *
  * @param WC_Order $order              Order instance.
@@ -499,15 +580,7 @@ function mtuc_build_cp_order_payload(
 		$email = substr( $email, 0, 128 );
 	}
 
-	$address = (string) $customer['address'];
-	if ( strlen( $address ) > 256 ) {
-		$address = substr( $address, 0, 256 );
-	}
-
-	$address2 = (string) $order->get_billing_address_2();
-	if ( strlen( $address2 ) > 256 ) {
-		$address2 = substr( $address2, 0, 256 );
-	}
+	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
 
 	$product_id_for_cp = $variation_id > 0 ? $variation_id : $parent_id;
 	$product_name      = $product->get_name();
@@ -520,8 +593,8 @@ function mtuc_build_cp_order_payload(
 		'name'          => $full_name,
 		'phone'         => $phone,
 		'email'         => $email,
-		'address'       => $address,
-		'address2'      => $address2,
+		'address'       => $cp_addresses['address'],
+		'address2'      => $cp_addresses['address2'],
 		'price'         => round( (float) ( $calculation['price'] ?? 0 ), 2 ),
 		'vnoska'        => round( (float) ( $calculation['monthly_installment'] ?? 0 ), 2 ),
 		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),

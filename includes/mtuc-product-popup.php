@@ -601,6 +601,34 @@ function mtuc_format_popup_amount_display( float $amount, array $shop ): array {
 }
 
 /**
+ * Billing street line for popup address field (address_1 only).
+ *
+ * @param int $user_id WordPress user ID (0 = current user).
+ * @return string
+ */
+function mtuc_get_popup_billing_address_default( int $user_id = 0 ): string {
+	if ( $user_id <= 0 ) {
+		$user_id = get_current_user_id();
+	}
+
+	if ( $user_id <= 0 ) {
+		return '';
+	}
+
+	if ( function_exists( 'wc_get_customer' ) ) {
+		$customer = wc_get_customer( $user_id );
+		if ( $customer instanceof WC_Customer ) {
+			$address = (string) $customer->get_billing_address_1();
+			if ( '' !== $address ) {
+				return $address;
+			}
+		}
+	}
+
+	return (string) get_user_meta( $user_id, 'billing_address_1', true );
+}
+
+/**
  * Default customer fields for popup step 2.
  *
  * @return array<string, string>
@@ -641,16 +669,21 @@ function mtuc_get_popup_customer_defaults(): array {
 			}
 
 			$defaults['phone'] = (string) $customer->get_billing_phone();
+			$defaults['address'] = mtuc_get_popup_billing_address_default( get_current_user_id() );
+		}
+	}
 
-			$address_parts = array_filter(
-				array(
-					(string) $customer->get_billing_address_1(),
-					(string) $customer->get_billing_address_2(),
-					(string) $customer->get_billing_city(),
-					(string) $customer->get_billing_postcode(),
-				)
-			);
-			$defaults['address'] = implode( ', ', $address_parts );
+	$user_id = get_current_user_id();
+	if ( $user_id > 0 ) {
+		if ( '' === $defaults['phone'] ) {
+			$defaults['phone'] = (string) get_user_meta( $user_id, 'billing_phone', true );
+		}
+		if ( '' === $defaults['phone'] ) {
+			$defaults['phone'] = (string) get_user_meta( $user_id, 'shipping_phone', true );
+		}
+
+		if ( '' === $defaults['address'] ) {
+			$defaults['address'] = mtuc_get_popup_billing_address_default( $user_id );
 		}
 	}
 

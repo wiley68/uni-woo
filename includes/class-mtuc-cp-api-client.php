@@ -324,7 +324,15 @@ class Mtuc_Cp_Api_Client {
 
 			self::log_debug( 'API HTTP ' . $code . ': ' . $raw );
 
-			return new WP_Error( 'mtuc_api_http_error', $message, array( 'status' => $code ) );
+			return new WP_Error(
+				'mtuc_api_http_error',
+				$message,
+				array(
+					'status'   => $code,
+					'response' => $data,
+					'raw'      => $raw,
+				)
+			);
 		}
 
 		return $data;

@@ -323,6 +323,17 @@
 			updateSubmitState();
 		};
 
+		const prefillStep2CustomerFields = () => {
+			const defaults = getStep2CustomerDefaults();
+
+			if (!isNonEmpty($address.val()) && defaults.address) {
+				$address.val(defaults.address);
+			}
+			if (!isNonEmpty($phone.val()) && defaults.phone) {
+				$phone.val(defaults.phone);
+			}
+		};
+
 		const validateStep2Form = (showErrors) => {
 			const errors = getStep2FieldErrors();
 			const isValid = !Object.values(errors).some(
@@ -667,7 +678,9 @@
 			if (!lastCalculation) {
 				return;
 			}
+			prefillStep2CustomerFields();
 			showStep(2);
+			updateSubmitState();
 		});
 
 		$firstName

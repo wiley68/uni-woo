@@ -325,6 +325,19 @@ function get_current_user_id(): int
 	return 0;
 }
 
+/**
+ * @param int    $user_id User ID.
+ * @param string $key     Meta key.
+ * @param bool   $single  Return single value.
+ * @return mixed
+ */
+function get_user_meta( $user_id, $key = '', $single = false )
+{
+	unset( $user_id, $key );
+
+	return $single ? '' : array();
+}
+
 function is_user_logged_in() {}
 function is_admin() {}
 function is_front_page() {}
