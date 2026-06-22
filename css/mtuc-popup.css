@@ -196,12 +196,23 @@
 }
 
 .mtuc-popup__select:focus,
-.mtuc-popup__input:focus {
+.mtuc-popup__select:focus-visible,
+.mtuc-popup__input:not(.mtuc-popup__input--text):focus,
+.mtuc-popup__input:not(.mtuc-popup__input--text):focus-visible {
 	outline: none;
 	box-shadow: none;
+	background-color: #fff;
 }
 
-.mtuc-popup__input[readonly] {
+.mtuc-popup__input--text:focus,
+.mtuc-popup__input--text:focus-visible {
+	outline: none;
+	box-shadow: none;
+	background-color: #fff;
+}
+
+.mtuc-popup__input:not(.mtuc-popup__input--text)[readonly] {
+	border-bottom: 0;
 	opacity: 0.85;
 }
 

@@ -120,9 +120,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									</div>
 								</div>
 
-								<div class="mtuc-popup__row mtuc-popup__row--note">
-									<div class="mtuc-popup__help"><?php esc_html_e( '* Срокът на изплащане се заявява при приключване на поръчката.', 'mtunicredit' ); ?></div>
-								</div>
+								<div class="mtuc-popup__row mtuc-popup__row--note"></div>
 							</div>
 						</div>
 

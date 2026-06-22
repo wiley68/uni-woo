@@ -32,6 +32,7 @@
 		const $buyBtn = $("#mtuc-popup-buy");
 		let calculateTimer = null;
 		let lastCalculation = null;
+		let lastOpenTrigger = null;
 
 		const resetParvaInput = () => {
 			$parva.val("0").prop("readonly", false);
@@ -209,7 +210,26 @@
 			calculateNow();
 		};
 
+		const releasePopupFocus = () => {
+			const active = document.activeElement;
+			if (!active || !popup.contains(active)) {
+				return;
+			}
+
+			if (
+				lastOpenTrigger &&
+				document.body.contains(lastOpenTrigger) &&
+				typeof lastOpenTrigger.focus === "function"
+			) {
+				lastOpenTrigger.focus();
+				return;
+			}
+
+			active.blur();
+		};
+
 		const closePopup = () => {
+			releasePopupFocus();
 			$popup
 				.removeClass("is-open")
 				.attr("aria-hidden", "true")
@@ -320,6 +340,7 @@
 			".mtuc-product-calculator__btn[data-mtuc-offer]",
 			function (event) {
 				event.preventDefault();
+				lastOpenTrigger = this;
 				openPopup($(this).data("mtuc-offer"));
 			},
 		);
