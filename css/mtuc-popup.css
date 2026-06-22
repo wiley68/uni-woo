@@ -156,7 +156,7 @@
 .mtuc-popup__input:not(.mtuc-popup__input--text) {
 	box-sizing: border-box;
 	width: 100%;
-	min-width: 120px;
+	min-width: 240px;
 	padding: 0 0 0 16px;
 	border: 0;
 	border-bottom: 1px solid #b0b0b0;
