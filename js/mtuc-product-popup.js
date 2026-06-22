@@ -30,6 +30,12 @@
 		const $parva = $("#mtuc-popup-parva");
 		const $parvaRow = $("#mtuc-popup-parva-row");
 		const $buyBtn = $("#mtuc-popup-buy");
+		const $submitBtn = $("#mtuc-popup-submit");
+		const $firstName = $("#mtuc-popup-first-name");
+		const $lastName = $("#mtuc-popup-last-name");
+		const $address = $("#mtuc-popup-address");
+		const $phone = $("#mtuc-popup-phone");
+		const $email = $("#mtuc-popup-email");
 		let calculateTimer = null;
 		let lastCalculation = null;
 		let lastOpenTrigger = null;
@@ -66,11 +72,66 @@
 				$step2
 					.prop("hidden", false)
 					.addClass("mtuc-popup__step--active");
+				updateSubmitState();
 				return;
 			}
 
 			$step2.prop("hidden", true).removeClass("mtuc-popup__step--active");
 			$step1.prop("hidden", false).addClass("mtuc-popup__step--active");
+		};
+
+		const PHONE_ALLOWED_PATTERN = /[0-9+() -]/;
+		const PHONE_VALID_PATTERN = /^[0-9+() -]+$/;
+		const EMAIL_VALID_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+		const sanitizePhoneValue = (value) => {
+			return String(value || "")
+				.split("")
+				.filter((char) => PHONE_ALLOWED_PATTERN.test(char))
+				.join("");
+		};
+
+		const isNonEmpty = (value) => {
+			return String(value || "").trim() !== "";
+		};
+
+		const isValidPhone = (value) => {
+			const phone = String(value || "").trim();
+			return (
+				phone !== "" &&
+				PHONE_VALID_PATTERN.test(phone) &&
+				/\d/.test(phone)
+			);
+		};
+
+		const isValidEmail = (value) => {
+			const email = String(value || "").trim();
+			return email !== "" && EMAIL_VALID_PATTERN.test(email);
+		};
+
+		const isStep2FormValid = () => {
+			return (
+				isNonEmpty($firstName.val()) &&
+				isNonEmpty($lastName.val()) &&
+				isNonEmpty($address.val()) &&
+				isValidPhone($phone.val()) &&
+				isValidEmail($email.val())
+			);
+		};
+
+		const updateSubmitState = () => {
+			const isValid = isStep2FormValid();
+			$submitBtn
+				.prop("disabled", !isValid)
+				.toggleClass("is-disabled", !isValid);
+		};
+
+		const onPhoneInput = function () {
+			const sanitized = sanitizePhoneValue($(this).val());
+			if ($(this).val() !== sanitized) {
+				$(this).val(sanitized);
+			}
+			updateSubmitState();
 		};
 
 		const formatMonthLabel = (months, desc) => {
@@ -370,6 +431,23 @@
 			showStep(2);
 		});
 
+		$firstName
+			.add($lastName)
+			.add($address)
+			.on("input change", updateSubmitState);
+		$phone.on("input", onPhoneInput);
+		$phone.on("change blur", updateSubmitState);
+		$email.on("input change blur", updateSubmitState);
+
+		updateSubmitState();
+
+		$("#mtuc-popup-submit").on("click", function () {
+			if ($submitBtn.prop("disabled")) {
+				return;
+			}
+			window.alert(mtucPopup.i18n.submitPending);
+		});
+
 		$("#mtuc-popup-add-to-cart").on("click", function () {
 			const $addToCart = $(
 				'button[type="submit"].single_add_to_cart_button',
@@ -381,10 +459,6 @@
 			}
 
 			window.alert(mtucPopup.i18n.addToCartError);
-		});
-
-		$("#mtuc-popup-submit").on("click", function () {
-			window.alert(mtucPopup.i18n.submitPending);
 		});
 
 		$(document).on("keyup", function (event) {

@@ -160,39 +160,56 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 
 						<div class="mtuc-popup__form">
 							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-first-name"><?php esc_html_e( 'Име', 'mtunicredit' ); ?></label>
-								<input type="text" id="mtuc-popup-first-name" class="mtuc-popup__input mtuc-popup__input--text" value="<?php echo esc_attr( (string) ( $customer['first_name'] ?? '' ) ); ?>" />
+								<label class="mtuc-popup__field-label" for="mtuc-popup-first-name">
+									<?php esc_html_e( 'Име', 'mtunicredit' ); ?>
+									<span class="mtuc-popup__required" aria-hidden="true">*</span>
+								</label>
+								<input type="text" id="mtuc-popup-first-name" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['first_name'] ?? '' ) ); ?>" required aria-required="true" autocomplete="given-name" />
 							</div>
 							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-last-name"><?php esc_html_e( 'Фамилия', 'mtunicredit' ); ?></label>
-								<input type="text" id="mtuc-popup-last-name" class="mtuc-popup__input mtuc-popup__input--text" value="<?php echo esc_attr( (string) ( $customer['last_name'] ?? '' ) ); ?>" />
+								<label class="mtuc-popup__field-label" for="mtuc-popup-last-name">
+									<?php esc_html_e( 'Фамилия', 'mtunicredit' ); ?>
+									<span class="mtuc-popup__required" aria-hidden="true">*</span>
+								</label>
+								<input type="text" id="mtuc-popup-last-name" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['last_name'] ?? '' ) ); ?>" required aria-required="true" autocomplete="family-name" />
 							</div>
 							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-address"><?php esc_html_e( 'Адрес', 'mtunicredit' ); ?></label>
-								<input type="text" id="mtuc-popup-address" class="mtuc-popup__input mtuc-popup__input--text" value="<?php echo esc_attr( (string) ( $customer['address'] ?? '' ) ); ?>" />
+								<label class="mtuc-popup__field-label" for="mtuc-popup-address">
+									<?php esc_html_e( 'Адрес', 'mtunicredit' ); ?>
+									<span class="mtuc-popup__required" aria-hidden="true">*</span>
+								</label>
+								<input type="text" id="mtuc-popup-address" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['address'] ?? '' ) ); ?>" required aria-required="true" autocomplete="street-address" />
 							</div>
 							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-phone"><?php esc_html_e( 'Мобилен телефон', 'mtunicredit' ); ?></label>
-								<input type="tel" id="mtuc-popup-phone" class="mtuc-popup__input mtuc-popup__input--text" value="<?php echo esc_attr( (string) ( $customer['phone'] ?? '' ) ); ?>" />
+								<label class="mtuc-popup__field-label" for="mtuc-popup-phone">
+									<?php esc_html_e( 'Мобилен телефон', 'mtunicredit' ); ?>
+									<span class="mtuc-popup__required" aria-hidden="true">*</span>
+								</label>
+								<input type="tel" id="mtuc-popup-phone" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['phone'] ?? '' ) ); ?>" required aria-required="true" autocomplete="tel" inputmode="tel" pattern="[0-9+() -]+" />
 							</div>
 							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-email"><?php esc_html_e( 'E-Mail', 'mtunicredit' ); ?></label>
-								<input type="email" id="mtuc-popup-email" class="mtuc-popup__input mtuc-popup__input--text" value="<?php echo esc_attr( (string) ( $customer['email'] ?? '' ) ); ?>" />
+								<label class="mtuc-popup__field-label" for="mtuc-popup-email">
+									<?php esc_html_e( 'E-Mail', 'mtunicredit' ); ?>
+									<span class="mtuc-popup__required" aria-hidden="true">*</span>
+								</label>
+								<input type="email" id="mtuc-popup-email" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['email'] ?? '' ) ); ?>" required aria-required="true" autocomplete="email" />
 							</div>
 						</div>
 
 						<div class="mtuc-popup__actions mtuc-popup__actions--step2">
-							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" id="mtuc-popup-back">
-								<span class="mtuc-popup__btn-inner">
-									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Назад', 'mtunicredit' ); ?></span>
-								</span>
-							</button>
-							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" data-mtuc-popup-close>
-								<span class="mtuc-popup__btn-inner">
-									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Откажи', 'mtunicredit' ); ?></span>
-								</span>
-							</button>
-							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary" id="mtuc-popup-submit">
+							<div class="mtuc-popup__actions-group">
+								<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" id="mtuc-popup-back">
+									<span class="mtuc-popup__btn-inner">
+										<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Назад', 'mtunicredit' ); ?></span>
+									</span>
+								</button>
+								<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" data-mtuc-popup-close>
+									<span class="mtuc-popup__btn-inner">
+										<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Отказ', 'mtunicredit' ); ?></span>
+									</span>
+								</button>
+							</div>
+							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary is-disabled" id="mtuc-popup-submit" disabled>
 								<span class="mtuc-popup__btn-inner">
 									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Изпрати', 'mtunicredit' ); ?></span>
 								</span>
