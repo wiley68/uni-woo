@@ -556,6 +556,16 @@ function mtuc_get_currency_display_config( array $shop ): array {
 }
 
 /**
+ * Format percent value for popup rows (always positive, 2 decimals).
+ *
+ * @param float $value Percent value.
+ * @return string
+ */
+function mtuc_format_popup_percent_display( float $value ): string {
+	return number_format( abs( round( $value, 2 ) ), 2, '.', '' );
+}
+
+/**
  * Format amount for popup rows (primary + optional secondary currency).
  *
  * @param float                $amount Amount in calculator currency.
@@ -565,7 +575,7 @@ function mtuc_get_currency_display_config( array $shop ): array {
 function mtuc_format_popup_amount_display( float $amount, array $shop ): array {
 	$config = mtuc_get_currency_display_config( $shop );
 	$rate   = 1.95583;
-	$amount = round( $amount, 2 );
+	$amount = round( abs( $amount ), 2 );
 
 	$primary = number_format( $amount, 2, '.', '' ) . ' ' . $config['primary_sign'];
 
@@ -1203,6 +1213,7 @@ function mtuc_calculate_popup_credit(
 	$glp                 = isset( $coeff_entry['interestPercent'] ) ? (float) $coeff_entry['interestPercent'] : 0.0;
 	$gpr                 = mtuc_calculate_gpr( $months, $monthly_installment, $loan_amount );
 	$gpr                 = $gpr <= 0.1 ? 0.0 : round( $gpr, 2 );
+	$glp                 = round( abs( $glp ), 2 );
 
 	return array(
 		'months'              => $months,
@@ -1219,8 +1230,10 @@ function mtuc_calculate_popup_credit(
 		'loan_amount'         => $loan_amount,
 		'monthly_installment' => $monthly_installment,
 		'total_payable'       => $total_payable,
-		'glp'                 => round( $glp, 2 ),
+		'glp'                 => $glp,
 		'gpr'                 => $gpr,
+		'glp_display'         => mtuc_format_popup_percent_display( $glp ),
+		'gpr_display'         => mtuc_format_popup_percent_display( $gpr ),
 		'price_display'       => mtuc_format_popup_amount_display( $price, $shop ),
 		'parva_display'       => mtuc_format_popup_amount_display( $parva, $shop ),
 		'loan_display'        => mtuc_format_popup_amount_display( $loan_amount, $shop ),

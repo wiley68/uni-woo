@@ -50,6 +50,11 @@
 			$parva.val("0").prop("readonly", false);
 		};
 
+		const formatPercent = (value) => {
+			const num = Math.abs(parseFloat(value) || 0);
+			return num.toFixed(2);
+		};
+
 		const setDualAmount = (prefix, display) => {
 			const $primary = $("#mtuc-popup-" + prefix + "-primary");
 			const $secondary = $("#mtuc-popup-" + prefix + "-secondary");
@@ -437,8 +442,12 @@
 			setDualAmount("monthly", data.monthly_display);
 			setDualAmount("total", data.total_display);
 
-			$("#mtuc-popup-glp").text(data.glp + "%");
-			$("#mtuc-popup-gpr").text(data.gpr + "%");
+			$("#mtuc-popup-glp").text(
+				(data.glp_display || formatPercent(data.glp)) + "%",
+			);
+			$("#mtuc-popup-gpr").text(
+				(data.gpr_display || formatPercent(data.gpr)) + "%",
+			);
 
 			if (data.show_parva) {
 				$parvaRow.removeClass("mtuc-popup__row--hidden");
