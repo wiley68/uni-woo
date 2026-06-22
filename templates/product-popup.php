@@ -138,17 +138,17 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 						<div class="mtuc-popup__actions mtuc-popup__actions--step1">
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" data-mtuc-popup-close>
 								<span class="mtuc-popup__btn-inner">
-									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Откажи', 'mtunicredit' ); ?></span>
+									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Отказ', 'mtunicredit' ); ?></span>
 								</span>
 							</button>
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" id="mtuc-popup-add-to-cart">
 								<span class="mtuc-popup__btn-inner">
-									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Добави в количката', 'mtunicredit' ); ?></span>
+									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Добавете в количката', 'mtunicredit' ); ?></span>
 								</span>
 							</button>
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary" id="mtuc-popup-buy">
 								<span class="mtuc-popup__btn-inner">
-									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Купи на изплащане', 'mtunicredit' ); ?></span>
+									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Купете на изплащане', 'mtunicredit' ); ?></span>
 								</span>
 								<span class="mtuc-popup__btn-badge" style="background-image:url('<?php echo esc_url( $badge_logo_url ); ?>')"></span>
 							</button>
