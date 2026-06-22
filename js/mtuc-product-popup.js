@@ -36,6 +36,11 @@
 		const $address = $("#mtuc-popup-address");
 		const $phone = $("#mtuc-popup-phone");
 		const $email = $("#mtuc-popup-email");
+		const $firstNameError = $("#mtuc-popup-first-name-error");
+		const $lastNameError = $("#mtuc-popup-last-name-error");
+		const $addressError = $("#mtuc-popup-address-error");
+		const $phoneError = $("#mtuc-popup-phone-error");
+		const $emailError = $("#mtuc-popup-email-error");
 		let calculateTimer = null;
 		let lastCalculation = null;
 		let lastOpenTrigger = null;
@@ -72,16 +77,18 @@
 				$step2
 					.prop("hidden", false)
 					.addClass("mtuc-popup__step--active");
+				clearStep2FieldErrors();
 				updateSubmitState();
 				return;
 			}
 
 			$step2.prop("hidden", true).removeClass("mtuc-popup__step--active");
 			$step1.prop("hidden", false).addClass("mtuc-popup__step--active");
+			clearStep2FieldErrors();
 		};
 
-		const PHONE_ALLOWED_PATTERN = /[0-9+() -]/;
-		const PHONE_VALID_PATTERN = /^[0-9+() -]+$/;
+		const PHONE_ALLOWED_PATTERN = /[-0-9+() ]/;
+		const PHONE_VALID_PATTERN = /^[-0-9+() ]+$/;
 		const EMAIL_VALID_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 		const sanitizePhoneValue = (value) => {
@@ -119,18 +126,135 @@
 			);
 		};
 
+		const getRequiredFieldError = () => {
+			return mtucPopup.i18n.fieldRequired || "Полето е задължително.";
+		};
+
+		const getPhoneFieldError = (value) => {
+			const phone = String(value || "").trim();
+			if (phone === "") {
+				return getRequiredFieldError();
+			}
+			if (!isValidPhone(phone)) {
+				return (
+					mtucPopup.i18n.phoneInvalid ||
+					"Въведете валиден телефонен номер."
+				);
+			}
+			return "";
+		};
+
+		const getEmailFieldError = (value) => {
+			const email = String(value || "").trim();
+			if (email === "") {
+				return getRequiredFieldError();
+			}
+			if (!isValidEmail(email)) {
+				return (
+					mtucPopup.i18n.emailInvalid ||
+					"Въведете валиден e-mail адрес."
+				);
+			}
+			return "";
+		};
+
+		const getStep2FieldErrors = () => {
+			return {
+				firstName: isNonEmpty($firstName.val())
+					? ""
+					: getRequiredFieldError(),
+				lastName: isNonEmpty($lastName.val())
+					? ""
+					: getRequiredFieldError(),
+				address: isNonEmpty($address.val())
+					? ""
+					: getRequiredFieldError(),
+				phone: getPhoneFieldError($phone.val()),
+				email: getEmailFieldError($email.val()),
+			};
+		};
+
+		const setStep2FieldErrors = (errors) => {
+			$firstNameError.text(errors.firstName || "");
+			$lastNameError.text(errors.lastName || "");
+			$addressError.text(errors.address || "");
+			$phoneError.text(errors.phone || "");
+			$emailError.text(errors.email || "");
+		};
+
+		const clearStep2FieldErrors = () => {
+			setStep2FieldErrors({
+				firstName: "",
+				lastName: "",
+				address: "",
+				phone: "",
+				email: "",
+			});
+		};
+
+		const getStep2CustomerDefaults = () => {
+			const customer =
+				mtucPopup.customer && typeof mtucPopup.customer === "object"
+					? mtucPopup.customer
+					: {};
+
+			return {
+				firstName: String(customer.first_name || ""),
+				lastName: String(customer.last_name || ""),
+				address: String(customer.address || ""),
+				phone: String(customer.phone || ""),
+				email: String(customer.email || ""),
+			};
+		};
+
+		const resetStep2Form = () => {
+			const defaults = getStep2CustomerDefaults();
+
+			$firstName.val(defaults.firstName);
+			$lastName.val(defaults.lastName);
+			$address.val(defaults.address);
+			$phone.val(defaults.phone);
+			$email.val(defaults.email);
+			clearStep2FieldErrors();
+			updateSubmitState();
+		};
+
+		const validateStep2Form = (showErrors) => {
+			const errors = getStep2FieldErrors();
+			const isValid = !Object.values(errors).some(
+				(message) => message !== "",
+			);
+
+			if (showErrors) {
+				setStep2FieldErrors(errors);
+			}
+
+			return isValid;
+		};
+
 		const updateSubmitState = () => {
 			const isValid = isStep2FormValid();
 			$submitBtn
-				.prop("disabled", !isValid)
-				.toggleClass("is-disabled", !isValid);
+				.toggleClass("is-disabled", !isValid)
+				.attr("aria-disabled", isValid ? "false" : "true");
 		};
 
-		const onPhoneInput = function () {
-			const sanitized = sanitizePhoneValue($(this).val());
-			if ($(this).val() !== sanitized) {
-				$(this).val(sanitized);
+		const onStep2FieldInput = function () {
+			const errors = getStep2FieldErrors();
+			const fieldId = this.id;
+
+			if (fieldId === "mtuc-popup-first-name") {
+				$firstNameError.text(errors.firstName);
+			} else if (fieldId === "mtuc-popup-last-name") {
+				$lastNameError.text(errors.lastName);
+			} else if (fieldId === "mtuc-popup-address") {
+				$addressError.text(errors.address);
+			} else if (fieldId === "mtuc-popup-phone") {
+				$phoneError.text(errors.phone);
+			} else if (fieldId === "mtuc-popup-email") {
+				$emailError.text(errors.email);
 			}
+
 			updateSubmitState();
 		};
 
@@ -296,6 +420,7 @@
 				.attr("aria-hidden", "true")
 				.attr("hidden", "hidden");
 			document.body.classList.remove("mtuc-popup-open");
+			resetStep2Form();
 			showStep(1);
 			resetParvaInput();
 			lastCalculation = null;
@@ -434,15 +559,21 @@
 		$firstName
 			.add($lastName)
 			.add($address)
-			.on("input change", updateSubmitState);
-		$phone.on("input", onPhoneInput);
-		$phone.on("change blur", updateSubmitState);
-		$email.on("input change blur", updateSubmitState);
+			.add($email)
+			.on("input change", onStep2FieldInput);
+		$phone.on("input", function () {
+			const sanitized = sanitizePhoneValue($(this).val());
+			if ($(this).val() !== sanitized) {
+				$(this).val(sanitized);
+			}
+			onStep2FieldInput.call(this);
+		});
+		$phone.on("change blur", onStep2FieldInput);
 
 		updateSubmitState();
 
 		$("#mtuc-popup-submit").on("click", function () {
-			if ($submitBtn.prop("disabled")) {
+			if (!validateStep2Form(true)) {
 				return;
 			}
 			window.alert(mtucPopup.i18n.submitPending);

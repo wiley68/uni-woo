@@ -1378,12 +1378,24 @@ function mtuc_enqueue_product_assets(): void {
 				? $popup_context['default_scheme_by_offer']
 				: array(),
 			'currencyDual'           => ! empty( $popup_context['currency']['dual'] ),
+			'customer'               => isset( $popup_context['customer'] ) && is_array( $popup_context['customer'] )
+				? array(
+					'first_name' => (string) ( $popup_context['customer']['first_name'] ?? '' ),
+					'last_name'  => (string) ( $popup_context['customer']['last_name'] ?? '' ),
+					'address'    => (string) ( $popup_context['customer']['address'] ?? '' ),
+					'phone'      => (string) ( $popup_context['customer']['phone'] ?? '' ),
+					'email'      => (string) ( $popup_context['customer']['email'] ?? '' ),
+				)
+				: mtuc_get_popup_customer_defaults(),
 			'i18n'                   => array(
 				'calcError'      => __( 'Неуспешно изчисление. Моля, опитайте отново.', 'mtunicredit' ),
 				'addToCartError' => __( 'Не може да се добави в количката. Проверете опциите на продукта.', 'mtunicredit' ),
 				'submitPending'  => __( 'Изпращането на заявката ще бъде добавено на следващ етап.', 'mtunicredit' ),
 				'monthsLabel'    => __( '%d месеца', 'mtunicredit' ),
 				'noMonths'       => __( 'Няма налични срокове за този продукт.', 'mtunicredit' ),
+				'fieldRequired'  => __( 'Полето е задължително.', 'mtunicredit' ),
+				'phoneInvalid'   => __( 'Въведете валиден телефонен номер.', 'mtunicredit' ),
+				'emailInvalid'   => __( 'Въведете валиден e-mail адрес.', 'mtunicredit' ),
 			),
 		)
 	);

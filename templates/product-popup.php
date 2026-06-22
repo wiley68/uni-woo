@@ -165,6 +165,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									<span class="mtuc-popup__required" aria-hidden="true">*</span>
 								</label>
 								<input type="text" id="mtuc-popup-first-name" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['first_name'] ?? '' ) ); ?>" required aria-required="true" autocomplete="given-name" />
+								<span class="mtuc-popup__field-error" id="mtuc-popup-first-name-error" role="alert"></span>
 							</div>
 							<div class="mtuc-popup__field">
 								<label class="mtuc-popup__field-label" for="mtuc-popup-last-name">
@@ -172,6 +173,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									<span class="mtuc-popup__required" aria-hidden="true">*</span>
 								</label>
 								<input type="text" id="mtuc-popup-last-name" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['last_name'] ?? '' ) ); ?>" required aria-required="true" autocomplete="family-name" />
+								<span class="mtuc-popup__field-error" id="mtuc-popup-last-name-error" role="alert"></span>
 							</div>
 							<div class="mtuc-popup__field">
 								<label class="mtuc-popup__field-label" for="mtuc-popup-address">
@@ -179,13 +181,15 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									<span class="mtuc-popup__required" aria-hidden="true">*</span>
 								</label>
 								<input type="text" id="mtuc-popup-address" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['address'] ?? '' ) ); ?>" required aria-required="true" autocomplete="street-address" />
+								<span class="mtuc-popup__field-error" id="mtuc-popup-address-error" role="alert"></span>
 							</div>
 							<div class="mtuc-popup__field">
 								<label class="mtuc-popup__field-label" for="mtuc-popup-phone">
 									<?php esc_html_e( 'Мобилен телефон', 'mtunicredit' ); ?>
 									<span class="mtuc-popup__required" aria-hidden="true">*</span>
 								</label>
-								<input type="tel" id="mtuc-popup-phone" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['phone'] ?? '' ) ); ?>" required aria-required="true" autocomplete="tel" inputmode="tel" pattern="[0-9+() -]+" />
+								<input type="tel" id="mtuc-popup-phone" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['phone'] ?? '' ) ); ?>" required aria-required="true" autocomplete="tel" inputmode="tel" pattern="[-0-9+() ]+" />
+								<span class="mtuc-popup__field-error" id="mtuc-popup-phone-error" role="alert"></span>
 							</div>
 							<div class="mtuc-popup__field">
 								<label class="mtuc-popup__field-label" for="mtuc-popup-email">
@@ -193,6 +197,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									<span class="mtuc-popup__required" aria-hidden="true">*</span>
 								</label>
 								<input type="email" id="mtuc-popup-email" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['email'] ?? '' ) ); ?>" required aria-required="true" autocomplete="email" />
+								<span class="mtuc-popup__field-error" id="mtuc-popup-email-error" role="alert"></span>
 							</div>
 						</div>
 
@@ -209,7 +214,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									</span>
 								</button>
 							</div>
-							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary is-disabled" id="mtuc-popup-submit" disabled>
+							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary is-disabled" id="mtuc-popup-submit" aria-disabled="true">
 								<span class="mtuc-popup__btn-inner">
 									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Изпрати', 'mtunicredit' ); ?></span>
 								</span>
