@@ -188,7 +188,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									<?php esc_html_e( 'Мобилен телефон', 'mtunicredit' ); ?>
 									<span class="mtuc-popup__required" aria-hidden="true">*</span>
 								</label>
-								<input type="tel" id="mtuc-popup-phone" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['phone'] ?? '' ) ); ?>" required aria-required="true" autocomplete="tel" inputmode="tel" pattern="[-0-9+() ]+" />
+								<input type="tel" id="mtuc-popup-phone" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['phone'] ?? '' ) ); ?>" required aria-required="true" autocomplete="tel" inputmode="tel" />
 								<span class="mtuc-popup__field-error" id="mtuc-popup-phone-error" role="alert"></span>
 							</div>
 							<div class="mtuc-popup__field">
