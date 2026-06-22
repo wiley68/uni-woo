@@ -56,6 +56,49 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
+	 * Create an order in CP (POST /orders).
+	 *
+	 * @param array<string, mixed> $payload Order fields for StoreOrderRequest.
+	 * @return array<string, mixed>|WP_Error Decoded JSON body on success.
+	 */
+	public static function create_order( array $payload ) {
+		$token = self::ensure_access_token();
+		if ( is_wp_error( $token ) ) {
+			return $token;
+		}
+
+		$response = self::request( 'POST', 'orders', $payload, $token, true );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		if ( 401 === (int) wp_remote_retrieve_response_code( $response ) ) {
+			self::clear_token();
+			$token = self::ensure_access_token();
+			if ( is_wp_error( $token ) ) {
+				return $token;
+			}
+			$response = self::request( 'POST', 'orders', $payload, $token, true );
+		}
+
+		return self::decode_response( $response );
+	}
+
+	/**
+	 * Shop identification headers for authenticated CP requests.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function get_shop_headers(): array {
+		$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
+
+		return array(
+			'X-Shop-Unicid' => $unicid,
+			'X-Shop-Name'   => untrailingslashit( home_url() ),
+		);
+	}
+
+	/**
 	 * Revoke token at CP and clear local credentials.
 	 *
 	 * @return void
@@ -204,13 +247,18 @@ class Mtuc_Cp_Api_Client {
 	 * @param string                    $method  HTTP method.
 	 * @param string                    $path    API path.
 	 * @param array<string, mixed>|null $body    JSON body for POST.
-	 * @param string|null               $token   Bearer token.
+	 * @param string|null               $token       Bearer token.
+	 * @param bool                      $with_shop   Include X-Shop-Unicid / X-Shop-Name headers.
 	 * @return array<string, mixed>|WP_Error
 	 */
-	private static function request( string $method, string $path, $body = null, $token = null ) {
+	private static function request( string $method, string $path, $body = null, $token = null, bool $with_shop = false ) {
 		$headers = array(
 			'Accept' => 'application/json',
 		);
+
+		if ( $with_shop ) {
+			$headers = array_merge( $headers, self::get_shop_headers() );
+		}
 
 		if ( null !== $body ) {
 			$headers['Content-Type'] = 'application/json';

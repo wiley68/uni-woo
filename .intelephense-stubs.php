@@ -859,6 +859,11 @@ class WC_Product
 		return '';
 	}
 
+	public function get_name(): string
+	{
+		return '';
+	}
+
 	/** @return array<int, int> */
 	public function get_category_ids(): array
 	{

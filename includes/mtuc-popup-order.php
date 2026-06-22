@@ -21,6 +21,9 @@ const MTUC_ORDER_META_PREFIX = '_mtuc_';
 /** Bank status: not yet sent to SmartUCF / CP. */
 const MTUC_BANK_STATUS_NOT_SENT = 'not_sent';
 
+/** Bank status: sent to Control Panel (step 2). */
+const MTUC_BANK_STATUS_CP_SENT = 'cp_sent';
+
 /** Bank status: sent to SmartUCF only. */
 const MTUC_BANK_STATUS_SMARTUCF_SENT = 'smartucf_sent';
 
@@ -35,6 +38,7 @@ const MTUC_BANK_STATUS_SENT = 'sent';
 function mtuc_get_bank_status_labels(): array {
 	return array(
 		MTUC_BANK_STATUS_NOT_SENT       => __( 'Неуспешно изпратен', 'mtunicredit' ),
+		MTUC_BANK_STATUS_CP_SENT        => __( 'Изпратен към КП', 'mtunicredit' ),
 		MTUC_BANK_STATUS_SMARTUCF_SENT  => __( 'Изпратен SmartUCF', 'mtunicredit' ),
 		MTUC_BANK_STATUS_SENT           => __( 'Успешно изпратен', 'mtunicredit' ),
 	);
@@ -437,6 +441,175 @@ function mtuc_create_popup_pending_order(
 }
 
 /**
+ * Resolve CP order currency code from shop settings.
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return string BGN|EUR
+ */
+function mtuc_get_cp_order_currency( array $shop ): string {
+	$uni_eur = (int) ( $shop['uni_eur'] ?? 0 );
+
+	if ( in_array( $uni_eur, array( 2, 3 ), true ) ) {
+		return 'EUR';
+	}
+
+	return 'BGN';
+}
+
+/**
+ * Build CP StoreOrderRequest payload from popup order data.
+ *
+ * @param WC_Order              $order       WooCommerce order.
+ * @param array<string, string> $customer    Validated customer fields.
+ * @param array<string, mixed>  $calculation Server-side calculation snapshot.
+ * @param WC_Product            $product     Product or variation line item.
+ * @param int                   $parent_id   Parent product ID.
+ * @param int                   $variation_id Variation ID (0 if none).
+ * @param int                   $quantity    Line quantity.
+ * @param array<string, mixed>  $shop        Shop `data` object from CP.
+ * @return array<string, mixed>
+ */
+function mtuc_build_cp_order_payload(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	WC_Product $product,
+	int $parent_id,
+	int $variation_id,
+	int $quantity,
+	array $shop
+): array {
+	$order_number = (string) $order->get_order_number();
+	if ( strlen( $order_number ) > 13 ) {
+		$order_number = substr( $order_number, 0, 13 );
+	}
+
+	$full_name = trim( $customer['first_name'] . ' ' . $customer['last_name'] );
+	if ( strlen( $full_name ) > 65 ) {
+		$full_name = substr( $full_name, 0, 65 );
+	}
+
+	$phone = (string) $customer['phone'];
+	if ( strlen( $phone ) > 45 ) {
+		$phone = substr( $phone, 0, 45 );
+	}
+
+	$email = (string) $customer['email'];
+	if ( strlen( $email ) > 128 ) {
+		$email = substr( $email, 0, 128 );
+	}
+
+	$address = (string) $customer['address'];
+	if ( strlen( $address ) > 256 ) {
+		$address = substr( $address, 0, 256 );
+	}
+
+	$address2 = (string) $order->get_billing_address_2();
+	if ( strlen( $address2 ) > 256 ) {
+		$address2 = substr( $address2, 0, 256 );
+	}
+
+	$product_id_for_cp = $variation_id > 0 ? $variation_id : $parent_id;
+	$product_name      = $product->get_name();
+	if ( strlen( $product_name ) > 255 ) {
+		$product_name = substr( $product_name, 0, 255 );
+	}
+
+	return array(
+		'order_id'      => $order_number,
+		'name'          => $full_name,
+		'phone'         => $phone,
+		'email'         => $email,
+		'address'       => $address,
+		'address2'      => $address2,
+		'price'         => round( (float) ( $calculation['price'] ?? 0 ), 2 ),
+		'vnoska'        => round( (float) ( $calculation['monthly_installment'] ?? 0 ), 2 ),
+		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),
+		'vnoski'        => (int) ( $calculation['months'] ?? 0 ),
+		'parva'         => round( (float) ( $calculation['parva'] ?? 0 ), 2 ),
+		'status'        => 'Регистрирана',
+		'status_id'     => '05',
+		'products_id'   => (string) $product_id_for_cp,
+		'products_name' => $product_name,
+		'products_q'    => (string) max( 1, $quantity ),
+		'type_client'   => 0,
+		'currency'      => mtuc_get_cp_order_currency( $shop ),
+	);
+}
+
+/**
+ * Send popup WooCommerce order to Control Panel (step 2).
+ *
+ * @param WC_Order              $order       WooCommerce order.
+ * @param array<string, string> $customer    Validated customer fields.
+ * @param array<string, mixed>  $calculation Server-side calculation snapshot.
+ * @param WC_Product            $product     Product or variation line item.
+ * @param int                   $parent_id   Parent product ID.
+ * @param int                   $variation_id Variation ID (0 if none).
+ * @param int                   $quantity    Line quantity.
+ * @param array<string, mixed>  $shop        Shop `data` object from CP.
+ * @return array<string, mixed>|WP_Error CP response data on success.
+ */
+function mtuc_send_popup_order_to_cp(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	WC_Product $product,
+	int $parent_id,
+	int $variation_id,
+	int $quantity,
+	array $shop
+) {
+	$payload  = mtuc_build_cp_order_payload(
+		$order,
+		$customer,
+		$calculation,
+		$product,
+		$parent_id,
+		$variation_id,
+		$quantity,
+		$shop
+	);
+	$response = Mtuc_Cp_Api_Client::create_order( $payload );
+
+	if ( is_wp_error( $response ) ) {
+		return $response;
+	}
+
+	$cp_order_id = 0;
+	if ( isset( $response['data']['id'] ) ) {
+		$cp_order_id = (int) $response['data']['id'];
+	}
+
+	if ( $cp_order_id > 0 ) {
+		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
+	}
+
+	mtuc_update_order_bank_status(
+		$order,
+		MTUC_BANK_STATUS_CP_SENT,
+		sprintf(
+			/* translators: %d: CP order ID */
+			__( 'Поръчката е регистрирана в Контролния панел (ID %d).', 'mtunicredit' ),
+			$cp_order_id > 0 ? $cp_order_id : 0
+		)
+	);
+
+	$order->add_order_note(
+		sprintf(
+			/* translators: 1: CP order ID, 2: WC order number sent to CP */
+			__( 'Успешно създадена поръчка в Контролния панел (КП ID: %1$d, номер: %2$s).', 'mtunicredit' ),
+			$cp_order_id > 0 ? $cp_order_id : 0,
+			(string) $payload['order_id']
+		)
+	);
+
+	$order->save();
+
+	return $response;
+}
+
+/**
  * AJAX: create pending order (step 1).
  *
  * @return void
@@ -566,20 +739,50 @@ function mtuc_ajax_popup_submit(): void {
 		$price
 	);
 
-	mtuc_release_popup_submit_lock( $lock_key );
-
 	if ( is_wp_error( $order ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
 		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
 	}
+
+	$cp_result = mtuc_send_popup_order_to_cp(
+		$order,
+		$customer,
+		$calculation,
+		$product,
+		$parent_id,
+		$variation_id,
+		$quantity,
+		$shop
+	);
+
+	if ( is_wp_error( $cp_result ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		mtuc_fail_popup_order( $order, $cp_result->get_error_message() );
+
+		wp_send_json_error(
+			array(
+				'message'      => $cp_result->get_error_message(),
+				'order_id'     => $order->get_id(),
+				'order_number' => $order->get_order_number(),
+				'bank_status'  => 'failed',
+			),
+			500
+		);
+	}
+
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+
+	mtuc_release_popup_submit_lock( $lock_key );
 
 	wp_send_json_success(
 		array(
 			'order_id'     => $order->get_id(),
 			'order_number' => $order->get_order_number(),
-			'bank_status'  => MTUC_BANK_STATUS_NOT_SENT,
+			'cp_order_id'  => $cp_order_id,
+			'bank_status'  => MTUC_BANK_STATUS_CP_SENT,
 			'message'      => sprintf(
 				/* translators: %s: order number */
-				__( 'Поръчка №%s е създадена успешно. Следва изпращане към банката.', 'mtunicredit' ),
+				__( 'Поръчка №%s е създадена успешно в Контролния панел. Следва изпращане към SmartUCF.', 'mtunicredit' ),
 				$order->get_order_number()
 			),
 		)
