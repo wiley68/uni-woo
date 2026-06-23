@@ -27,8 +27,8 @@ const MTUC_BANK_STATUS_NOT_SENT = 'not_sent';
 /** Bank status: sent to Control Panel (step 2). */
 const MTUC_BANK_STATUS_CP_SENT = 'cp_sent';
 
-/** Bank status: fully sent to SmartUCF (step 3). */
-const MTUC_BANK_STATUS_SENT = 'sent';
+/** Bank status: sent to SmartUCF (step 3). */
+const MTUC_BANK_STATUS_SENT = 'smartucf_sent';
 
 /**
  * Human-readable bank status labels.
@@ -37,10 +37,10 @@ const MTUC_BANK_STATUS_SENT = 'sent';
  */
 function mtuc_get_bank_status_labels(): array {
 	return array(
-		MTUC_BANK_STATUS_WC_CREATED => __( 'Създадена в магазина', 'mtunicredit' ),
+		MTUC_BANK_STATUS_WC_CREATED => __( 'Създаден в магазина', 'mtunicredit' ),
 		MTUC_BANK_STATUS_NOT_SENT   => __( 'Неуспешно изпратен', 'mtunicredit' ),
-		MTUC_BANK_STATUS_CP_SENT    => __( 'Създаден в КП UCF', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SENT       => __( 'Успешно изпратен Банка', 'mtunicredit' ),
+		MTUC_BANK_STATUS_CP_SENT    => __( 'Създаден в КП Банка', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SENT       => __( 'Създаден в SmartUCF', 'mtunicredit' ),
 	);
 }
 
@@ -643,15 +643,7 @@ function mtuc_send_popup_order_to_cp(
 		$order,
 		MTUC_BANK_STATUS_CP_SENT,
 		sprintf(
-			/* translators: %d: CP order ID */
-			__( 'Поръчката е регистрирана в Контролния панел (ID %d).', 'mtunicredit' ),
-			$cp_order_id > 0 ? $cp_order_id : 0
-		)
-	);
-
-	$order->add_order_note(
-		sprintf(
-			/* translators: 1: CP order ID, 2: WC order number sent to CP */
+			/* translators: 1: CP order ID, 2: WooCommerce order number */
 			__( 'Успешно създадена поръчка в Контролния панел (КП ID: %1$d, номер: %2$s).', 'mtunicredit' ),
 			$cp_order_id > 0 ? $cp_order_id : 0,
 			(string) $payload['order_id']
@@ -825,10 +817,12 @@ function mtuc_send_popup_order_to_smartucf(
 	}
 
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'smartucf_session_id', $result['session_id'] );
-	$order->add_order_note(
+	mtuc_update_order_bank_status(
+		$order,
+		MTUC_BANK_STATUS_SENT,
 		sprintf(
 			/* translators: %s: SmartUCF session ID */
-			__( 'SmartUCF сесия: %s', 'mtunicredit' ),
+			__( 'Успешно изпратена към SmartUCF (сесия: %s).', 'mtunicredit' ),
 			$result['session_id']
 		)
 	);
@@ -1032,12 +1026,6 @@ function mtuc_ajax_popup_submit(): void {
 			500
 		);
 	}
-
-	mtuc_update_order_bank_status(
-		$order,
-		MTUC_BANK_STATUS_SENT,
-		__( 'Поръчката е изпратена към SmartUCF.', 'mtunicredit' )
-	);
 
 	mtuc_release_popup_submit_lock( $lock_key );
 
