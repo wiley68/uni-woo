@@ -388,21 +388,20 @@ function mtuc_update_order_bank_status( WC_Order $order, string $status_key, str
 }
 
 /**
- * Mark order as failed with order note (steps 2/3).
+ * Mark order as failed after CP or SmartUCF step (no sensitive details in notes).
  *
- * @param WC_Order $order  Order instance.
- * @param string   $reason Failure reason.
+ * @param WC_Order $order Order instance.
  * @return void
  */
-function mtuc_fail_popup_order( WC_Order $order, string $reason ): void {
-	$order->update_status(
-		'failed',
-		sprintf(
-			/* translators: %s: failure reason */
-			__( 'Заявката към банката не беше завършена успешно: %s', 'mtunicredit' ),
-			$reason
-		)
+function mtuc_fail_popup_order( WC_Order $order ): void {
+	mtuc_update_order_bank_status(
+		$order,
+		MTUC_BANK_STATUS_NOT_SENT,
+		__( 'Заявката не беше изпратена успешно към банката.', 'mtunicredit' )
 	);
+
+	$order->set_status( 'failed', '', true );
+	$order->save();
 }
 
 /**
@@ -639,16 +638,7 @@ function mtuc_send_popup_order_to_cp(
 		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
 	}
 
-	mtuc_update_order_bank_status(
-		$order,
-		MTUC_BANK_STATUS_CP_SENT,
-		sprintf(
-			/* translators: 1: CP order ID, 2: WooCommerce order number */
-			__( 'Успешно създадена поръчка в Контролния панел (КП ID: %1$d, номер: %2$s).', 'mtunicredit' ),
-			$cp_order_id > 0 ? $cp_order_id : 0,
-			(string) $payload['order_id']
-		)
-	);
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_CP_SENT );
 
 	$order->save();
 
@@ -817,15 +807,7 @@ function mtuc_send_popup_order_to_smartucf(
 	}
 
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'smartucf_session_id', $result['session_id'] );
-	mtuc_update_order_bank_status(
-		$order,
-		MTUC_BANK_STATUS_SENT,
-		sprintf(
-			/* translators: %s: SmartUCF session ID */
-			__( 'Успешно изпратена към SmartUCF (сесия: %s).', 'mtunicredit' ),
-			$result['session_id']
-		)
-	);
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SENT );
 	$order->save();
 
 	return $result;
@@ -979,14 +961,14 @@ function mtuc_ajax_popup_submit(): void {
 
 	if ( is_wp_error( $cp_result ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		mtuc_fail_popup_order( $order, $cp_result->get_error_message() );
+		mtuc_fail_popup_order( $order );
 
 		wp_send_json_error(
 			array(
-				'message'      => $cp_result->get_error_message(),
+				'message'      => __( 'Неуспешно изпращане към Контролния панел.', 'mtunicredit' ),
 				'order_id'     => $order->get_id(),
 				'order_number' => $order->get_order_number(),
-				'bank_status'  => 'failed',
+				'bank_status'  => MTUC_BANK_STATUS_NOT_SENT,
 			),
 			500
 		);
@@ -1007,21 +989,14 @@ function mtuc_ajax_popup_submit(): void {
 
 	if ( is_wp_error( $smartucf_result ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		mtuc_fail_popup_order(
-			$order,
-			sprintf(
-				/* translators: %s: error message */
-				__( 'Грешка при изпращане към SmartUCF: %s', 'mtunicredit' ),
-				$smartucf_result->get_error_message()
-			)
-		);
+		mtuc_fail_popup_order( $order );
 
 		wp_send_json_error(
 			array(
-				'message'      => $smartucf_result->get_error_message(),
+				'message'      => __( 'Неуспешно изпращане към SmartUCF.', 'mtunicredit' ),
 				'order_id'     => $order->get_id(),
 				'order_number' => $order->get_order_number(),
-				'bank_status'  => 'failed',
+				'bank_status'  => MTUC_BANK_STATUS_NOT_SENT,
 			),
 			500
 		);
