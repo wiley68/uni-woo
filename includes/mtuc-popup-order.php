@@ -100,6 +100,10 @@ function mtuc_register_popup_order_hooks(): void {
 	add_action( 'wp_ajax_mtuc_popup_submit', 'mtuc_ajax_popup_submit' );
 	add_action( 'wp_ajax_nopriv_mtuc_popup_submit', 'mtuc_ajax_popup_submit' );
 	add_action( 'add_meta_boxes', 'mtuc_register_admin_order_credit_meta_box', 20, 0 );
+	add_filter( 'manage_edit-shop_order_columns', 'mtuc_add_orders_list_bank_status_column' );
+	add_action( 'manage_shop_order_posts_custom_column', 'mtuc_render_orders_list_bank_status_column', 10, 2 );
+	add_filter( 'manage_woocommerce_page_wc-orders_columns', 'mtuc_add_orders_list_bank_status_column' );
+	add_action( 'manage_woocommerce_page_wc-orders_custom_column', 'mtuc_render_orders_list_bank_status_column', 10, 2 );
 	add_filter( 'woocommerce_thankyou_order_received_text', 'mtuc_filter_thankyou_text_bank_unavailable', 20, 2 );
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_thankyou_styles' );
 }
@@ -1165,19 +1169,89 @@ function mtuc_resolve_admin_screen_order( $post_or_order = null ): ?WC_Order {
 }
 
 /**
+ * Human-readable bank status for an order (admin list and meta box).
+ *
+ * @param WC_Order $order Order instance.
+ * @return string Empty when the order has no UniCredit bank status meta.
+ */
+function mtuc_get_order_bank_status_display( WC_Order $order ): string {
+	$bank_status = (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS );
+	if ( '' === $bank_status ) {
+		return '';
+	}
+
+	$labels = mtuc_get_bank_status_labels();
+	$text   = $labels[ $bank_status ] ?? (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' );
+
+	if ( '' !== $text ) {
+		return $text;
+	}
+
+	return $bank_status;
+}
+
+/**
+ * Add UniCredit bank status column to WooCommerce orders list.
+ *
+ * @param array<string, string> $columns Existing columns.
+ * @return array<string, string>
+ */
+function mtuc_add_orders_list_bank_status_column( array $columns ): array {
+	$new_columns = array();
+
+	foreach ( $columns as $key => $label ) {
+		$new_columns[ $key ] = $label;
+
+		if ( 'order_status' === $key ) {
+			$new_columns['mtuc_bank_status'] = __( 'UniCredit статус', 'mtunicredit' );
+		}
+	}
+
+	if ( ! isset( $new_columns['mtuc_bank_status'] ) ) {
+		$new_columns['mtuc_bank_status'] = __( 'UniCredit статус', 'mtunicredit' );
+	}
+
+	return $new_columns;
+}
+
+/**
+ * Render UniCredit bank status column in WooCommerce orders list.
+ *
+ * @param string       $column            Column key.
+ * @param int|WC_Order $order_or_post_id  Post ID (legacy) or order (HPOS).
+ * @return void
+ */
+function mtuc_render_orders_list_bank_status_column( string $column, $order_or_post_id ): void {
+	if ( 'mtuc_bank_status' !== $column ) {
+		return;
+	}
+
+	if ( $order_or_post_id instanceof WC_Order ) {
+		$order = $order_or_post_id;
+	} else {
+		$order = wc_get_order( (int) $order_or_post_id );
+	}
+
+	if ( ! $order instanceof WC_Order ) {
+		echo '&mdash;';
+		return;
+	}
+
+	$status_text = mtuc_get_order_bank_status_display( $order );
+	echo '' !== $status_text ? esc_html( $status_text ) : '&mdash;';
+}
+
+/**
  * Credit meta rows for admin order screen (label => value).
  *
  * @param WC_Order $order Order instance.
  * @return array<string, string>
  */
 function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
-	$bank_status = (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS );
-	if ( '' === $bank_status ) {
+	$status_text = mtuc_get_order_bank_status_display( $order );
+	if ( '' === $status_text ) {
 		return array();
 	}
-
-	$labels      = mtuc_get_bank_status_labels();
-	$status_text = $labels[ $bank_status ] ?? (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' );
 
 	$rows = array(
 		__( 'Статус към банката', 'mtunicredit' ) => $status_text,
