@@ -29,3 +29,7 @@ if ( ! defined( 'MTUC_CONTROL_PANEL_URL' ) ) {
 if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
 	define( 'MTUC_API_BASE_URL', untrailingslashit( MTUC_CONTROL_PANEL_URL ) . '/api/v1' );
 }
+
+if ( ! defined( 'MTUC_SSL_PASSWD' ) ) {
+	define( 'MTUC_SSL_PASSWD', '1234' );
+}

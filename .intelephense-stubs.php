@@ -1524,3 +1524,87 @@ class Borica_Woo_Payment_Gateway extends WC_Payment_Gateway
 function mtuc_register_product_popup_ajax_hooks(): void {}
 function mtuc_register_product_hooks(): void {}
 function mtuc_register_reklama_hooks(): void {}
+
+// --- PHP cURL extension (client SSL for SmartUCF) -----------------------------
+
+const CURLOPT_URL            = 10002;
+const CURLOPT_RETURNTRANSFER = 19913;
+const CURLOPT_ENCODING       = 10102;
+const CURLOPT_MAXREDIRS      = 68;
+const CURLOPT_TIMEOUT        = 13;
+const CURLOPT_HTTP_VERSION   = 84;
+const CURLOPT_CUSTOMREQUEST  = 10036;
+const CURLOPT_POSTFIELDS     = 10015;
+const CURLOPT_HTTPHEADER     = 10023;
+const CURLOPT_SSLKEY         = 10087;
+const CURLOPT_SSLKEYPASSWD   = 10026;
+const CURLOPT_SSLCERT        = 10025;
+const CURLOPT_SSLCERTPASSWD  = 10027;
+const CURLOPT_SSLVERSION     = 32;
+const CURL_HTTP_VERSION_1_1  = 2;
+const CURL_SSLVERSION_TLSv1_2 = 6;
+const CURLINFO_HTTP_CODE     = 2097154;
+
+/**
+ * @return CurlHandle|false
+ */
+function curl_init(?string $url = null)
+{
+	unset($url);
+
+	return false;
+}
+
+/**
+ * @param CurlHandle $handle
+ * @param array<int, mixed> $options
+ */
+function curl_setopt_array($handle, array $options): bool
+{
+	unset($handle, $options);
+
+	return false;
+}
+
+/**
+ * @param CurlHandle $handle
+ * @return string|bool
+ */
+function curl_exec($handle)
+{
+	unset($handle);
+
+	return false;
+}
+
+/**
+ * @param CurlHandle $handle
+ */
+function curl_error($handle): string
+{
+	unset($handle);
+
+	return '';
+}
+
+/**
+ * @param CurlHandle $handle
+ * @param int|null $option
+ * @return mixed
+ */
+function curl_getinfo($handle, ?int $option = null): mixed
+{
+	unset($handle, $option);
+
+	return 0;
+}
+
+/**
+ * @param CurlHandle $handle
+ */
+function curl_close($handle): void
+{
+	unset($handle);
+}
+
+class CurlHandle {}

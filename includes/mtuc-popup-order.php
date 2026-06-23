@@ -24,10 +24,7 @@ const MTUC_BANK_STATUS_NOT_SENT = 'not_sent';
 /** Bank status: sent to Control Panel (step 2). */
 const MTUC_BANK_STATUS_CP_SENT = 'cp_sent';
 
-/** Bank status: sent to SmartUCF only. */
-const MTUC_BANK_STATUS_SMARTUCF_SENT = 'smartucf_sent';
-
-/** Bank status: fully sent (SmartUCF + CP). */
+/** Bank status: fully sent to SmartUCF (step 3). */
 const MTUC_BANK_STATUS_SENT = 'sent';
 
 /**
@@ -37,10 +34,9 @@ const MTUC_BANK_STATUS_SENT = 'sent';
  */
 function mtuc_get_bank_status_labels(): array {
 	return array(
-		MTUC_BANK_STATUS_NOT_SENT       => __( 'Неуспешно изпратен', 'mtunicredit' ),
-		MTUC_BANK_STATUS_CP_SENT        => __( 'Създаден в КП UCF', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SMARTUCF_SENT  => __( 'Изпратен SmartUCF', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SENT           => __( 'Успешно изпратен Банка', 'mtunicredit' ),
+		MTUC_BANK_STATUS_NOT_SENT => __( 'Неуспешно изпратен', 'mtunicredit' ),
+		MTUC_BANK_STATUS_CP_SENT  => __( 'Създаден в КП UCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SENT     => __( 'Успешно изпратен Банка', 'mtunicredit' ),
 	);
 }
 
@@ -663,6 +659,180 @@ function mtuc_send_popup_order_to_cp(
 }
 
 /**
+ * Strip characters that break SmartUCF legacy payloads.
+ *
+ * @param string $value Raw text.
+ * @return string
+ */
+function mtuc_sanitize_smartucf_text( string $value ): string {
+	return str_replace( array( "'", "'", '"' ), '', $value );
+}
+
+/**
+ * Build SmartUCF delivery address from order or popup customer data.
+ *
+ * @param WC_Order              $order    WooCommerce order.
+ * @param array<string, string> $customer Validated customer fields.
+ * @return string
+ */
+function mtuc_get_smartucf_delivery_address( WC_Order $order, array $customer ): string {
+	$parts = array_filter(
+		array(
+			$order->get_shipping_address_1(),
+			$order->get_shipping_address_2(),
+			$order->get_shipping_city(),
+			$order->get_shipping_postcode(),
+		),
+		static function ( $part ) {
+			return '' !== trim( (string) $part );
+		}
+	);
+
+	if ( ! empty( $parts ) ) {
+		return mtuc_sanitize_smartucf_text( implode( ', ', $parts ) );
+	}
+
+	return mtuc_sanitize_smartucf_text( (string) ( $customer['address'] ?? '' ) );
+}
+
+/**
+ * Build SmartUCF line items array for popup order.
+ *
+ * @param WC_Product           $product      Product or variation line item.
+ * @param int                  $parent_id    Parent product ID.
+ * @param int                  $variation_id Variation ID (0 if none).
+ * @param int                  $quantity     Line quantity.
+ * @param array<string, mixed> $calculation  Server-side calculation snapshot.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_build_smartucf_items(
+	WC_Product $product,
+	int $parent_id,
+	int $variation_id,
+	int $quantity,
+	array $calculation
+): array {
+	$quantity   = max( 1, $quantity );
+	$line_total = isset( $calculation['price'] ) ? (float) $calculation['price'] : 0.0;
+	$unit_price = round( $line_total / $quantity, 2 );
+
+	$category_product = $product;
+	if ( $variation_id > 0 ) {
+		$parent = mtuc_get_wc_product_by_id( $parent_id );
+		if ( $parent instanceof WC_Product ) {
+			$category_product = $parent;
+		}
+	}
+
+	$category_ids     = mtuc_get_product_category_ids( $category_product );
+	$product_category = ! empty( $category_ids ) ? (int) $category_ids[0] : 0;
+	$item_code        = $variation_id > 0 ? $variation_id : $parent_id;
+
+	return array(
+		array(
+			'name'        => mtuc_sanitize_smartucf_text( $product->get_name() ),
+			'code'        => $item_code,
+			'type'        => $product_category,
+			'count'       => $quantity,
+			'singlePrice' => $unit_price,
+		),
+	);
+}
+
+/**
+ * Build SmartUCF sucfOnlineSessionStart payload.
+ *
+ * @param WC_Order              $order        WooCommerce order.
+ * @param array<string, string> $customer     Validated customer fields.
+ * @param array<string, mixed>  $calculation  Server-side calculation snapshot.
+ * @param WC_Product            $product      Product or variation line item.
+ * @param int                   $parent_id    Parent product ID.
+ * @param int                   $variation_id Variation ID (0 if none).
+ * @param int                   $quantity     Line quantity.
+ * @param array<string, mixed>  $shop         Shop `data` object from CP.
+ * @return array<string, mixed>
+ */
+function mtuc_build_smartucf_session_payload(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	WC_Product $product,
+	int $parent_id,
+	int $variation_id,
+	int $quantity,
+	array $shop
+): array {
+	return array(
+		'user'                  => (string) ( $shop['uni_user'] ?? '' ),
+		'pass'                  => (string) ( $shop['uni_password'] ?? '' ),
+		'orderNo'               => (string) $order->get_id(),
+		'clientFirstName'       => mtuc_sanitize_smartucf_text( (string) ( $customer['first_name'] ?? '' ) ),
+		'clientLastName'        => mtuc_sanitize_smartucf_text( (string) ( $customer['last_name'] ?? '' ) ),
+		'clientPhone'           => mtuc_sanitize_smartucf_text( (string) ( $customer['phone'] ?? '' ) ),
+		'clientEmail'           => mtuc_sanitize_smartucf_text( (string) ( $customer['email'] ?? '' ) ),
+		'clientDeliveryAddress' => mtuc_get_smartucf_delivery_address( $order, $customer ),
+		'onlineProductCode'     => (string) ( $calculation['kop_code'] ?? '' ),
+		'totalPrice'            => isset( $calculation['price'] ) ? (float) $calculation['price'] : 0.0,
+		'initialPayment'        => isset( $calculation['parva'] ) ? (float) $calculation['parva'] : 0.0,
+		'installmentCount'      => isset( $calculation['months'] ) ? (int) $calculation['months'] : 0,
+		'monthlyPayment'        => isset( $calculation['monthly_installment'] ) ? (float) $calculation['monthly_installment'] : 0.0,
+		'items'                 => mtuc_build_smartucf_items( $product, $parent_id, $variation_id, $quantity, $calculation ),
+	);
+}
+
+/**
+ * Send popup WooCommerce order to SmartUCF (step 3).
+ *
+ * @param WC_Order              $order        WooCommerce order.
+ * @param array<string, string> $customer     Validated customer fields.
+ * @param array<string, mixed>  $calculation  Server-side calculation snapshot.
+ * @param WC_Product            $product      Product or variation line item.
+ * @param int                   $parent_id    Parent product ID.
+ * @param int                   $variation_id Variation ID (0 if none).
+ * @param int                   $quantity     Line quantity.
+ * @param array<string, mixed>  $shop         Shop `data` object from CP.
+ * @return array{session_id: string, redirect_url: string}|WP_Error
+ */
+function mtuc_send_popup_order_to_smartucf(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	WC_Product $product,
+	int $parent_id,
+	int $variation_id,
+	int $quantity,
+	array $shop
+) {
+	$payload = mtuc_build_smartucf_session_payload(
+		$order,
+		$customer,
+		$calculation,
+		$product,
+		$parent_id,
+		$variation_id,
+		$quantity,
+		$shop
+	);
+
+	$result = Mtuc_Smartucf_Api_Client::start_session( $payload, $shop );
+	if ( is_wp_error( $result ) ) {
+		return $result;
+	}
+
+	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'smartucf_session_id', $result['session_id'] );
+	$order->add_order_note(
+		sprintf(
+			/* translators: %s: SmartUCF session ID */
+			__( 'SmartUCF сесия: %s', 'mtunicredit' ),
+			$result['session_id']
+		)
+	);
+	$order->save();
+
+	return $result;
+}
+
+/**
  * AJAX: create pending order (step 1).
  *
  * @return void
@@ -825,6 +995,45 @@ function mtuc_ajax_popup_submit(): void {
 
 	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
 
+	$smartucf_result = mtuc_send_popup_order_to_smartucf(
+		$order,
+		$customer,
+		$calculation,
+		$product,
+		$parent_id,
+		$variation_id,
+		$quantity,
+		$shop
+	);
+
+	if ( is_wp_error( $smartucf_result ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		mtuc_fail_popup_order(
+			$order,
+			sprintf(
+				/* translators: %s: error message */
+				__( 'Грешка при изпращане към SmartUCF: %s', 'mtunicredit' ),
+				$smartucf_result->get_error_message()
+			)
+		);
+
+		wp_send_json_error(
+			array(
+				'message'      => $smartucf_result->get_error_message(),
+				'order_id'     => $order->get_id(),
+				'order_number' => $order->get_order_number(),
+				'bank_status'  => 'failed',
+			),
+			500
+		);
+	}
+
+	mtuc_update_order_bank_status(
+		$order,
+		MTUC_BANK_STATUS_SENT,
+		__( 'Поръчката е изпратена към SmartUCF.', 'mtunicredit' )
+	);
+
 	mtuc_release_popup_submit_lock( $lock_key );
 
 	wp_send_json_success(
@@ -832,12 +1041,9 @@ function mtuc_ajax_popup_submit(): void {
 			'order_id'     => $order->get_id(),
 			'order_number' => $order->get_order_number(),
 			'cp_order_id'  => $cp_order_id,
-			'bank_status'  => MTUC_BANK_STATUS_CP_SENT,
-			'message'      => sprintf(
-				/* translators: %s: order number */
-				__( 'Поръчка №%s е създадена успешно в Контролния панел. Следва изпращане към SmartUCF.', 'mtunicredit' ),
-				$order->get_order_number()
-			),
+			'bank_status'  => MTUC_BANK_STATUS_SENT,
+			'redirect_url' => $smartucf_result['redirect_url'],
+			'message'      => __( 'Пренасочване към UniCredit за довършване на заявката.', 'mtunicredit' ),
 		)
 	);
 }

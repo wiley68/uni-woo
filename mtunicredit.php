@@ -67,6 +67,7 @@ define( 'MTUC_FONTS_URI', MTUC_PLUGIN_URL . '/fonts' );
 $mtuc_files = array(
 	'/class-mtuc-settings.php',
 	'/class-mtuc-cp-api-client.php',
+	'/class-mtuc-smartucf-api-client.php',
 	'/class-mtuc-shop-cache.php',
 	'/class-mtuc-rest-api.php',
 	'/admin.php',

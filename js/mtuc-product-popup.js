@@ -123,6 +123,11 @@
 			$.post(mtucPopup.ajaxUrl, getSubmitPayload())
 				.done((response) => {
 					if (response && response.success && response.data) {
+						if (response.data.redirect_url) {
+							window.location.assign(response.data.redirect_url);
+							return;
+						}
+
 						window.alert(
 							response.data.message ||
 								mtucPopup.i18n.submitPending,
