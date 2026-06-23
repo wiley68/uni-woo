@@ -66,3 +66,15 @@ function get_date_from_gmt( $string, $format = 'Y-m-d H:i:s' ) {
 
 	return '';
 }
+
+/**
+ * @param string       $actionurl URL to add nonce to.
+ * @param string|int   $action    Nonce action name.
+ * @param string       $name      Query arg name for nonce.
+ * @return string
+ */
+function wp_nonce_url( string $actionurl, $action = -1, string $name = '_wpnonce' ): string {
+	unset( $actionurl, $action, $name );
+
+	return '';
+}

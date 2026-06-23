@@ -58,10 +58,11 @@ class Mtuc_Cp_Api_Client {
 	/**
 	 * Create an order in CP (POST /orders).
 	 *
-	 * @param array<string, mixed> $payload Order fields for StoreOrderRequest.
+	 * @param array<string, mixed> $payload     Order fields for StoreOrderRequest.
+	 * @param int                  $wc_order_id Related WooCommerce order ID for debug journal.
 	 * @return array<string, mixed>|WP_Error Decoded JSON body on success.
 	 */
-	public static function create_order( array $payload ) {
+	public static function create_order( array $payload, int $wc_order_id = 0 ) {
 		$token = self::ensure_access_token();
 		if ( is_wp_error( $token ) ) {
 			return $token;
@@ -69,6 +70,7 @@ class Mtuc_Cp_Api_Client {
 
 		$response = self::request( 'POST', 'orders', $payload, $token, true );
 		if ( is_wp_error( $response ) ) {
+			self::log_create_order_response( $response, $wc_order_id );
 			return $response;
 		}
 
@@ -80,6 +82,13 @@ class Mtuc_Cp_Api_Client {
 			}
 			$response = self::request( 'POST', 'orders', $payload, $token, true );
 		}
+
+		if ( is_wp_error( $response ) ) {
+			self::log_create_order_response( $response, $wc_order_id );
+			return $response;
+		}
+
+		self::log_create_order_response( $response, $wc_order_id );
 
 		return self::decode_response( $response );
 	}
@@ -283,7 +292,6 @@ class Mtuc_Cp_Api_Client {
 		$response = wp_remote_request( $url, $args );
 
 		if ( is_wp_error( $response ) ) {
-			self::log_debug( 'HTTP error: ' . $response->get_error_message() . ' | ' . $url );
 			return $response;
 		}
 
@@ -322,8 +330,6 @@ class Mtuc_Cp_Api_Client {
 				);
 			}
 
-			self::log_debug( 'API HTTP ' . $code . ': ' . $raw );
-
 			return new WP_Error(
 				'mtuc_api_http_error',
 				$message,
@@ -339,19 +345,37 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
-	 * Debug log when mtuc_debug is enabled.
+	 * Write CP create-order response to the debug journal.
 	 *
-	 * @param string $message Log line.
+	 * @param array<string, mixed>|WP_Error $response    wp_remote_request response or transport error.
+	 * @param int                           $wc_order_id Related WooCommerce order ID.
 	 * @return void
 	 */
-	private static function log_debug( string $message ): void {
-		if ( 1 !== (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_DEBUG ) ) {
+	private static function log_create_order_response( $response, int $wc_order_id ): void {
+		if ( is_wp_error( $response ) ) {
+			$body = wp_json_encode(
+				array(
+					'error' => $response->get_error_message(),
+					'code'  => $response->get_error_code(),
+				)
+			);
+			Mtuc_Debug_Log::log_response(
+				Mtuc_Debug_Log::TYPE_CP_ORDER,
+				is_string( $body ) ? $body : '{}',
+				0,
+				$wc_order_id
+			);
 			return;
 		}
 
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-			error_log( '[mtunicredit] ' . $message );
-		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$raw  = wp_remote_retrieve_body( $response );
+
+		Mtuc_Debug_Log::log_response(
+			Mtuc_Debug_Log::TYPE_CP_ORDER,
+			is_string( $raw ) ? $raw : '{}',
+			$code,
+			$wc_order_id
+		);
 	}
 }

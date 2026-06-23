@@ -619,7 +619,7 @@ function mtuc_send_popup_order_to_cp(
 		$quantity,
 		$shop
 	);
-	$response = Mtuc_Cp_Api_Client::create_order( $payload );
+	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
 
 	if ( is_wp_error( $response ) ) {
 		return $response;

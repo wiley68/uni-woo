@@ -54,7 +54,7 @@ require_once __DIR__ . '/includes/config.php';
 
 /** Plugin constants */
 define( 'MTUC_VERSION', '1.0.0' );
-define( 'MTUC_DB_VERSION', '1.1.0' );
+define( 'MTUC_DB_VERSION', '1.2.0' );
 define( 'MTUC_PLUGIN_FILE', __FILE__ );
 define( 'MTUC_PLUGIN_DIR', untrailingslashit( __DIR__ ) );
 define( 'MTUC_PLUGIN_URL', untrailingslashit( plugin_dir_url( __FILE__ ) ) );
@@ -66,6 +66,7 @@ define( 'MTUC_FONTS_URI', MTUC_PLUGIN_URL . '/fonts' );
 /** Includes */
 $mtuc_files = array(
 	'/class-mtuc-settings.php',
+	'/class-mtuc-debug-log.php',
 	'/class-mtuc-cp-api-client.php',
 	'/class-mtuc-smartucf-api-client.php',
 	'/class-mtuc-shop-cache.php',
@@ -94,6 +95,7 @@ register_activation_hook( MTUC_PLUGIN_FILE, 'mtuc_activate_plugin' );
 function mtuc_activate_plugin() {
 	Mtuc_Settings::install_defaults();
 	Mtuc_Shop_Cache::create_table();
+	Mtuc_Debug_Log::create_table();
 }
 
 /**
@@ -122,6 +124,7 @@ function mtuc_plugin_bootstrap() {
 
 	if ( MTUC_DB_VERSION !== get_option( 'mtuc_db_version', '' ) ) {
 		Mtuc_Shop_Cache::create_table();
+		Mtuc_Debug_Log::create_table();
 	}
 
 	if ( is_admin() ) {

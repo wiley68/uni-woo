@@ -163,6 +163,7 @@ class Mtuc_Settings {
 
 		Mtuc_Cp_Api_Client::clear_token();
 		Mtuc_Shop_Cache::drop_table();
+		Mtuc_Debug_Log::drop_table();
 		delete_option( 'mtuc_db_version' );
 		delete_site_option( 'mtuc_db_version' );
 

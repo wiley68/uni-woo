@@ -182,6 +182,18 @@ function current_time( $type, $gmt = false ) {
 	return '';
 }
 
+/**
+ * @param string $format PHP date format.
+ * @param int|false|null $timestamp Unix timestamp.
+ * @param DateTimeZone|null $timezone Timezone.
+ * @return string
+ */
+function wp_date( string $format, $timestamp = null, ?DateTimeZone $timezone = null ): string {
+	unset( $format, $timestamp, $timezone );
+
+	return '';
+}
+
 function determine_locale() {}
 function load_plugin_textdomain($domain, $deprecated = false, $plugin_rel_path = false) {}
 function load_textdomain($domain, $mofile) {}
@@ -307,6 +319,18 @@ function wp_send_json_error($value = null, $status_code = null): never
 function wp_create_nonce(string|int $action = -1): string
 {
 	unset($action);
+
+	return '';
+}
+/**
+ * @param string $actionurl URL to add nonce to.
+ * @param string|int $action Nonce action name.
+ * @param string $name Query arg name for nonce.
+ * @return string
+ */
+function wp_nonce_url( string $actionurl, string|int $action = -1, string $name = '_wpnonce' ): string
+{
+	unset( $actionurl, $action, $name );
 
 	return '';
 }

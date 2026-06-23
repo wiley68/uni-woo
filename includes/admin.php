@@ -66,3 +66,27 @@ function mtuc_admin_render_settings_page() {
 }
 
 add_action( 'admin_enqueue_scripts', 'mtuc_admin_enqueue_styles' );
+add_action( 'admin_init', 'mtuc_admin_handle_debug_export' );
+
+/**
+ * Download debug journal as JSON when requested from settings.
+ *
+ * @return void
+ */
+function mtuc_admin_handle_debug_export(): void {
+	if ( ! isset( $_GET['mtuc_export_debug'] ) || '1' !== $_GET['mtuc_export_debug'] ) {
+		return;
+	}
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'Нямате достатъчно права за достъп до тази страница.', 'mtunicredit' ) );
+	}
+
+	check_admin_referer( 'mtuc_export_debug' );
+
+	if ( ! class_exists( 'Mtuc_Debug_Log' ) ) {
+		wp_die( esc_html__( 'Журналът за отстраняване на грешки не е наличен.', 'mtunicredit' ) );
+	}
+
+	Mtuc_Debug_Log::download_export();
+}

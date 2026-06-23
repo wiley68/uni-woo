@@ -167,6 +167,7 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 							<input type="checkbox" name="<?php echo esc_attr( Mtuc_Settings::OPTION_DEBUG ); ?>" id="mtuc_debug" value="1" <?php checked( 1, (int) $mtuc_settings[ Mtuc_Settings::OPTION_DEBUG ] ); ?> />
 							<?php esc_html_e( 'Моля изберете тази опция ако искате да включите режима за отстраняване на грешки.', 'mtunicredit' ); ?>
 						</label>
+						<p class="description"><?php esc_html_e( 'При активен режим отговорите от КП и SmartUCF се записват в журнал в базата данни (съхранение 3 месеца).', 'mtunicredit' ); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -198,5 +199,9 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 			<input type="hidden" name="mtuc_refresh_shop" value="1" />
 			<?php submit_button( __( 'Обнови данните от банката', 'mtunicredit' ), 'secondary', 'mtuc_refresh_shop_submit', false ); ?>
 		</form>
+		<a
+			class="button button-secondary"
+			href="<?php echo esc_url( wp_nonce_url( admin_url( 'options-general.php?page=' . MTUC_ADMIN_PAGE_SLUG . '&mtuc_export_debug=1' ), 'mtuc_export_debug' ) ); ?>"
+		><?php esc_html_e( 'Изтегли журнал операции', 'mtunicredit' ); ?></a>
 	</div>
 </div>

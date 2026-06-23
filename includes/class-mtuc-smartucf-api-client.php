@@ -154,15 +154,20 @@ class Mtuc_Smartucf_Api_Client {
 		$http_code     = (int) curl_getinfo( $handle, CURLINFO_HTTP_CODE );
 		curl_close( $handle );
 
-		self::log_debug(
-			'SmartUCF request',
-			array(
-				'url'       => $url,
-				'http_code' => $http_code,
-				'error'     => $curl_error,
-				'response'  => is_string( $response_body ) ? $response_body : '',
-				'payload'   => $payload,
-			)
+		$wc_order_id = isset( $payload['orderNo'] ) ? (int) $payload['orderNo'] : 0;
+		$log_body    = is_string( $response_body ) && '' !== $response_body
+			? $response_body
+			: wp_json_encode(
+				array(
+					'curl_error' => $curl_error,
+					'http_code'  => $http_code,
+				)
+			);
+		Mtuc_Debug_Log::log_response(
+			Mtuc_Debug_Log::TYPE_SMARTUCF,
+			is_string( $log_body ) ? $log_body : '{}',
+			$http_code,
+			$wc_order_id
 		);
 
 		if ( '' !== $curl_error ) {
@@ -211,33 +216,5 @@ class Mtuc_Smartucf_Api_Client {
 			'session_id'   => $session_id,
 			'redirect_url' => $redirect_url,
 		);
-	}
-
-	/**
-	 * Debug log when mtuc_debug is enabled.
-	 *
-	 * @param string               $message Log title.
-	 * @param array<string, mixed> $context Extra context.
-	 * @return void
-	 */
-	private static function log_debug( string $message, array $context = array() ): void {
-		if ( 1 !== (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_DEBUG ) ) {
-			return;
-		}
-
-		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG ) {
-			return;
-		}
-
-		$line = '[mtunicredit] ' . $message;
-		if ( ! empty( $context ) ) {
-			$encoded = wp_json_encode( $context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
-			if ( is_string( $encoded ) ) {
-				$line .= ' ' . $encoded;
-			}
-		}
-
-		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
-		error_log( $line );
 	}
 }
