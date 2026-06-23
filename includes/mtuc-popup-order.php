@@ -99,7 +99,7 @@ function mtuc_sync_cp_order_bank_status( WC_Order $order, string $bank_status_ke
 function mtuc_register_popup_order_hooks(): void {
 	add_action( 'wp_ajax_mtuc_popup_submit', 'mtuc_ajax_popup_submit' );
 	add_action( 'wp_ajax_nopriv_mtuc_popup_submit', 'mtuc_ajax_popup_submit' );
-	add_action( 'woocommerce_admin_order_data_after_billing_address', 'mtuc_render_admin_order_credit_meta', 20, 1 );
+	add_action( 'add_meta_boxes', 'mtuc_register_admin_order_credit_meta_box', 20, 0 );
 	add_filter( 'woocommerce_thankyou_order_received_text', 'mtuc_filter_thankyou_text_bank_unavailable', 20, 2 );
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_thankyou_styles' );
 }
@@ -1114,44 +1114,129 @@ function mtuc_ajax_popup_submit(): void {
 }
 
 /**
- * Show credit meta in admin order screen.
+ * Register WooCommerce order meta box for popup credit data.
  *
- * @param WC_Order $order Order instance.
  * @return void
  */
-function mtuc_render_admin_order_credit_meta( WC_Order $order ): void {
+function mtuc_register_admin_order_credit_meta_box(): void {
+	$screen_ids = array( 'shop_order' );
+
+	if ( function_exists( 'wc_get_page_screen_id' ) ) {
+		$hpos_screen = wc_get_page_screen_id( 'shop-order' );
+		if ( is_string( $hpos_screen ) && '' !== $hpos_screen ) {
+			$screen_ids[] = $hpos_screen;
+		}
+	}
+
+	foreach ( array_unique( $screen_ids ) as $screen_id ) {
+		add_meta_box(
+			'mtuc-order-credit-meta',
+			__( 'УниКредит — кредитна заявка', 'mtunicredit' ),
+			'mtuc_render_admin_order_credit_meta_box',
+			$screen_id,
+			'side',
+			'high'
+		);
+	}
+}
+
+/**
+ * Resolve WC_Order from admin meta box context (legacy post or HPOS).
+ *
+ * @param mixed $post_or_order Post, order, or null.
+ * @return WC_Order|null
+ */
+function mtuc_resolve_admin_screen_order( $post_or_order = null ): ?WC_Order {
+	if ( $post_or_order instanceof WC_Order ) {
+		return $post_or_order;
+	}
+
+	if ( $post_or_order instanceof WP_Post && 'shop_order' === $post_or_order->post_type ) {
+		$order = wc_get_order( $post_or_order->ID );
+		return $order instanceof WC_Order ? $order : null;
+	}
+
+	if ( isset( $_GET['id'] ) ) {
+		$order = wc_get_order( absint( wp_unslash( $_GET['id'] ) ) );
+		return $order instanceof WC_Order ? $order : null;
+	}
+
+	return null;
+}
+
+/**
+ * Credit meta rows for admin order screen (label => value).
+ *
+ * @param WC_Order $order Order instance.
+ * @return array<string, string>
+ */
+function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 	$bank_status = (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS );
 	if ( '' === $bank_status ) {
-		return;
+		return array();
 	}
 
 	$labels      = mtuc_get_bank_status_labels();
 	$status_text = $labels[ $bank_status ] ?? (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' );
 
-	$months   = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'months' );
-	$parva    = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'parva' );
-	$loan     = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'loan_amount' );
-	$monthly  = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'monthly_installment' );
-	$total    = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'total_payable' );
-	$glp      = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'glp' );
-	$gpr      = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'gpr' );
-	$kop_code = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'kop_code' );
+	$rows = array(
+		__( 'Статус към банката', 'mtunicredit' ) => $status_text,
+	);
 
-	echo '<div class="order_data_column" style="clear:both; padding-top:12px;">';
-	echo '<h3>' . esc_html__( 'УниКредит — кредитна заявка', 'mtunicredit' ) . '</h3>';
-	echo '<p><strong>' . esc_html__( 'Статус към банката:', 'mtunicredit' ) . '</strong> ' . esc_html( $status_text ) . '</p>';
-
+	$months = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'months' );
 	if ( $months > 0 ) {
-		echo '<p><strong>' . esc_html__( 'Срок (месеци):', 'mtunicredit' ) . '</strong> ' . esc_html( (string) $months ) . '</p>';
-	}
-	if ( '' !== $kop_code ) {
-		echo '<p><strong>' . esc_html__( 'КОП:', 'mtunicredit' ) . '</strong> ' . esc_html( $kop_code ) . '</p>';
+		$rows[ __( 'Срок (месеци)', 'mtunicredit' ) ] = (string) $months;
 	}
 
-	echo '<p><strong>' . esc_html__( 'Първоначална вноска:', 'mtunicredit' ) . '</strong> ' . esc_html( number_format( $parva, 2, '.', '' ) ) . '</p>';
-	echo '<p><strong>' . esc_html__( 'Сума на заема:', 'mtunicredit' ) . '</strong> ' . esc_html( number_format( $loan, 2, '.', '' ) ) . '</p>';
-	echo '<p><strong>' . esc_html__( 'Месечна вноска:', 'mtunicredit' ) . '</strong> ' . esc_html( number_format( $monthly, 2, '.', '' ) ) . '</p>';
-	echo '<p><strong>' . esc_html__( 'Обща дължима сума:', 'mtunicredit' ) . '</strong> ' . esc_html( number_format( $total, 2, '.', '' ) ) . '</p>';
-	echo '<p><strong>' . esc_html__( 'ГЛП / ГПР:', 'mtunicredit' ) . '</strong> ' . esc_html( number_format( $glp, 2, '.', '' ) ) . '% / ' . esc_html( number_format( $gpr, 2, '.', '' ) ) . '%</p>';
-	echo '</div>';
+	$kop_code = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'kop_code' );
+	if ( '' !== $kop_code ) {
+		$rows[ __( 'КОП', 'mtunicredit' ) ] = $kop_code;
+	}
+
+	$parva   = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'parva' );
+	$loan    = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'loan_amount' );
+	$monthly = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'monthly_installment' );
+	$total   = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'total_payable' );
+	$glp     = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'glp' );
+	$gpr     = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'gpr' );
+
+	$rows[ __( 'Първоначална вноска', 'mtunicredit' ) ]   = number_format( $parva, 2, '.', '' );
+	$rows[ __( 'Сума на заема', 'mtunicredit' ) ]          = number_format( $loan, 2, '.', '' );
+	$rows[ __( 'Месечна вноска', 'mtunicredit' ) ]         = number_format( $monthly, 2, '.', '' );
+	$rows[ __( 'Обща дължима сума', 'mtunicredit' ) ]      = number_format( $total, 2, '.', '' );
+	$rows[ __( 'ГЛП / ГПР', 'mtunicredit' ) ]              = number_format( $glp, 2, '.', '' ) . '% / ' . number_format( $gpr, 2, '.', '' ) . '%';
+
+	return $rows;
+}
+
+/**
+ * Render credit meta box on WooCommerce order edit screen.
+ *
+ * @param mixed $post_or_order Post, order, or screen-specific object.
+ * @return void
+ */
+function mtuc_render_admin_order_credit_meta_box( $post_or_order ): void {
+	$order = mtuc_resolve_admin_screen_order( $post_or_order );
+	if ( ! $order instanceof WC_Order ) {
+		return;
+	}
+
+	$rows = mtuc_get_admin_order_credit_meta_rows( $order );
+	if ( empty( $rows ) ) {
+		echo '<p class="description">' . esc_html__( 'Няма записани кредитни данни за тази поръчка.', 'mtunicredit' ) . '</p>';
+		return;
+	}
+
+	echo '<table class="widefat striped mtuc-order-credit-table">';
+	echo '<tbody>';
+
+	foreach ( $rows as $label => $value ) {
+		echo '<tr>';
+		echo '<th scope="row">' . esc_html( $label ) . '</th>';
+		echo '<td>' . esc_html( $value ) . '</td>';
+		echo '</tr>';
+	}
+
+	echo '</tbody>';
+	echo '</table>';
 }

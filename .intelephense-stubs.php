@@ -506,6 +506,16 @@ function get_posts($args = null): array
 }
 
 /**
+ * @param int|WP_Post|null $post
+ * @return string|false
+ */
+function get_post_type( $post = null ) {
+	unset( $post );
+
+	return '';
+}
+
+/**
  * @return mixed|false
  */
 function get_transient( string $transient ): mixed
@@ -614,6 +624,9 @@ class WP_Post
 {
 	/** @var int */
 	public $ID;
+
+	/** @var string */
+	public $post_type = '';
 }
 
 class WP_User

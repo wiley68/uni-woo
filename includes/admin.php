@@ -31,23 +31,38 @@ function mtuc_admin_register_menu() {
 }
 
 /**
- * Enqueue admin CSS on the plugin settings screen only.
+ * Enqueue admin CSS on plugin settings and WooCommerce order screens.
  *
  * @param string $hook_suffix Current admin page hook.
  * @return void
  */
 function mtuc_admin_enqueue_styles( string $hook_suffix ): void {
-	if ( 'settings_page_' . MTUC_ADMIN_PAGE_SLUG !== $hook_suffix ) {
+	$css_file = MTUC_PLUGIN_DIR . '/css/mtuc-admin.css';
+	if ( ! file_exists( $css_file ) ) {
 		return;
 	}
 
-	$css_file = MTUC_PLUGIN_DIR . '/css/mtuc-admin.css';
+	$version = (string) filemtime( $css_file );
+	$screen  = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+	$load    = false;
+
+	if ( 'settings_page_' . MTUC_ADMIN_PAGE_SLUG === $hook_suffix ) {
+		$load = true;
+	}
+
+	if ( $screen && in_array( $screen->id, array( 'shop_order', 'woocommerce_page_wc-orders' ), true ) ) {
+		$load = true;
+	}
+
+	if ( ! $load ) {
+		return;
+	}
 
 	wp_enqueue_style(
 		'mtuc-admin',
 		MTUC_PLUGIN_URL . '/css/mtuc-admin.css',
 		array(),
-		file_exists( $css_file ) ? (string) filemtime( $css_file ) : MTUC_VERSION
+		$version
 	);
 }
 

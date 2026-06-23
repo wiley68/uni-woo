@@ -15,3 +15,23 @@
 .mtuc-form-table td {
 	width: 75%;
 }
+
+.mtuc-order-credit-table {
+	margin: 0;
+	border: 0;
+}
+
+.mtuc-order-credit-table th,
+.mtuc-order-credit-table td {
+	padding: 8px 10px;
+	vertical-align: top;
+}
+
+.mtuc-order-credit-table th {
+	width: 46%;
+	font-weight: 600;
+}
+
+.mtuc-order-credit-table td {
+	width: 54%;
+}
