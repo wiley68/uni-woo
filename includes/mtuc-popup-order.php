@@ -18,7 +18,10 @@ const MTUC_ORDER_META_BANK_STATUS = '_mtuc_bank_status';
 /** Order meta prefix for credit calculation snapshot. */
 const MTUC_ORDER_META_PREFIX = '_mtuc_';
 
-/** Bank status: not yet sent to SmartUCF / CP. */
+/** Bank status: WooCommerce order created (step 1). */
+const MTUC_BANK_STATUS_WC_CREATED = 'wc_created';
+
+/** Bank status: not successfully sent to bank (failure). */
 const MTUC_BANK_STATUS_NOT_SENT = 'not_sent';
 
 /** Bank status: sent to Control Panel (step 2). */
@@ -34,9 +37,10 @@ const MTUC_BANK_STATUS_SENT = 'sent';
  */
 function mtuc_get_bank_status_labels(): array {
 	return array(
-		MTUC_BANK_STATUS_NOT_SENT => __( 'Неуспешно изпратен', 'mtunicredit' ),
-		MTUC_BANK_STATUS_CP_SENT  => __( 'Създаден в КП UCF', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SENT     => __( 'Успешно изпратен Банка', 'mtunicredit' ),
+		MTUC_BANK_STATUS_WC_CREATED => __( 'Създадена в магазина', 'mtunicredit' ),
+		MTUC_BANK_STATUS_NOT_SENT   => __( 'Неуспешно изпратен', 'mtunicredit' ),
+		MTUC_BANK_STATUS_CP_SENT    => __( 'Създаден в КП UCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SENT       => __( 'Успешно изпратен Банка', 'mtunicredit' ),
 	);
 }
 
@@ -469,14 +473,15 @@ function mtuc_create_popup_pending_order(
 
 	mtuc_update_order_bank_status(
 		$order,
-		MTUC_BANK_STATUS_NOT_SENT,
-		__( 'Поръчката е създадена от кредитен попъп. Очаква изпращане към SmartUCF.', 'mtunicredit' )
+		MTUC_BANK_STATUS_WC_CREATED,
+		sprintf(
+			/* translators: %s: WooCommerce order number */
+			__( 'Поръчка №%s е създадена в магазина.', 'mtunicredit' ),
+			$order->get_order_number()
+		)
 	);
 
-	$order->set_status(
-		'pending',
-		__( 'Поръчката е създадена от кредитен попъп на продуктовата страница. Очаква обработка на кредитната заявка.', 'mtunicredit' )
-	);
+	$order->set_status( 'pending', '', true );
 
 	$order->save();
 
