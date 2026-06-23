@@ -38,9 +38,24 @@ const MTUC_BANK_STATUS_SENT = 'sent';
 function mtuc_get_bank_status_labels(): array {
 	return array(
 		MTUC_BANK_STATUS_NOT_SENT       => __( 'Неуспешно изпратен', 'mtunicredit' ),
-		MTUC_BANK_STATUS_CP_SENT        => __( 'Изпратен към КП', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SMARTUCF_SENT  => __( 'Изпратен SmartUCF', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SENT           => __( 'Успешно изпратен', 'mtunicredit' ),
+		MTUC_BANK_STATUS_CP_SENT        => __( 'Създаден в КП UCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SMARTUCF_SENT  => __( 'Създаден в SmartUCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SENT           => __( 'Успешно изпратен Банка', 'mtunicredit' ),
+	);
+}
+
+/**
+ * CP order status fields aligned with WC bank status meta.
+ *
+ * @param string $bank_status_key Status key (see MTUC_BANK_STATUS_*).
+ * @return array{status: string, status_id: string}
+ */
+function mtuc_get_cp_order_status_payload( string $bank_status_key ): array {
+	$labels = mtuc_get_bank_status_labels();
+
+	return array(
+		'status'    => $labels[ $bank_status_key ] ?? $bank_status_key,
+		'status_id' => $bank_status_key,
 	);
 }
 
@@ -194,11 +209,7 @@ function mtuc_resolve_popup_order_addresses( array $customer ): array {
 	if ( is_user_logged_in() && function_exists( 'wc_get_customer' ) ) {
 		$wc_customer = wc_get_customer( get_current_user_id() );
 		if ( $wc_customer instanceof WC_Customer ) {
-			$billing['address_2'] = (string) $wc_customer->get_billing_address_2();
-			$billing['city']      = (string) $wc_customer->get_billing_city();
-			$billing['state']     = (string) $wc_customer->get_billing_state();
-			$billing['postcode']  = (string) $wc_customer->get_billing_postcode();
-			$billing['country']   = (string) $wc_customer->get_billing_country();
+			$billing['country'] = (string) $wc_customer->get_billing_country();
 
 			$shipping['first_name'] = (string) $wc_customer->get_shipping_first_name();
 			if ( '' === $shipping['first_name'] ) {
@@ -209,9 +220,6 @@ function mtuc_resolve_popup_order_addresses( array $customer ): array {
 				$shipping['last_name'] = $customer['last_name'];
 			}
 			$shipping['address_1'] = (string) $wc_customer->get_shipping_address_1();
-			if ( '' === $shipping['address_1'] ) {
-				$shipping['address_1'] = $customer['address'];
-			}
 			$shipping['address_2'] = (string) $wc_customer->get_shipping_address_2();
 			$shipping['city']      = (string) $wc_customer->get_shipping_city();
 			$shipping['state']     = (string) $wc_customer->get_shipping_state();
@@ -219,13 +227,24 @@ function mtuc_resolve_popup_order_addresses( array $customer ): array {
 			$shipping['country']   = (string) $wc_customer->get_shipping_country();
 			$shipping['email']     = $customer['email'];
 			$shipping['phone']     = $customer['phone'];
+
+			if ( '' === $shipping['address_1'] ) {
+				$shipping['address_1'] = $customer['address'];
+				$shipping['address_2'] = '';
+				$shipping['city']      = '';
+				$shipping['state']     = '';
+				$shipping['postcode']  = '';
+			}
+			if ( '' === $shipping['country'] ) {
+				$shipping['country'] = $billing['country'];
+			}
 		}
 	}
 
 	if ( '' === $billing['country'] && function_exists( 'wc_get_base_location' ) ) {
-		$base                 = wc_get_base_location();
-		$billing['country']   = isset( $base['country'] ) ? (string) $base['country'] : 'BG';
-		$shipping['country']  = $billing['country'];
+		$base                = wc_get_base_location();
+		$billing['country']  = isset( $base['country'] ) ? (string) $base['country'] : 'BG';
+		$shipping['country'] = '' !== $shipping['country'] ? $shipping['country'] : $billing['country'];
 	}
 
 	return array(
@@ -235,83 +254,30 @@ function mtuc_resolve_popup_order_addresses( array $customer ): array {
 }
 
 /**
- * Format WooCommerce billing or shipping address for CP (max 256 chars).
+ * Resolve CP address fields: popup billing → address, shipping → address2.
  *
- * @param WC_Order $order Order instance.
- * @param string   $type  `shipping` or `billing`.
- * @return string
- */
-function mtuc_format_order_address_for_cp( WC_Order $order, string $type ): string {
-	if ( 'shipping' === $type ) {
-		$parts = array_filter(
-			array(
-				(string) $order->get_shipping_address_1(),
-				(string) $order->get_shipping_address_2(),
-				(string) $order->get_shipping_city(),
-				(string) $order->get_shipping_postcode(),
-				(string) $order->get_shipping_state(),
-			)
-		);
-	} else {
-		$parts = array_filter(
-			array(
-				(string) $order->get_billing_address_1(),
-				(string) $order->get_billing_address_2(),
-				(string) $order->get_billing_city(),
-				(string) $order->get_billing_postcode(),
-				(string) $order->get_billing_state(),
-			)
-		);
-	}
-
-	$formatted = implode( ', ', $parts );
-	if ( strlen( $formatted ) > 256 ) {
-		$formatted = substr( $formatted, 0, 256 );
-	}
-
-	return $formatted;
-}
-
-/**
- * Resolve CP address fields: shipping → address, billing → address2.
- *
- * @param WC_Order              $order    Order with billing/shipping set.
+ * @param WC_Order              $order    Order with billing/shipping set (unused, kept for signature).
  * @param array<string, string> $customer Validated popup customer fields.
  * @return array{address: string, address2: string}
  */
 function mtuc_resolve_cp_order_addresses( WC_Order $order, array $customer ): array {
-	$shipping_address = mtuc_format_order_address_for_cp( $order, 'shipping' );
-	$billing_address  = mtuc_format_order_address_for_cp( $order, 'billing' );
-	$fallback         = (string) $customer['address'];
+	unset( $order );
 
-	if ( '' === $shipping_address ) {
-		$shipping_address = $fallback;
-	}
-	if ( '' === $billing_address ) {
-		$billing_address = $fallback;
-	}
-	if ( '' === $shipping_address && '' !== $billing_address ) {
-		$shipping_address = $billing_address;
-	}
-	if ( '' === $billing_address && '' !== $shipping_address ) {
-		$billing_address = $shipping_address;
+	$address = mtuc_join_address_parts( array( (string) $customer['address'] ) );
+	$address2 = mtuc_get_popup_shipping_address_for_cp();
+
+	if ( '' === $address2 ) {
+		$address2 = $address;
 	}
 
 	// КП DB: address2 е NOT NULL; Laravel конвертира празен string в null.
-	if ( '' === $billing_address ) {
-		$billing_address = '-';
-	}
-
-	if ( strlen( $shipping_address ) > 256 ) {
-		$shipping_address = substr( $shipping_address, 0, 256 );
-	}
-	if ( strlen( $billing_address ) > 256 ) {
-		$billing_address = substr( $billing_address, 0, 256 );
+	if ( '' === $address2 ) {
+		$address2 = '-';
 	}
 
 	return array(
-		'address'  => $shipping_address,
-		'address2' => $billing_address,
+		'address'  => $address,
+		'address2' => $address2,
 	);
 }
 
@@ -581,6 +547,7 @@ function mtuc_build_cp_order_payload(
 	}
 
 	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
+	$cp_status      = mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_CP_SENT );
 
 	$product_id_for_cp = $variation_id > 0 ? $variation_id : $parent_id;
 	$product_name      = $product->get_name();
@@ -600,8 +567,8 @@ function mtuc_build_cp_order_payload(
 		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),
 		'vnoski'        => (int) ( $calculation['months'] ?? 0 ),
 		'parva'         => round( (float) ( $calculation['parva'] ?? 0 ), 2 ),
-		'status'        => 'Регистрирана',
-		'status_id'     => '05',
+		'status'        => $cp_status['status'],
+		'status_id'     => $cp_status['status_id'],
 		'products_id'   => (string) $product_id_for_cp,
 		'products_name' => $product_name,
 		'products_q'    => (string) max( 1, $quantity ),

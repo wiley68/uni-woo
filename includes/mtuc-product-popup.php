@@ -601,7 +601,36 @@ function mtuc_format_popup_amount_display( float $amount, array $shop ): array {
 }
 
 /**
- * Billing street line for popup address field (address_1 only).
+ * Join non-empty address parts with comma separator (max 256 chars).
+ *
+ * @param string[] $parts Address fragments.
+ * @return string
+ */
+function mtuc_join_address_parts( array $parts ): string {
+	$parts = array_values(
+		array_filter(
+			array_map(
+				static function ( $part ) {
+					return trim( (string) $part );
+				},
+				$parts
+			),
+			static function ( $part ) {
+				return '' !== $part;
+			}
+		)
+	);
+
+	$formatted = implode( ', ', $parts );
+	if ( strlen( $formatted ) > 256 ) {
+		$formatted = substr( $formatted, 0, 256 );
+	}
+
+	return $formatted;
+}
+
+/**
+ * Billing address default for popup step 2 (address, city, postal code).
  *
  * @param int $user_id WordPress user ID (0 = current user).
  * @return string
@@ -618,14 +647,55 @@ function mtuc_get_popup_billing_address_default( int $user_id = 0 ): string {
 	if ( function_exists( 'wc_get_customer' ) ) {
 		$customer = wc_get_customer( $user_id );
 		if ( $customer instanceof WC_Customer ) {
-			$address = (string) $customer->get_billing_address_1();
-			if ( '' !== $address ) {
-				return $address;
+			$formatted = mtuc_join_address_parts(
+				array(
+					(string) $customer->get_billing_address_1(),
+					(string) $customer->get_billing_city(),
+					(string) $customer->get_billing_postcode(),
+				)
+			);
+			if ( '' !== $formatted ) {
+				return $formatted;
 			}
 		}
 	}
 
-	return (string) get_user_meta( $user_id, 'billing_address_1', true );
+	return mtuc_join_address_parts(
+		array(
+			(string) get_user_meta( $user_id, 'billing_address_1', true ),
+			(string) get_user_meta( $user_id, 'billing_city', true ),
+			(string) get_user_meta( $user_id, 'billing_postcode', true ),
+		)
+	);
+}
+
+/**
+ * Shipping address formatted for CP address2 (logged-in customers).
+ *
+ * @param int $user_id WordPress user ID (0 = current user).
+ * @return string Empty when no shipping data is available.
+ */
+function mtuc_get_popup_shipping_address_for_cp( int $user_id = 0 ): string {
+	if ( $user_id <= 0 ) {
+		$user_id = get_current_user_id();
+	}
+
+	if ( $user_id <= 0 || ! function_exists( 'wc_get_customer' ) ) {
+		return '';
+	}
+
+	$customer = wc_get_customer( $user_id );
+	if ( ! $customer instanceof WC_Customer ) {
+		return '';
+	}
+
+	return mtuc_join_address_parts(
+		array(
+			(string) $customer->get_shipping_address_1(),
+			(string) $customer->get_shipping_city(),
+			(string) $customer->get_shipping_postcode(),
+		)
+	);
 }
 
 /**
