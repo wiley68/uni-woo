@@ -1399,6 +1399,7 @@ function mtuc_enqueue_product_assets(): void {
 				'submitError'    => __( 'Заявката не може да бъде изпратена. Моля, опитайте отново.', 'mtunicredit' ),
 				'submitNoCalc'   => __( 'Липсват данни за изчисление. Моля, върнете се и изберете схема отново.', 'mtunicredit' ),
 				'submitting'     => __( 'Изпращане...', 'mtunicredit' ),
+				'processing'     => __( 'Обработване на заявката. Моля, изчакайте...', 'mtunicredit' ),
 			),
 		)
 	);

@@ -225,6 +225,12 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 				</div>
 			</div>
 		</div>
+		<div class="mtuc-popup__processing" hidden>
+			<div class="mtuc-popup__processing-panel" role="status" aria-live="polite" aria-busy="true">
+				<span class="mtuc-popup__processing-spinner" aria-hidden="true"></span>
+				<p class="mtuc-popup__processing-text"></p>
+			</div>
+		</div>
 	</div>
 
 	<input type="hidden" id="mtuc-popup-product-id" value="<?php echo esc_attr( (string) $product_id ); ?>" />

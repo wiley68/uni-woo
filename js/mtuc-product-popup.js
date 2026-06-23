@@ -46,6 +46,9 @@
 		let lastCalculation = null;
 		let lastOpenTrigger = null;
 		let submitInFlight = false;
+		let redirectPending = false;
+		const $processing = $popup.find(".mtuc-popup__processing");
+		const $processingText = $popup.find(".mtuc-popup__processing-text");
 
 		const resetParvaInput = () => {
 			$parva.val("0").prop("readonly", false);
@@ -54,6 +57,30 @@
 		const formatPercent = (value) => {
 			const num = Math.abs(parseFloat(value) || 0);
 			return num.toFixed(2);
+		};
+
+		const setPopupProcessingState = (isProcessing) => {
+			$popup.toggleClass("is-processing", isProcessing);
+			$popup.attr("aria-busy", isProcessing ? "true" : "false");
+
+			if (isProcessing) {
+				$processing.removeAttr("hidden");
+				$processingText.text(
+					mtucPopup.i18n.processing ||
+						"Обработване на заявката. Моля, изчакайте...",
+				);
+				return;
+			}
+
+			$processing.attr("hidden", "hidden");
+			$processingText.text("");
+		};
+
+		const releaseSubmitUi = () => {
+			submitInFlight = false;
+			redirectPending = false;
+			setPopupProcessingState(false);
+			setSubmittingState(false);
 		};
 
 		const setSubmittingState = (isSubmitting) => {
@@ -118,6 +145,8 @@
 			}
 
 			submitInFlight = true;
+			redirectPending = false;
+			setPopupProcessingState(true);
 			setSubmittingState(true);
 
 			$.post(mtucPopup.ajaxUrl, getSubmitPayload())
@@ -127,6 +156,7 @@
 						response.data &&
 						response.data.redirect_url
 					) {
+						redirectPending = true;
 						window.location.assign(response.data.redirect_url);
 						return;
 					}
@@ -136,6 +166,7 @@
 							response.data.message ||
 								mtucPopup.i18n.submitPending,
 						);
+						releaseSubmitUi();
 						closePopup();
 						return;
 					}
@@ -144,8 +175,21 @@
 						(response && response.data && response.data.message) ||
 							mtucPopup.i18n.submitError,
 					);
+					releaseSubmitUi();
 				})
 				.fail((xhr) => {
+					if (
+						xhr.responseJSON &&
+						xhr.responseJSON.data &&
+						xhr.responseJSON.data.redirect_url
+					) {
+						redirectPending = true;
+						window.location.assign(
+							xhr.responseJSON.data.redirect_url,
+						);
+						return;
+					}
+
 					let message = mtucPopup.i18n.submitError;
 					if (
 						xhr.responseJSON &&
@@ -155,10 +199,7 @@
 						message = xhr.responseJSON.data.message;
 					}
 					window.alert(message);
-				})
-				.always(() => {
-					submitInFlight = false;
-					setSubmittingState(false);
+					releaseSubmitUi();
 				});
 		};
 
@@ -499,6 +540,7 @@
 
 		const openPopup = (offerType) => {
 			movePopupToBody();
+			releaseSubmitUi();
 			$offerType.val(offerType);
 			showStep(1);
 			resetParvaInput();
@@ -538,6 +580,10 @@
 		};
 
 		const closePopup = () => {
+			if (submitInFlight || redirectPending) {
+				return;
+			}
+
 			window.clearTimeout(calculateTimer);
 			calculateTimer = null;
 			releasePopupFocus();
@@ -680,6 +726,9 @@
 		});
 
 		$("#mtuc-popup-back").on("click", function () {
+			if (submitInFlight || redirectPending) {
+				return;
+			}
 			showStep(1);
 		});
 
