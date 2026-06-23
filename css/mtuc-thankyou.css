@@ -1,0 +1,12 @@
+/**
+ * Thank-you page — bank unavailable notice (popup credit orders).
+ */
+
+.woocommerce-thankyou-order-received .mtuc-thankyou-bank-unavailable {
+	display: block;
+	margin-top: 0.75em;
+	font-size: 1.125em;
+	line-height: 1.45;
+	font-weight: 600;
+	color: #ed1c24;
+}

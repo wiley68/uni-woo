@@ -837,6 +837,10 @@ function get_woocommerce_currency_symbol(string $currency = ''): string
 }
 
 function is_checkout() {}
+function is_order_received_page(): bool
+{
+	return false;
+}
 function is_account_page() {}
 function is_wc_endpoint_url($endpoint = '') {}
 function is_product() {}
@@ -1175,7 +1179,28 @@ class WC_Order_Item_Product
 
 class WC_DateTime extends DateTime {}
 
-class WC_Order
+/**
+ * WooCommerce data object base (orders, products, etc.).
+ */
+class WC_Data {
+	public function get_meta( string $key = '', bool $single = true ) {
+		unset( $key, $single );
+
+		return null;
+	}
+
+	public function update_meta_data( string $key, mixed $value, int $meta_id = 0 ): void {
+		unset( $key, $value, $meta_id );
+	}
+
+	public function delete_meta_data( string $key ): void {
+		unset( $key );
+	}
+
+	public function save_meta_data(): void {}
+}
+
+class WC_Order extends WC_Data
 {
 	public function get_id(): int
 	{
@@ -1406,6 +1431,11 @@ class WC_Order
 		return '';
 	}
 
+	public function get_checkout_order_received_url(): string
+	{
+		return '';
+	}
+
 	public function get_order_number(): string
 	{
 		return '';
@@ -1435,20 +1465,6 @@ class WC_Order
 
 		return array();
 	}
-
-	public function get_meta(string $key = '', bool $single = true)
-	{
-		unset($key, $single);
-
-		return null;
-	}
-
-	public function update_meta_data(string $key, mixed $value, int $meta_id = 0): void
-	{
-		unset($key, $value, $meta_id);
-	}
-
-	public function save_meta_data(): void {}
 
 	public function add_order_note(string $note, bool $is_customer_note = false, bool $added_by_user = false): int
 	{
