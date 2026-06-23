@@ -39,7 +39,7 @@ function mtuc_get_bank_status_labels(): array {
 	return array(
 		MTUC_BANK_STATUS_NOT_SENT       => __( 'Неуспешно изпратен', 'mtunicredit' ),
 		MTUC_BANK_STATUS_CP_SENT        => __( 'Създаден в КП UCF', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SMARTUCF_SENT  => __( 'Създаден в SmartUCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SMARTUCF_SENT  => __( 'Изпратен SmartUCF', 'mtunicredit' ),
 		MTUC_BANK_STATUS_SENT           => __( 'Успешно изпратен Банка', 'mtunicredit' ),
 	);
 }
@@ -504,6 +504,19 @@ function mtuc_get_cp_order_currency( array $shop ): string {
 }
 
 /**
+ * CP type_client: 0 = mobile, 1 = desktop/PC.
+ *
+ * @return int 0|1
+ */
+function mtuc_get_cp_type_client(): int {
+	if ( function_exists( 'wp_is_mobile' ) && wp_is_mobile() ) {
+		return 0;
+	}
+
+	return 1;
+}
+
+/**
  * Build CP StoreOrderRequest payload from popup order data.
  *
  * @param WC_Order              $order       WooCommerce order.
@@ -572,7 +585,7 @@ function mtuc_build_cp_order_payload(
 		'products_id'   => (string) $product_id_for_cp,
 		'products_name' => $product_name,
 		'products_q'    => (string) max( 1, $quantity ),
-		'type_client'   => 0,
+		'type_client'   => mtuc_get_cp_type_client(),
 		'currency'      => mtuc_get_cp_order_currency( $shop ),
 	);
 }
