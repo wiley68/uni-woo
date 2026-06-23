@@ -20,6 +20,9 @@ class Mtuc_Debug_Log {
 	/** @var string Log type: CP POST /orders response. */
 	public const TYPE_CP_ORDER = 'cp_order';
 
+	/** @var string Log type: CP PATCH /orders/status response. */
+	public const TYPE_CP_ORDER_STATUS = 'cp_order_status';
+
 	/** @var string Log type: SmartUCF sucfOnlineSessionStart response. */
 	public const TYPE_SMARTUCF = 'smartucf_session';
 
@@ -100,6 +103,8 @@ class Mtuc_Debug_Log {
 		switch ( $type ) {
 			case self::TYPE_CP_ORDER:
 				return __( 'КП — създаване на поръчка', 'mtunicredit' );
+			case self::TYPE_CP_ORDER_STATUS:
+				return __( 'КП — обновяване на статус', 'mtunicredit' );
 			case self::TYPE_SMARTUCF:
 				return __( 'SmartUCF — старт на сесия', 'mtunicredit' );
 			default:

@@ -70,7 +70,7 @@ class Mtuc_Cp_Api_Client {
 
 		$response = self::request( 'POST', 'orders', $payload, $token, true );
 		if ( is_wp_error( $response ) ) {
-			self::log_create_order_response( $response, $wc_order_id );
+			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER );
 			return $response;
 		}
 
@@ -84,11 +84,65 @@ class Mtuc_Cp_Api_Client {
 		}
 
 		if ( is_wp_error( $response ) ) {
-			self::log_create_order_response( $response, $wc_order_id );
+			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER );
 			return $response;
 		}
 
-		self::log_create_order_response( $response, $wc_order_id );
+		self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER );
+
+		return self::decode_response( $response );
+	}
+
+	/**
+	 * Update order status in CP (PATCH /orders/status).
+	 *
+	 * @param string $order_id   Shop order identifier (same value as on create).
+	 * @param string $status     Human-readable status label.
+	 * @param string $status_id  Machine-readable status key.
+	 * @param int    $wc_order_id Related WooCommerce order ID for debug journal.
+	 * @return array<string, mixed>|WP_Error Decoded JSON body on success.
+	 */
+	public static function update_order_status( string $order_id, string $status, string $status_id, int $wc_order_id = 0 ) {
+		$order_id = trim( $order_id );
+		if ( '' === $order_id ) {
+			return new WP_Error(
+				'mtuc_api_missing_order_id',
+				__( 'Липсва идентификатор на поръчката за обновяване в КП.', 'mtunicredit' )
+			);
+		}
+
+		$token = self::ensure_access_token();
+		if ( is_wp_error( $token ) ) {
+			return $token;
+		}
+
+		$body = array(
+			'order_id'  => $order_id,
+			'status'    => $status,
+			'status_id' => $status_id,
+		);
+
+		$response = self::request( 'PATCH', 'orders/status', $body, $token, true );
+		if ( is_wp_error( $response ) ) {
+			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER_STATUS );
+			return $response;
+		}
+
+		if ( 401 === (int) wp_remote_retrieve_response_code( $response ) ) {
+			self::clear_token();
+			$token = self::ensure_access_token();
+			if ( is_wp_error( $token ) ) {
+				return $token;
+			}
+			$response = self::request( 'PATCH', 'orders/status', $body, $token, true );
+		}
+
+		if ( is_wp_error( $response ) ) {
+			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER_STATUS );
+			return $response;
+		}
+
+		self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER_STATUS );
 
 		return self::decode_response( $response );
 	}
@@ -345,13 +399,14 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
-	 * Write CP create-order response to the debug journal.
+	 * Write CP API response to the debug journal.
 	 *
 	 * @param array<string, mixed>|WP_Error $response    wp_remote_request response or transport error.
 	 * @param int                           $wc_order_id Related WooCommerce order ID.
+	 * @param string                        $log_type    Debug log type (see Mtuc_Debug_Log::TYPE_*).
 	 * @return void
 	 */
-	private static function log_create_order_response( $response, int $wc_order_id ): void {
+	private static function log_cp_api_response( $response, int $wc_order_id, string $log_type ): void {
 		if ( is_wp_error( $response ) ) {
 			$body = wp_json_encode(
 				array(
@@ -360,7 +415,7 @@ class Mtuc_Cp_Api_Client {
 				)
 			);
 			Mtuc_Debug_Log::log_response(
-				Mtuc_Debug_Log::TYPE_CP_ORDER,
+				$log_type,
 				is_string( $body ) ? $body : '{}',
 				0,
 				$wc_order_id
@@ -372,7 +427,7 @@ class Mtuc_Cp_Api_Client {
 		$raw  = wp_remote_retrieve_body( $response );
 
 		Mtuc_Debug_Log::log_response(
-			Mtuc_Debug_Log::TYPE_CP_ORDER,
+			$log_type,
 			is_string( $raw ) ? $raw : '{}',
 			$code,
 			$wc_order_id

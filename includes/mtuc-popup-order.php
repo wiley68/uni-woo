@@ -60,6 +60,39 @@ function mtuc_get_cp_order_status_payload( string $bank_status_key ): array {
 }
 
 /**
+ * Shop order_id sent to CP (max 13 chars).
+ *
+ * @param WC_Order $order WooCommerce order.
+ * @return string
+ */
+function mtuc_get_cp_shop_order_id( WC_Order $order ): string {
+	$order_number = (string) $order->get_order_number();
+	if ( strlen( $order_number ) > 13 ) {
+		$order_number = substr( $order_number, 0, 13 );
+	}
+
+	return $order_number;
+}
+
+/**
+ * Sync CP order status with WooCommerce bank status meta.
+ *
+ * @param WC_Order $order           WooCommerce order.
+ * @param string   $bank_status_key Status key (see MTUC_BANK_STATUS_*).
+ * @return array<string, mixed>|WP_Error
+ */
+function mtuc_sync_cp_order_bank_status( WC_Order $order, string $bank_status_key ) {
+	$cp_status = mtuc_get_cp_order_status_payload( $bank_status_key );
+
+	return Mtuc_Cp_Api_Client::update_order_status(
+		mtuc_get_cp_shop_order_id( $order ),
+		$cp_status['status'],
+		$cp_status['status_id'],
+		$order->get_id()
+	);
+}
+
+/**
  * Register popup order AJAX and admin hooks.
  *
  * @return void
@@ -539,10 +572,7 @@ function mtuc_build_cp_order_payload(
 	int $quantity,
 	array $shop
 ): array {
-	$order_number = (string) $order->get_order_number();
-	if ( strlen( $order_number ) > 13 ) {
-		$order_number = substr( $order_number, 0, 13 );
-	}
+	$order_number = mtuc_get_cp_shop_order_id( $order );
 
 	$full_name = trim( $customer['first_name'] . ' ' . $customer['last_name'] );
 	if ( strlen( $full_name ) > 65 ) {
@@ -807,7 +837,6 @@ function mtuc_send_popup_order_to_smartucf(
 	}
 
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'smartucf_session_id', $result['session_id'] );
-	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SENT );
 	$order->save();
 
 	return $result;
@@ -1001,6 +1030,25 @@ function mtuc_ajax_popup_submit(): void {
 			500
 		);
 	}
+
+	$cp_status_result = mtuc_sync_cp_order_bank_status( $order, MTUC_BANK_STATUS_SENT );
+	if ( is_wp_error( $cp_status_result ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		mtuc_fail_popup_order( $order );
+
+		wp_send_json_error(
+			array(
+				'message'      => __( 'Неуспешно обновяване на статуса в Контролния панел.', 'mtunicredit' ),
+				'order_id'     => $order->get_id(),
+				'order_number' => $order->get_order_number(),
+				'bank_status'  => MTUC_BANK_STATUS_NOT_SENT,
+			),
+			500
+		);
+	}
+
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SENT );
+	$order->save();
 
 	mtuc_release_popup_submit_lock( $lock_key );
 
