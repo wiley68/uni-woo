@@ -882,6 +882,57 @@ function mtuc_build_smartucf_items_from_order( WC_Order $order ): array {
 }
 
 /**
+ * Sanitize product name for CP products_name (underscore is the multi-item delimiter).
+ *
+ * @param string $name Product name.
+ * @return string
+ */
+function mtuc_sanitize_cp_product_name( string $name ): string {
+	return str_replace( '_', '-', $name );
+}
+
+/**
+ * Join CP multi-value product fields with underscore delimiter.
+ *
+ * @param array<int, int|string> $values Parallel values per order line.
+ * @return string
+ */
+function mtuc_join_cp_product_values( array $values ): string {
+	if ( empty( $values ) ) {
+		return '';
+	}
+
+	if ( 1 === count( $values ) ) {
+		return (string) $values[0];
+	}
+
+	return implode( '_', array_map( 'strval', $values ) );
+}
+
+/**
+ * Build CP products_id, products_name and products_q from parallel line arrays.
+ *
+ * @param array<int, int>    $product_ids   Product or variation IDs per line.
+ * @param array<int, string> $product_names Product names per line.
+ * @param array<int, int>    $quantities    Quantities per line.
+ * @return array{products_id: string, products_name: string, products_q: string}
+ */
+function mtuc_build_cp_products_fields( array $product_ids, array $product_names, array $quantities ): array {
+	$names = array_map( 'mtuc_sanitize_cp_product_name', $product_names );
+
+	$products_name = mtuc_join_cp_product_values( $names );
+	if ( strlen( $products_name ) > 255 ) {
+		$products_name = substr( $products_name, 0, 252 ) . '...';
+	}
+
+	return array(
+		'products_id'   => mtuc_join_cp_product_values( $product_ids ),
+		'products_name' => $products_name,
+		'products_q'    => mtuc_join_cp_product_values( $quantities ),
+	);
+}
+
+/**
  * Build CP order payload for cart popup (multiple products summary).
  *
  * @param WC_Order              $order       WooCommerce order.
@@ -896,9 +947,9 @@ function mtuc_build_cp_cart_order_payload(
 	array $calculation,
 	array $shop
 ): array {
-	$product_ids   = array();
-	$product_names = array();
-	$total_qty     = 0;
+	$product_ids        = array();
+	$product_names      = array();
+	$product_quantities = array();
 
 	foreach ( $order->get_items( 'line_item' ) as $item ) {
 		if ( ! $item instanceof WC_Order_Item_Product ) {
@@ -910,18 +961,14 @@ function mtuc_build_cp_cart_order_payload(
 			continue;
 		}
 
-		$variation_id    = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
-		$parent_id       = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
-		$product_ids[]   = $variation_id > 0 ? $variation_id : $parent_id;
-		$product_names[] = $product->get_name();
-		$total_qty      += max( 1, (int) $item->get_quantity() );
+		$variation_id         = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
+		$parent_id            = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
+		$product_ids[]        = $variation_id > 0 ? $variation_id : $parent_id;
+		$product_names[]      = $product->get_name();
+		$product_quantities[] = max( 1, (int) $item->get_quantity() );
 	}
 
-	$products_id   = implode( ',', array_map( 'strval', $product_ids ) );
-	$products_name = implode( ', ', $product_names );
-	if ( strlen( $products_name ) > 255 ) {
-		$products_name = substr( $products_name, 0, 252 ) . '...';
-	}
+	$cp_products = mtuc_build_cp_products_fields( $product_ids, $product_names, $product_quantities );
 
 	$order_number = mtuc_get_cp_shop_order_id( $order );
 	$full_name    = trim( $customer['first_name'] . ' ' . $customer['last_name'] );
@@ -956,9 +1003,9 @@ function mtuc_build_cp_cart_order_payload(
 		'parva'         => round( (float) ( $calculation['parva'] ?? 0 ), 2 ),
 		'status'        => $cp_status['status'],
 		'status_id'     => $cp_status['status_id'],
-		'products_id'   => $products_id,
-		'products_name' => $products_name,
-		'products_q'    => (string) max( 1, $total_qty ),
+		'products_id'   => $cp_products['products_id'],
+		'products_name' => $cp_products['products_name'],
+		'products_q'    => $cp_products['products_q'],
 		'type_client'   => mtuc_get_cp_type_client(),
 		'currency'      => mtuc_get_cp_order_currency( $shop ),
 	);
@@ -1263,10 +1310,11 @@ function mtuc_build_cp_order_payload(
 	$cp_status    = mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_CP_SENT );
 
 	$product_id_for_cp = $variation_id > 0 ? $variation_id : $parent_id;
-	$product_name      = $product->get_name();
-	if ( strlen( $product_name ) > 255 ) {
-		$product_name = substr( $product_name, 0, 255 );
-	}
+	$cp_products       = mtuc_build_cp_products_fields(
+		array( $product_id_for_cp ),
+		array( $product->get_name() ),
+		array( max( 1, $quantity ) )
+	);
 
 	return array(
 		'order_id'      => $order_number,
@@ -1282,9 +1330,9 @@ function mtuc_build_cp_order_payload(
 		'parva'         => round( (float) ( $calculation['parva'] ?? 0 ), 2 ),
 		'status'        => $cp_status['status'],
 		'status_id'     => $cp_status['status_id'],
-		'products_id'   => (string) $product_id_for_cp,
-		'products_name' => $product_name,
-		'products_q'    => (string) max( 1, $quantity ),
+		'products_id'   => $cp_products['products_id'],
+		'products_name' => $cp_products['products_name'],
+		'products_q'    => $cp_products['products_q'],
 		'type_client'   => mtuc_get_cp_type_client(),
 		'currency'      => mtuc_get_cp_order_currency( $shop ),
 	);
