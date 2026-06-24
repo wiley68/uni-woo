@@ -381,6 +381,14 @@ function wp_doing_ajax(): bool
 }
 
 /**
+ * @return string|false
+ */
+function wp_get_referer()
+{
+	return false;
+}
+
+/**
  * @template T
  * @param T $value
  * @return T

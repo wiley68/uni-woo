@@ -834,6 +834,14 @@
 					mtucPopup.defaultSchemeByOffer = data.defaultSchemeByOffer;
 				}
 
+				if (typeof data.cart_total !== "undefined") {
+					const cartTotal = parseFloat(data.cart_total) || 0;
+					mtucPopup.cartTotal = cartTotal;
+					if (typeof mtucCartCalculator !== "undefined") {
+						mtucCartCalculator.cartTotal = cartTotal;
+					}
+				}
+
 				if (data.product_id) {
 					mtucPopup.productId = parseInt(data.product_id, 10);
 					$("#mtuc-popup-product-id").val(mtucPopup.productId);

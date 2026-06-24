@@ -454,15 +454,11 @@ function mtuc_cart_has_any_line_scheme_options(
 }
 
 /**
- * Build cart calculator context.
+ * Build cart calculator context from the current cart (no page guard).
  *
  * @return array<string, mixed>|null
  */
-function mtuc_get_cart_calculator_context(): ?array {
-	if ( ! function_exists( 'is_cart' ) || ! is_cart() || is_admin() ) {
-		return null;
-	}
-
+function mtuc_build_cart_calculator_context(): ?array {
 	if ( ! Mtuc_Settings::is_enabled() ) {
 		return null;
 	}
@@ -470,16 +466,6 @@ function mtuc_get_cart_calculator_context(): ?array {
 	if ( '' === (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID ) ) {
 		return null;
 	}
-
-	static $context  = null;
-	static $resolved = false;
-
-	if ( $resolved ) {
-		return $context;
-	}
-
-	$resolved = true;
-	$context  = null;
 
 	$lines = mtuc_get_cart_line_entries();
 	if ( empty( $lines ) ) {
@@ -523,9 +509,6 @@ function mtuc_get_cart_calculator_context(): ?array {
 	$standard_offer = mtuc_build_cart_button_offer_from_options( $shop, $coeff_list, $cart_total, $common_standard, 'standard' );
 	$promo_offer    = mtuc_build_cart_button_offer_from_options( $shop, $coeff_list, $cart_total, $common_promo, 'promo' );
 
-	$standard_image_only = $has_any_standard && empty( $common_standard );
-	$promo_image_only    = $has_any_promo && empty( $common_promo );
-
 	$is_dark_button = mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 );
 	$button_width   = isset( $shop['uni_button_width'] ) ? absint( $shop['uni_button_width'] ) : 0;
 	$button_height  = isset( $shop['uni_button_height'] ) ? absint( $shop['uni_button_height'] ) : 0;
@@ -537,7 +520,7 @@ function mtuc_get_cart_calculator_context(): ?array {
 		$button_height = 56;
 	}
 
-	$context = array(
+	return array(
 		'source'           => 'cart',
 		'cart_total'       => $cart_total,
 		'lines'            => $lines,
@@ -591,6 +574,163 @@ function mtuc_get_cart_calculator_context(): ?array {
 			$cart_total
 		),
 	);
+}
+
+/**
+ * Build AJAX payload for cart calculator refresh after cart changes.
+ *
+ * @return array<string, mixed>
+ */
+function mtuc_build_cart_calculator_refresh_payload(): array {
+	$context = mtuc_build_cart_calculator_context();
+	if ( null === $context ) {
+		return array(
+			'visible' => false,
+		);
+	}
+
+	$popup    = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
+	$standard = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
+	$promo    = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
+
+	$standard_payload = null;
+	$promo_payload    = null;
+
+	if ( is_array( $standard ) && ! empty( $standard['visible'] ) ) {
+		$standard_payload = array(
+			'visible'    => true,
+			'image_only' => ! empty( $standard['image_only'] ),
+			'price_text' => ! empty( $standard['image_only'] ) ? '' : (string) ( $standard['price_text'] ?? '' ),
+		);
+	}
+
+	if ( is_array( $promo ) && ! empty( $promo['visible'] ) ) {
+		$promo_payload = array(
+			'visible'    => true,
+			'image_only' => ! empty( $promo['image_only'] ),
+			'price_text' => ! empty( $promo['image_only'] ) ? '' : (string) ( $promo['price_text'] ?? '' ),
+		);
+	}
+
+	return array(
+		'visible'              => true,
+		'cart_total'           => (float) ( $context['cart_total'] ?? 0 ),
+		'show_installment'     => ! empty( $context['show_installment'] ),
+		'standard'             => $standard_payload,
+		'promo'                => $promo_payload,
+		'enabledMonthsByOffer' => isset( $popup['enabled_months_by_offer'] ) && is_array( $popup['enabled_months_by_offer'] )
+			? $popup['enabled_months_by_offer']
+			: array(),
+		'defaultSchemeByOffer' => isset( $popup['default_scheme_by_offer'] ) && is_array( $popup['default_scheme_by_offer'] )
+			? $popup['default_scheme_by_offer']
+			: array(),
+	);
+}
+
+/**
+ * Whether the current request should refresh the cart calculator fragment.
+ *
+ * @return bool
+ */
+function mtuc_should_refresh_cart_calculator_fragment(): bool {
+	if ( function_exists( 'is_cart' ) && is_cart() ) {
+		return true;
+	}
+
+	if ( ! wp_doing_ajax() ) {
+		return false;
+	}
+
+	$referer = wp_get_referer();
+	if ( ! is_string( $referer ) || '' === $referer || ! function_exists( 'wc_get_cart_url' ) ) {
+		return false;
+	}
+
+	$cart_url = wc_get_cart_url();
+	if ( '' === $cart_url ) {
+		return false;
+	}
+
+	return 0 === strpos( $referer, $cart_url );
+}
+
+/**
+ * Render cart calculator markup wrapped for WooCommerce fragment replacement.
+ *
+ * @return string
+ */
+function mtuc_get_cart_calculator_fragment_html(): string {
+	$context = mtuc_build_cart_calculator_context();
+	if ( null === $context ) {
+		return '';
+	}
+
+	$template = MTUC_PLUGIN_DIR . '/templates/cart-calculator.php';
+	if ( ! is_readable( $template ) ) {
+		return '';
+	}
+
+	ob_start();
+	echo '<div class="mtuc-cart-calculator-fragment">';
+	include $template;
+	echo '</div>';
+
+	return (string) ob_get_clean();
+}
+
+/**
+ * Keep cart calculator in sync when WooCommerce refreshes cart fragments.
+ *
+ * @param array<string, string> $fragments Cart fragments.
+ * @return array<string, string>
+ */
+function mtuc_append_cart_calculator_fragment( array $fragments ): array {
+	if ( ! mtuc_should_refresh_cart_calculator_fragment() ) {
+		return $fragments;
+	}
+
+	$fragments['div.mtuc-cart-calculator-fragment'] = mtuc_get_cart_calculator_fragment_html();
+
+	return $fragments;
+}
+
+/**
+ * AJAX: refresh cart calculator buttons and popup scheme options.
+ *
+ * @return void
+ */
+function mtuc_ajax_cart_calculator_refresh(): void {
+	check_ajax_referer( 'mtuc_popup', 'security' );
+
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		wp_send_json_error(
+			array( 'message' => __( 'Модулът не е активен.', 'mtunicredit' ) ),
+			403
+		);
+	}
+
+	wp_send_json_success( mtuc_build_cart_calculator_refresh_payload() );
+}
+
+/**
+ * Build cart calculator context.
+ *
+ * @return array<string, mixed>|null
+ */
+function mtuc_get_cart_calculator_context(): ?array {
+	if ( ! function_exists( 'is_cart' ) || ! is_cart() || is_admin() ) {
+		return null;
+	}
+
+	static $context  = null;
+	static $resolved = false;
+
+	if ( $resolved ) {
+		return $context;
+	}
+
+	$resolved = true;
+	$context  = mtuc_build_cart_calculator_context();
 
 	return $context;
 }
@@ -848,6 +988,9 @@ function mtuc_register_cart_hooks(): void {
 
 	add_action( 'woocommerce_proceed_to_checkout', 'mtuc_render_cart_calculator', 5 );
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_cart_assets' );
+	add_filter( 'woocommerce_add_to_cart_fragments', 'mtuc_append_cart_calculator_fragment' );
+	add_action( 'wp_ajax_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
+	add_action( 'wp_ajax_nopriv_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
 }
 
 /**
@@ -903,7 +1046,12 @@ function mtuc_enqueue_cart_assets(): void {
 		'mtuc-cart-calculator',
 		'mtucCartCalculator',
 		array(
+			'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+			'nonce'     => wp_create_nonce( 'mtuc_popup' ),
 			'cartTotal' => (float) ( $context['cart_total'] ?? 0 ),
+			'i18n'      => array(
+				'buyLabel' => __( 'Купи на изплащане', 'mtunicredit' ),
+			),
 		)
 	);
 
@@ -951,15 +1099,11 @@ function mtuc_enqueue_cart_assets(): void {
  * @return void
  */
 function mtuc_render_cart_calculator(): void {
-	$context = mtuc_get_cart_calculator_context();
-	if ( null === $context ) {
+	$html = mtuc_get_cart_calculator_fragment_html();
+	if ( '' === $html ) {
 		return;
 	}
 
-	$template = MTUC_PLUGIN_DIR . '/templates/cart-calculator.php';
-	if ( ! is_readable( $template ) ) {
-		return;
-	}
-
-	include $template;
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in template.
+	echo $html;
 }
