@@ -1257,10 +1257,13 @@ function mtuc_get_product_calculator_context(): ?array {
 		'is_dark_button'   => $is_dark_button,
 		'logo_url'         => mtuc_get_uni_logo_url( $is_dark_button ),
 		'gap'              => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
-		'popup'            => mtuc_get_product_popup_context( $shop, array(
-			'standard' => $offer['standard'],
-			'promo'    => $offer['promo'],
-		) ),
+		'popup'            => mtuc_get_product_popup_context(
+			$shop,
+			array(
+				'standard' => $offer['standard'],
+				'promo'    => $offer['promo'],
+			)
+		),
 	);
 
 	return $context;
@@ -1313,12 +1316,12 @@ function mtuc_enqueue_product_assets(): void {
 		return;
 	}
 
-	$css_file         = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
-	$popup_css        = MTUC_PLUGIN_DIR . '/css/mtuc-popup.css';
-	$calculator_js    = MTUC_PLUGIN_DIR . '/js/mtuc-product-calculator.js';
-	$popup_js         = MTUC_PLUGIN_DIR . '/js/mtuc-product-popup.js';
-	$current_product  = mtuc_get_current_wc_product();
-	$product_id       = $current_product instanceof WC_Product ? $current_product->get_id() : (int) ( $context['product_id'] ?? 0 );
+	$css_file        = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
+	$popup_css       = MTUC_PLUGIN_DIR . '/css/mtuc-popup.css';
+	$calculator_js   = MTUC_PLUGIN_DIR . '/js/mtuc-product-calculator.js';
+	$popup_js        = MTUC_PLUGIN_DIR . '/js/mtuc-product-popup.js';
+	$current_product = mtuc_get_current_wc_product();
+	$product_id      = $current_product instanceof WC_Product ? $current_product->get_id() : (int) ( $context['product_id'] ?? 0 );
 
 	mtuc_enqueue_fonts();
 
@@ -1368,17 +1371,19 @@ function mtuc_enqueue_product_assets(): void {
 		'mtuc-product-popup',
 		'mtucPopup',
 		array(
-			'ajaxUrl'                => admin_url( 'admin-ajax.php' ),
-			'nonce'                  => wp_create_nonce( 'mtuc_popup' ),
-			'productId'              => $product_id,
-			'enabledMonthsByOffer'   => isset( $popup_context['enabled_months_by_offer'] ) && is_array( $popup_context['enabled_months_by_offer'] )
+			'ajaxUrl'              => admin_url( 'admin-ajax.php' ),
+			'nonce'                => wp_create_nonce( 'mtuc_popup' ),
+			'source'               => 'product',
+			'productId'            => $product_id,
+			'enabledMonthsByOffer' => isset( $popup_context['enabled_months_by_offer'] ) && is_array( $popup_context['enabled_months_by_offer'] )
 				? $popup_context['enabled_months_by_offer']
 				: array(),
-			'defaultSchemeByOffer'   => isset( $popup_context['default_scheme_by_offer'] ) && is_array( $popup_context['default_scheme_by_offer'] )
+			'defaultSchemeByOffer' => isset( $popup_context['default_scheme_by_offer'] ) && is_array( $popup_context['default_scheme_by_offer'] )
 				? $popup_context['default_scheme_by_offer']
 				: array(),
-			'currencyDual'           => ! empty( $popup_context['currency']['dual'] ),
-			'customer'               => isset( $popup_context['customer'] ) && is_array( $popup_context['customer'] )
+			'currencyDual'         => ! empty( $popup_context['currency']['dual'] ),
+			'hideAddToCart'        => ! empty( $popup_context['hide_add_to_cart'] ),
+			'customer'             => isset( $popup_context['customer'] ) && is_array( $popup_context['customer'] )
 				? array(
 					'first_name' => (string) ( $popup_context['customer']['first_name'] ?? '' ),
 					'last_name'  => (string) ( $popup_context['customer']['last_name'] ?? '' ),
@@ -1387,7 +1392,7 @@ function mtuc_enqueue_product_assets(): void {
 					'email'      => (string) ( $popup_context['customer']['email'] ?? '' ),
 				)
 				: mtuc_get_popup_customer_defaults(),
-			'i18n'                   => array(
+			'i18n'                 => array(
 				'calcError'      => __( 'Неуспешно изчисление. Моля, опитайте отново.', 'mtunicredit' ),
 				'addToCartError' => __( 'Не може да се добави в количката. Проверете опциите на продукта.', 'mtunicredit' ),
 				'submitPending'  => __( 'Изпращането на заявката ще бъде добавено на следващ етап.', 'mtunicredit' ),

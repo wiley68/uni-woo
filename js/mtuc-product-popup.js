@@ -105,6 +105,16 @@
 			}
 		};
 
+		const getPopupSource = () => {
+			const hidden = String($("#mtuc-popup-source").val() || "").trim();
+			if (hidden) {
+				return hidden;
+			}
+			return String(mtucPopup.source || "product");
+		};
+
+		const isCartPopup = () => getPopupSource() === "cart";
+
 		const getSubmitPayload = () => {
 			const schemeKey = String($months.val() || "");
 			const scheme = parseSchemeKey(schemeKey);
@@ -114,6 +124,7 @@
 			return {
 				action: "mtuc_popup_submit",
 				security: mtucPopup.nonce,
+				source: getPopupSource(),
 				product_id: lineContext.productId,
 				variation_id: lineContext.variationId,
 				quantity: lineContext.quantity || 1,
@@ -659,6 +670,7 @@
 			$.post(mtucPopup.ajaxUrl, {
 				action: "mtuc_popup_calculate",
 				security: mtucPopup.nonce,
+				source: getPopupSource(),
 				product_id: lineContext.productId,
 				variation_id: lineContext.variationId,
 				line_price: lineContext.linePrice.toFixed(2),
@@ -706,10 +718,23 @@
 			".mtuc-product-calculator__btn[data-mtuc-offer]",
 			function (event) {
 				event.preventDefault();
+
+				if (String($(this).data("mtuc-image-only") || "0") === "1") {
+					window.alert(
+						mtucPopup.i18n.cartSplitRequired ||
+							"Не може да закупите цялата количка на изплащане. Моля, разделете поръчката си на отделни продукти.",
+					);
+					return;
+				}
+
 				lastOpenTrigger = this;
 				openPopup($(this).data("mtuc-offer"));
 			},
 		);
+
+		if (mtucPopup.hideAddToCart) {
+			$("#mtuc-popup-add-to-cart").remove();
+		}
 
 		$popup.on("click", "[data-mtuc-popup-close]", closePopup);
 

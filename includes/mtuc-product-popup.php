@@ -27,7 +27,7 @@ function mtuc_register_product_popup_ajax_hooks(): void {
  * @return void
  */
 function mtuc_register_product_popup_hooks(): void {
-	add_action( 'wp_footer', 'mtuc_render_product_popup', 5 );
+	add_action( 'wp_footer', 'mtuc_render_credit_popup', 5 );
 }
 
 /**
@@ -93,8 +93,8 @@ function mtuc_sort_popup_scheme_options( array $options ): array {
 				'standard' => 0,
 				'promo'    => 1,
 			);
-			$a_type = (string) ( $a['scheme_type'] ?? 'standard' );
-			$b_type = (string) ( $b['scheme_type'] ?? 'standard' );
+			$a_type     = (string) ( $a['scheme_type'] ?? 'standard' );
+			$b_type     = (string) ( $b['scheme_type'] ?? 'standard' );
 
 			if ( ( $type_order[ $a_type ] ?? 99 ) !== ( $type_order[ $b_type ] ?? 99 ) ) {
 				return ( $type_order[ $a_type ] ?? 99 ) <=> ( $type_order[ $b_type ] ?? 99 );
@@ -440,8 +440,8 @@ function mtuc_get_popup_enabled_months(
  * Whether a popup scheme option is in the enabled list.
  *
  * @param array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int}> $enabled_options Popup scheme options.
- * @param int                                                                                 $months          Installment count.
- * @param int                                                                                 $filter_id       Schema filter id (0 for default KOP).
+ * @param int                                                                                $months          Installment count.
+ * @param int                                                                                $filter_id       Schema filter id (0 for default KOP).
  * @return bool
  */
 function mtuc_is_popup_scheme_option_enabled(
@@ -468,9 +468,9 @@ function mtuc_is_popup_scheme_option_enabled(
 /**
  * Default popup scheme option key for select.
  *
- * @param array<string, mixed>                                                              $shop            Shop `data` object from CP.
+ * @param array<string, mixed>                                                               $shop            Shop `data` object from CP.
  * @param array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int}> $enabled_options Allowed scheme options for the offer.
- * @param array<string, mixed>|null                                                         $button_offer    Calculator button offer for this type.
+ * @param array<string, mixed>|null                                                          $button_offer    Calculator button offer for this type.
  * @return string
  */
 function mtuc_pick_default_popup_scheme_key( array $shop, array $enabled_options, ?array $button_offer = null ): string {
@@ -525,32 +525,32 @@ function mtuc_get_currency_display_config( array $shop ): array {
 	switch ( $mode ) {
 		case 1:
 			return array(
-				'mode'            => 1,
-				'primary_sign'    => __( 'лв.', 'mtunicredit' ),
-				'secondary_sign'  => __( 'евро', 'mtunicredit' ),
-				'dual'            => true,
+				'mode'           => 1,
+				'primary_sign'   => __( 'лв.', 'mtunicredit' ),
+				'secondary_sign' => __( 'евро', 'mtunicredit' ),
+				'dual'           => true,
 			);
 		case 2:
 			return array(
-				'mode'            => 2,
-				'primary_sign'    => __( 'евро', 'mtunicredit' ),
-				'secondary_sign'  => __( 'лв.', 'mtunicredit' ),
-				'dual'            => true,
+				'mode'           => 2,
+				'primary_sign'   => __( 'евро', 'mtunicredit' ),
+				'secondary_sign' => __( 'лв.', 'mtunicredit' ),
+				'dual'           => true,
 			);
 		case 3:
 			return array(
-				'mode'            => 3,
-				'primary_sign'    => __( 'евро', 'mtunicredit' ),
-				'secondary_sign'  => '',
-				'dual'            => false,
+				'mode'           => 3,
+				'primary_sign'   => __( 'евро', 'mtunicredit' ),
+				'secondary_sign' => '',
+				'dual'           => false,
 			);
 		case 0:
 		default:
 			return array(
-				'mode'            => 0,
-				'primary_sign'    => __( 'лв.', 'mtunicredit' ),
-				'secondary_sign'  => '',
-				'dual'            => false,
+				'mode'           => 0,
+				'primary_sign'   => __( 'лв.', 'mtunicredit' ),
+				'secondary_sign' => '',
+				'dual'           => false,
 			);
 	}
 }
@@ -738,7 +738,7 @@ function mtuc_get_popup_customer_defaults(): array {
 				$defaults['email'] = (string) $customer->get_billing_email();
 			}
 
-			$defaults['phone'] = (string) $customer->get_billing_phone();
+			$defaults['phone']   = (string) $customer->get_billing_phone();
 			$defaults['address'] = mtuc_get_popup_billing_address_default( get_current_user_id() );
 		}
 	}
@@ -818,18 +818,20 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
 	}
 
 	return array(
-		'product_id'             => $product instanceof WC_Product ? $product->get_id() : 0,
-		'banner_url'             => mtuc_get_shop_picture_url( $shop, false ),
-		'banner_url_mobile'      => mtuc_get_shop_picture_url( $shop, true ),
-		'reklama_url'            => $reklama_url,
-		'show_first_vnoska'      => mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 ),
-		'shop_months'            => $shop_months,
+		'product_id'              => $product instanceof WC_Product ? $product->get_id() : 0,
+		'banner_url'              => mtuc_get_shop_picture_url( $shop, false ),
+		'banner_url_mobile'       => mtuc_get_shop_picture_url( $shop, true ),
+		'reklama_url'             => $reklama_url,
+		'show_first_vnoska'       => mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 ),
+		'shop_months'             => $shop_months,
 		'enabled_months_by_offer' => $enabled_by_offer,
 		'default_scheme_by_offer' => $default_by_offer,
-		'currency'               => mtuc_get_currency_display_config( $shop ),
-		'customer'               => mtuc_get_popup_customer_defaults(),
-		'has_standard'           => ! empty( $context['standard']['visible'] ),
-		'has_promo'              => ! empty( $context['promo']['visible'] ),
+		'currency'                => mtuc_get_currency_display_config( $shop ),
+		'customer'                => mtuc_get_popup_customer_defaults(),
+		'has_standard'            => ! empty( $context['standard']['visible'] ),
+		'has_promo'               => ! empty( $context['promo']['visible'] ),
+		'source'                  => 'product',
+		'hide_add_to_cart'        => false,
 	);
 }
 
@@ -837,8 +839,8 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
  * Whether a month is allowed for default-KOP promo rules.
  *
  * @param array<string, mixed> $by_default Default KOP settings.
- * @param int                    $months     Selected installment count.
- * @param float                  $price      Product price including tax.
+ * @param int                  $months     Selected installment count.
+ * @param float                $price      Product price including tax.
  * @return bool
  */
 function mtuc_is_default_promo_month_allowed( array $by_default, int $months, float $price ): bool {
@@ -1140,9 +1142,9 @@ function mtuc_resolve_popup_scheme(
 /**
  * Build AJAX payload for product calculator refresh after price/qty changes.
  *
- * @param WC_Product                 $product    Product or variation instance.
- * @param float                      $line_price Total line price including tax.
- * @param array<string, mixed>|null  $shop       Shop `data` object from CP.
+ * @param WC_Product                $product    Product or variation instance.
+ * @param float                     $line_price Total line price including tax.
+ * @param array<string, mixed>|null $shop       Shop `data` object from CP.
  * @return array<string, mixed>
  */
 function mtuc_build_product_calculator_refresh_payload( WC_Product $product, float $line_price, ?array $shop = null ): array {
@@ -1391,6 +1393,45 @@ function mtuc_ajax_popup_calculate(): void {
 	$parva_raw = isset( $_POST['parva'] ) ? wp_unslash( $_POST['parva'] ) : '0';
 	$parva     = is_numeric( $parva_raw ) ? (float) $parva_raw : 0.0;
 
+	$source = isset( $_POST['source'] ) ? sanitize_key( wp_unslash( $_POST['source'] ) ) : 'product';
+
+	if ( 'cart' === $source ) {
+		$cart_state = mtuc_resolve_cart_scheme_state();
+		if ( is_wp_error( $cart_state ) ) {
+			wp_send_json_error(
+				array( 'message' => $cart_state->get_error_message() ),
+				400
+			);
+		}
+
+		$shop       = mtuc_get_shop_data();
+		$coeff_list = mtuc_get_shop_coeff_list( $shop );
+		$common     = 'promo' === $type
+			? (array) ( $cart_state['common_promo'] ?? array() )
+			: (array) ( $cart_state['common_standard'] ?? array() );
+
+		$result = mtuc_calculate_cart_popup_credit(
+			$shop,
+			$coeff_list,
+			(float) ( $cart_state['cart_total'] ?? 0 ),
+			$months,
+			$type,
+			$parva,
+			$filter_id,
+			$scheme_type,
+			$common
+		);
+
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error(
+				array( 'message' => $result->get_error_message() ),
+				400
+			);
+		}
+
+		wp_send_json_success( $result );
+	}
+
 	$product_id   = isset( $_POST['product_id'] ) ? absint( wp_unslash( $_POST['product_id'] ) ) : 0;
 	$variation_id = isset( $_POST['variation_id'] ) ? absint( wp_unslash( $_POST['variation_id'] ) ) : 0;
 	$line_price   = isset( $_POST['line_price'] ) ? (float) wp_unslash( $_POST['line_price'] ) : 0.0;
@@ -1441,12 +1482,19 @@ function mtuc_ajax_popup_calculate(): void {
 }
 
 /**
- * Render popup markup in footer on product pages.
+ * Render popup markup in footer on product or cart pages.
  *
  * @return void
  */
-function mtuc_render_product_popup(): void {
+function mtuc_render_credit_popup(): void {
 	$context = mtuc_get_product_calculator_context();
+	$source  = 'product';
+
+	if ( null === $context ) {
+		$context = mtuc_get_cart_calculator_context();
+		$source  = 'cart';
+	}
+
 	if ( null === $context ) {
 		return;
 	}
@@ -1461,5 +1509,22 @@ function mtuc_render_product_popup(): void {
 		return;
 	}
 
+	if ( ! isset( $context['popup'] ) || ! is_array( $context['popup'] ) ) {
+		$context['popup'] = array();
+	}
+
+	$context['popup']['source'] = $source;
+	if ( 'cart' === $source ) {
+		$context['popup']['hide_add_to_cart'] = true;
+	}
+
 	include $template;
+}
+
+/**
+ * @deprecated 1.1.0 Use mtuc_render_credit_popup().
+ * @return void
+ */
+function mtuc_render_product_popup(): void {
+	mtuc_render_credit_popup();
 }

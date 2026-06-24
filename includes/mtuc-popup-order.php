@@ -37,9 +37,9 @@ const MTUC_BANK_STATUS_SMARTUCF_SENT = 'smartucf_sent';
  */
 function mtuc_get_bank_status_labels(): array {
 	return array(
-		MTUC_BANK_STATUS_WC_CREATED      => __( 'Създаден в магазина', 'mtunicredit' ),
-		MTUC_BANK_STATUS_CP_SENT         => __( 'Създаден в КП Банка', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SMARTUCF_SENT   => __( 'Създаден в SmartUCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_WC_CREATED    => __( 'Създаден в магазина', 'mtunicredit' ),
+		MTUC_BANK_STATUS_CP_SENT       => __( 'Създаден в КП Банка', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SMARTUCF_SENT => __( 'Създаден в SmartUCF', 'mtunicredit' ),
 	);
 }
 
@@ -216,6 +216,35 @@ function mtuc_build_popup_submit_lock_key( int $product_id, int $variation_id ):
 }
 
 /**
+ * Build submit lock key for cart popup submissions.
+ *
+ * @return string
+ */
+function mtuc_build_cart_popup_submit_lock_key(): string {
+	$session_part = mtuc_get_wc_session_customer_id();
+	$cart_hash    = '';
+
+	if ( function_exists( 'WC' ) ) {
+		$wc = WC();
+		if ( is_object( $wc ) && $wc->cart instanceof WC_Cart ) {
+			$cart_hash = (string) $wc->cart->get_cart_hash();
+		}
+	}
+
+	return md5(
+		implode(
+			'|',
+			array(
+				'cart',
+				$session_part,
+				(string) get_current_user_id(),
+				$cart_hash,
+			)
+		)
+	);
+}
+
+/**
  * Try to acquire a short-lived submit lock.
  *
  * @param string $lock_key Lock key.
@@ -321,7 +350,7 @@ function mtuc_resolve_popup_order_addresses( array $customer ): array {
 function mtuc_resolve_cp_order_addresses( WC_Order $order, array $customer ): array {
 	unset( $order );
 
-	$address = mtuc_join_address_parts( array( (string) $customer['address'] ) );
+	$address  = mtuc_join_address_parts( array( (string) $customer['address'] ) );
 	$address2 = mtuc_get_popup_shipping_address_for_cp();
 
 	if ( '' === $address2 ) {
@@ -376,7 +405,7 @@ function mtuc_sync_order_line_price( WC_Order $order, float $line_price_inc_tax 
 				'price' => $unit_inc,
 			)
 		);
-		$line_total = $line_subtotal;
+		$line_total    = $line_subtotal;
 	}
 
 	$item->set_subtotal( $line_subtotal );
@@ -394,23 +423,24 @@ function mtuc_sync_order_line_price( WC_Order $order, float $line_price_inc_tax 
  */
 function mtuc_save_order_credit_meta( WC_Order $order, array $calculation, array $context ): void {
 	$meta_map = array(
-		'submission_source' => 'product_popup',
-		'offer_type'        => (string) ( $calculation['popup_offer_type'] ?? '' ),
-		'scheme_type'       => (string) ( $calculation['scheme_type'] ?? '' ),
-		'scheme_key'        => (string) ( $calculation['scheme_key'] ?? '' ),
-		'filter_id'         => (int) ( $calculation['filter_id'] ?? 0 ),
-		'months'            => (int) ( $calculation['months'] ?? 0 ),
-		'kop_code'          => (string) ( $calculation['kop_code'] ?? '' ),
-		'price'             => (float) ( $calculation['price'] ?? 0 ),
-		'parva'             => (float) ( $calculation['parva'] ?? 0 ),
-		'loan_amount'       => (float) ( $calculation['loan_amount'] ?? 0 ),
+		'submission_source'   => (string) ( $context['submission_source'] ?? 'product_popup' ),
+		'offer_type'          => (string) ( $calculation['popup_offer_type'] ?? '' ),
+		'scheme_type'         => (string) ( $calculation['scheme_type'] ?? '' ),
+		'scheme_key'          => (string) ( $calculation['scheme_key'] ?? '' ),
+		'filter_id'           => (int) ( $calculation['filter_id'] ?? 0 ),
+		'months'              => (int) ( $calculation['months'] ?? 0 ),
+		'kop_code'            => (string) ( $calculation['kop_code'] ?? '' ),
+		'price'               => (float) ( $calculation['price'] ?? 0 ),
+		'parva'               => (float) ( $calculation['parva'] ?? 0 ),
+		'loan_amount'         => (float) ( $calculation['loan_amount'] ?? 0 ),
 		'monthly_installment' => (float) ( $calculation['monthly_installment'] ?? 0 ),
-		'total_payable'     => (float) ( $calculation['total_payable'] ?? 0 ),
-		'glp'               => (float) ( $calculation['glp'] ?? 0 ),
-		'gpr'               => (float) ( $calculation['gpr'] ?? 0 ),
-		'product_id'        => (int) ( $context['product_id'] ?? 0 ),
-		'variation_id'      => (int) ( $context['variation_id'] ?? 0 ),
-		'quantity'          => (int) ( $context['quantity'] ?? 1 ),
+		'total_payable'       => (float) ( $calculation['total_payable'] ?? 0 ),
+		'glp'                 => (float) ( $calculation['glp'] ?? 0 ),
+		'gpr'                 => (float) ( $calculation['gpr'] ?? 0 ),
+		'product_id'          => (int) ( $context['product_id'] ?? 0 ),
+		'variation_id'        => (int) ( $context['variation_id'] ?? 0 ),
+		'quantity'            => (int) ( $context['quantity'] ?? 1 ),
+		'line_count'          => (int) ( $context['line_count'] ?? 0 ),
 	);
 
 	foreach ( $meta_map as $key => $value ) {
@@ -601,6 +631,444 @@ function mtuc_create_popup_pending_order(
 }
 
 /**
+ * Create a pending WooCommerce order from all cart lines.
+ *
+ * @param array<string, string>           $customer    Validated customer fields.
+ * @param array<string, mixed>            $calculation Server-side calculation snapshot.
+ * @param array<int, array<string,mixed>> $cart_lines  Cart line entries from mtuc_get_cart_line_entries().
+ * @return WC_Order|WP_Error
+ */
+function mtuc_create_cart_popup_pending_order(
+	array $customer,
+	array $calculation,
+	array $cart_lines
+) {
+	if ( ! function_exists( 'wc_create_order' ) ) {
+		return new WP_Error( 'mtuc_wc_missing', __( 'WooCommerce не е наличен.', 'mtunicredit' ) );
+	}
+
+	if ( empty( $cart_lines ) ) {
+		return new WP_Error( 'mtuc_cart_empty', __( 'Количката е празна.', 'mtunicredit' ) );
+	}
+
+	$create_args = array();
+	if ( is_user_logged_in() ) {
+		$create_args['customer_id'] = get_current_user_id();
+	}
+
+	$order = wc_create_order( $create_args );
+	if ( is_wp_error( $order ) ) {
+		return $order;
+	}
+
+	if ( ! $order instanceof WC_Order ) {
+		return new WP_Error( 'mtuc_order_create_failed', __( 'Поръчката не може да бъде създадена.', 'mtunicredit' ) );
+	}
+
+	$addresses = mtuc_resolve_popup_order_addresses( $customer );
+	$order->set_address( $addresses['billing'], 'billing' );
+	$order->set_address( $addresses['shipping'], 'shipping' );
+
+	foreach ( $cart_lines as $line ) {
+		if ( ! isset( $line['product'] ) || ! $line['product'] instanceof WC_Product ) {
+			continue;
+		}
+
+		$quantity = max( 1, (int) ( $line['quantity'] ?? 1 ) );
+		$added    = $order->add_product( $line['product'], $quantity );
+		if ( ! $added ) {
+			$order->delete( true );
+			return new WP_Error( 'mtuc_order_product_failed', __( 'Продуктът не може да бъде добавен към поръчката.', 'mtunicredit' ) );
+		}
+	}
+
+	$order->calculate_totals( false );
+
+	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
+	$order->set_payment_method_title( __( 'УниКредит покупки на Кредит', 'mtunicredit' ) );
+	$order->set_created_via( 'mtuc_cart_popup' );
+
+	mtuc_save_order_credit_meta(
+		$order,
+		$calculation,
+		array(
+			'submission_source' => 'cart_popup',
+			'line_count'        => count( $cart_lines ),
+		)
+	);
+
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_WC_CREATED );
+
+	$order->set_status( 'pending', '', true );
+	$order->save();
+
+	if ( function_exists( 'WC' ) && WC()->cart ) {
+		WC()->cart->empty_cart();
+	}
+
+	return $order;
+}
+
+/**
+ * Build SmartUCF items array from all order line items.
+ *
+ * @param WC_Order $order WooCommerce order.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_build_smartucf_items_from_order( WC_Order $order ): array {
+	$items = array();
+
+	foreach ( $order->get_items( 'line_item' ) as $item ) {
+		if ( ! $item instanceof WC_Order_Item_Product ) {
+			continue;
+		}
+
+		$product = $item->get_product();
+		if ( ! $product instanceof WC_Product ) {
+			continue;
+		}
+
+		$quantity   = max( 1, (int) $item->get_quantity() );
+		$line_total = (float) $item->get_total() + (float) $item->get_total_tax();
+		$unit_price = $quantity > 0 ? round( $line_total / $quantity, 2 ) : 0.0;
+
+		$variation_id = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
+		$parent_id    = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
+
+		$category_product = $product;
+		if ( $variation_id > 0 ) {
+			$parent = mtuc_get_wc_product_by_id( $parent_id );
+			if ( $parent instanceof WC_Product ) {
+				$category_product = $parent;
+			}
+		}
+
+		$category_ids     = mtuc_get_product_category_ids( $category_product );
+		$product_category = ! empty( $category_ids ) ? (int) $category_ids[0] : 0;
+		$item_code        = $variation_id > 0 ? $variation_id : $parent_id;
+
+		$items[] = array(
+			'name'        => mtuc_sanitize_smartucf_text( $product->get_name() ),
+			'code'        => $item_code,
+			'type'        => $product_category,
+			'count'       => $quantity,
+			'singlePrice' => $unit_price,
+		);
+	}
+
+	return $items;
+}
+
+/**
+ * Build CP order payload for cart popup (multiple products summary).
+ *
+ * @param WC_Order              $order       WooCommerce order.
+ * @param array<string, string> $customer    Validated customer fields.
+ * @param array<string, mixed>  $calculation Server-side calculation snapshot.
+ * @param array<string, mixed>  $shop        Shop data.
+ * @return array<string, mixed>
+ */
+function mtuc_build_cp_cart_order_payload(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	array $shop
+): array {
+	$product_ids   = array();
+	$product_names = array();
+	$total_qty     = 0;
+
+	foreach ( $order->get_items( 'line_item' ) as $item ) {
+		if ( ! $item instanceof WC_Order_Item_Product ) {
+			continue;
+		}
+
+		$product = $item->get_product();
+		if ( ! $product instanceof WC_Product ) {
+			continue;
+		}
+
+		$variation_id    = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
+		$parent_id       = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
+		$product_ids[]   = $variation_id > 0 ? $variation_id : $parent_id;
+		$product_names[] = $product->get_name();
+		$total_qty      += max( 1, (int) $item->get_quantity() );
+	}
+
+	$products_id   = implode( ',', array_map( 'strval', $product_ids ) );
+	$products_name = implode( ', ', $product_names );
+	if ( strlen( $products_name ) > 255 ) {
+		$products_name = substr( $products_name, 0, 252 ) . '...';
+	}
+
+	$order_number = mtuc_get_cp_shop_order_id( $order );
+	$full_name    = trim( $customer['first_name'] . ' ' . $customer['last_name'] );
+	if ( strlen( $full_name ) > 65 ) {
+		$full_name = substr( $full_name, 0, 65 );
+	}
+
+	$phone = (string) $customer['phone'];
+	if ( strlen( $phone ) > 45 ) {
+		$phone = substr( $phone, 0, 45 );
+	}
+
+	$email = (string) $customer['email'];
+	if ( strlen( $email ) > 128 ) {
+		$email = substr( $email, 0, 128 );
+	}
+
+	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
+	$cp_status    = mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_CP_SENT );
+
+	return array(
+		'order_id'      => $order_number,
+		'name'          => $full_name,
+		'phone'         => $phone,
+		'email'         => $email,
+		'address'       => $cp_addresses['address'],
+		'address2'      => $cp_addresses['address2'],
+		'price'         => round( (float) ( $calculation['price'] ?? 0 ), 2 ),
+		'vnoska'        => round( (float) ( $calculation['monthly_installment'] ?? 0 ), 2 ),
+		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),
+		'vnoski'        => (int) ( $calculation['months'] ?? 0 ),
+		'parva'         => round( (float) ( $calculation['parva'] ?? 0 ), 2 ),
+		'status'        => $cp_status['status'],
+		'status_id'     => $cp_status['status_id'],
+		'products_id'   => $products_id,
+		'products_name' => $products_name,
+		'products_q'    => (string) max( 1, $total_qty ),
+		'type_client'   => mtuc_get_cp_type_client(),
+		'currency'      => mtuc_get_cp_order_currency( $shop ),
+	);
+}
+
+/**
+ * Send cart popup order to Control Panel.
+ *
+ * @param WC_Order              $order       WooCommerce order.
+ * @param array<string, string> $customer    Validated customer fields.
+ * @param array<string, mixed>  $calculation Server-side calculation snapshot.
+ * @param array<string, mixed>  $shop        Shop data.
+ * @return array<string, mixed>|WP_Error
+ */
+function mtuc_send_cart_popup_order_to_cp(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	array $shop
+) {
+	$payload  = mtuc_build_cp_cart_order_payload( $order, $customer, $calculation, $shop );
+	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
+
+	if ( is_wp_error( $response ) ) {
+		return $response;
+	}
+
+	$cp_order_id = 0;
+	if ( isset( $response['data']['id'] ) ) {
+		$cp_order_id = (int) $response['data']['id'];
+	}
+
+	if ( $cp_order_id > 0 ) {
+		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
+	}
+
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_CP_SENT );
+	$order->save();
+
+	return $response;
+}
+
+/**
+ * Build SmartUCF session payload for cart popup order.
+ *
+ * @param WC_Order              $order       WooCommerce order.
+ * @param array<string, string> $customer    Validated customer fields.
+ * @param array<string, mixed>  $calculation Server-side calculation snapshot.
+ * @param array<string, mixed>  $shop        Shop data.
+ * @return array<string, mixed>
+ */
+function mtuc_build_cart_smartucf_session_payload(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	array $shop
+): array {
+	return array(
+		'user'                  => (string) ( $shop['uni_user'] ?? '' ),
+		'pass'                  => (string) ( $shop['uni_password'] ?? '' ),
+		'orderNo'               => (string) $order->get_id(),
+		'clientFirstName'       => mtuc_sanitize_smartucf_text( (string) ( $customer['first_name'] ?? '' ) ),
+		'clientLastName'        => mtuc_sanitize_smartucf_text( (string) ( $customer['last_name'] ?? '' ) ),
+		'clientPhone'           => mtuc_sanitize_smartucf_text( (string) ( $customer['phone'] ?? '' ) ),
+		'clientEmail'           => mtuc_sanitize_smartucf_text( (string) ( $customer['email'] ?? '' ) ),
+		'clientDeliveryAddress' => mtuc_get_smartucf_delivery_address( $order, $customer ),
+		'onlineProductCode'     => (string) ( $calculation['kop_code'] ?? '' ),
+		'totalPrice'            => isset( $calculation['price'] ) ? (float) $calculation['price'] : 0.0,
+		'initialPayment'        => isset( $calculation['parva'] ) ? (float) $calculation['parva'] : 0.0,
+		'installmentCount'      => isset( $calculation['months'] ) ? (int) $calculation['months'] : 0,
+		'monthlyPayment'        => isset( $calculation['monthly_installment'] ) ? (float) $calculation['monthly_installment'] : 0.0,
+		'items'                 => mtuc_build_smartucf_items_from_order( $order ),
+	);
+}
+
+/**
+ * Send cart popup order to SmartUCF.
+ *
+ * @param WC_Order              $order       WooCommerce order.
+ * @param array<string, string> $customer    Validated customer fields.
+ * @param array<string, mixed>  $calculation Server-side calculation snapshot.
+ * @param array<string, mixed>  $shop        Shop data.
+ * @return array{session_id: string, redirect_url: string}|WP_Error
+ */
+function mtuc_send_cart_popup_order_to_smartucf(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	array $shop
+) {
+	$payload = mtuc_build_cart_smartucf_session_payload( $order, $customer, $calculation, $shop );
+	$result  = Mtuc_Smartucf_Api_Client::start_session( $payload, $shop );
+
+	if ( is_wp_error( $result ) ) {
+		return $result;
+	}
+
+	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'smartucf_session_id', $result['session_id'] );
+	$order->save();
+
+	return $result;
+}
+
+/**
+ * Process cart popup AJAX submit.
+ *
+ * @param array<string, string> $customer Validated customer fields.
+ * @return void
+ */
+function mtuc_ajax_popup_submit_cart( array $customer ): void {
+	$scheme_key  = isset( $_POST['scheme_key'] ) ? sanitize_text_field( wp_unslash( $_POST['scheme_key'] ) ) : '';
+	$filter_id   = isset( $_POST['filter_id'] ) ? absint( wp_unslash( $_POST['filter_id'] ) ) : 0;
+	$months      = isset( $_POST['months'] ) ? absint( wp_unslash( $_POST['months'] ) ) : 0;
+	$scheme_type = isset( $_POST['scheme_type'] ) ? sanitize_key( wp_unslash( $_POST['scheme_type'] ) ) : 'standard';
+
+	if ( '' !== $scheme_key ) {
+		$parsed      = mtuc_parse_popup_scheme_option_key( $scheme_key );
+		$months      = (int) $parsed['months'];
+		$filter_id   = (int) $parsed['filter_id'];
+		$scheme_type = (string) $parsed['scheme_type'];
+	}
+
+	$offer_type = isset( $_POST['offer_type'] ) ? sanitize_key( wp_unslash( $_POST['offer_type'] ) ) : 'standard';
+	if ( ! in_array( $offer_type, array( 'standard', 'promo' ), true ) ) {
+		wp_send_json_error( array( 'message' => __( 'Невалиден тип оферта.', 'mtunicredit' ) ), 400 );
+	}
+
+	$parva_raw = isset( $_POST['parva'] ) ? wp_unslash( $_POST['parva'] ) : '0';
+	$parva     = is_numeric( $parva_raw ) ? (float) $parva_raw : 0.0;
+
+	$lock_key = mtuc_build_cart_popup_submit_lock_key();
+	if ( ! mtuc_acquire_popup_submit_lock( $lock_key ) ) {
+		wp_send_json_error(
+			array( 'message' => __( 'Заявката вече се обработва. Моля, изчакайте.', 'mtunicredit' ) ),
+			429
+		);
+	}
+
+	$cart_state = mtuc_resolve_cart_scheme_state();
+	if ( is_wp_error( $cart_state ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		wp_send_json_error( array( 'message' => $cart_state->get_error_message() ), 400 );
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		wp_send_json_error( array( 'message' => $shop->get_error_message() ), 500 );
+	}
+
+	$cart_total = (float) ( $cart_state['cart_total'] ?? 0 );
+	$common     = 'promo' === $offer_type
+		? (array) ( $cart_state['common_promo'] ?? array() )
+		: (array) ( $cart_state['common_standard'] ?? array() );
+
+	if ( empty( $common ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		wp_send_json_error(
+			array( 'message' => __( 'Няма обща схема за всички продукти в количката.', 'mtunicredit' ) ),
+			400
+		);
+	}
+
+	$coeff_list  = mtuc_get_shop_coeff_list( $shop );
+	$calculation = mtuc_calculate_cart_popup_credit(
+		$shop,
+		$coeff_list,
+		$cart_total,
+		$months,
+		$offer_type,
+		$parva,
+		$filter_id,
+		$scheme_type,
+		$common
+	);
+
+	if ( is_wp_error( $calculation ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		wp_send_json_error( array( 'message' => $calculation->get_error_message() ), 400 );
+	}
+
+	$cart_lines = isset( $cart_state['lines'] ) && is_array( $cart_state['lines'] )
+		? $cart_state['lines']
+		: mtuc_get_cart_line_entries();
+
+	$order = mtuc_create_cart_popup_pending_order( $customer, $calculation, $cart_lines );
+	if ( is_wp_error( $order ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
+	}
+
+	$cp_result = mtuc_send_cart_popup_order_to_cp( $order, $customer, $calculation, $shop );
+	if ( is_wp_error( $cp_result ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		mtuc_handle_popup_order_bank_unavailable( $order );
+		mtuc_send_popup_bank_unavailable_response( $order );
+	}
+
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+
+	$smartucf_result = mtuc_send_cart_popup_order_to_smartucf( $order, $customer, $calculation, $shop );
+	if ( is_wp_error( $smartucf_result ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		mtuc_handle_popup_order_bank_unavailable( $order );
+		mtuc_send_popup_bank_unavailable_response( $order );
+	}
+
+	$cp_status_result = mtuc_sync_cp_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
+	if ( is_wp_error( $cp_status_result ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		mtuc_handle_popup_order_bank_unavailable( $order );
+		mtuc_send_popup_bank_unavailable_response( $order );
+	}
+
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
+	$order->save();
+
+	mtuc_release_popup_submit_lock( $lock_key );
+
+	wp_send_json_success(
+		array(
+			'order_id'     => $order->get_id(),
+			'order_number' => $order->get_order_number(),
+			'cp_order_id'  => $cp_order_id,
+			'bank_status'  => MTUC_BANK_STATUS_SMARTUCF_SENT,
+			'redirect_url' => $smartucf_result['redirect_url'],
+			'message'      => __( 'Пренасочване към UniCredit за довършване на заявката.', 'mtunicredit' ),
+		)
+	);
+}
+
+/**
  * Resolve CP order currency code from shop settings.
  *
  * @param array<string, mixed> $shop Shop `data` object from CP.
@@ -670,7 +1138,7 @@ function mtuc_build_cp_order_payload(
 	}
 
 	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
-	$cp_status      = mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_CP_SENT );
+	$cp_status    = mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_CP_SENT );
 
 	$product_id_for_cp = $variation_id > 0 ? $variation_id : $parent_id;
 	$product_name      = $product->get_name();
@@ -940,6 +1408,11 @@ function mtuc_ajax_popup_submit(): void {
 	$customer = mtuc_validate_popup_customer_payload( $_POST );
 	if ( is_wp_error( $customer ) ) {
 		wp_send_json_error( array( 'message' => $customer->get_error_message() ), 400 );
+	}
+
+	$source = isset( $_POST['source'] ) ? sanitize_key( wp_unslash( $_POST['source'] ) ) : 'product';
+	if ( 'cart' === $source ) {
+		mtuc_ajax_popup_submit_cart( $customer );
 	}
 
 	$scheme_key  = isset( $_POST['scheme_key'] ) ? sanitize_text_field( wp_unslash( $_POST['scheme_key'] ) ) : '';
@@ -1274,11 +1747,11 @@ function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 	$glp     = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'glp' );
 	$gpr     = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'gpr' );
 
-	$rows[ __( 'Първоначална вноска', 'mtunicredit' ) ]   = number_format( $parva, 2, '.', '' );
-	$rows[ __( 'Сума на заема', 'mtunicredit' ) ]          = number_format( $loan, 2, '.', '' );
-	$rows[ __( 'Месечна вноска', 'mtunicredit' ) ]         = number_format( $monthly, 2, '.', '' );
-	$rows[ __( 'Обща дължима сума', 'mtunicredit' ) ]      = number_format( $total, 2, '.', '' );
-	$rows[ __( 'ГЛП / ГПР', 'mtunicredit' ) ]              = number_format( $glp, 2, '.', '' ) . '% / ' . number_format( $gpr, 2, '.', '' ) . '%';
+	$rows[ __( 'Първоначална вноска', 'mtunicredit' ) ] = number_format( $parva, 2, '.', '' );
+	$rows[ __( 'Сума на заема', 'mtunicredit' ) ]       = number_format( $loan, 2, '.', '' );
+	$rows[ __( 'Месечна вноска', 'mtunicredit' ) ]      = number_format( $monthly, 2, '.', '' );
+	$rows[ __( 'Обща дължима сума', 'mtunicredit' ) ]   = number_format( $total, 2, '.', '' );
+	$rows[ __( 'ГЛП / ГПР', 'mtunicredit' ) ]           = number_format( $glp, 2, '.', '' ) . '% / ' . number_format( $gpr, 2, '.', '' ) . '%';
 
 	return $rows;
 }

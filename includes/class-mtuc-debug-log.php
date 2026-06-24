@@ -204,14 +204,14 @@ class Mtuc_Debug_Log {
 		}
 
 		return array(
-			'plugin'          => 'mtunicredit',
-			'plugin_version'  => defined( 'MTUC_VERSION' ) ? MTUC_VERSION : '',
-			'site_url'        => home_url(),
-			'exported_at_gmt' => gmdate( 'c' ),
+			'plugin'           => 'mtunicredit',
+			'plugin_version'   => defined( 'MTUC_VERSION' ) ? MTUC_VERSION : '',
+			'site_url'         => home_url(),
+			'exported_at_gmt'  => gmdate( 'c' ),
 			'exported_at_site' => wp_date( 'c' ),
-			'debug_enabled'   => self::is_enabled(),
-			'total_entries'   => count( $entries ),
-			'entries'         => $entries,
+			'debug_enabled'    => self::is_enabled(),
+			'total_entries'    => count( $entries ),
+			'entries'          => $entries,
 		);
 	}
 

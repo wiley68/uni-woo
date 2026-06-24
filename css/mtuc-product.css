@@ -140,6 +140,30 @@
 	justify-content: center;
 }
 
+.mtuc-product-calculator button.mtuc-product-calculator__btn--image-only {
+	justify-content: center;
+	padding-left: 12px;
+	padding-right: 12px;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn--image-only .mtuc-product-calculator__content {
+	display: none;
+}
+
+.mtuc-product-calculator button.mtuc-product-calculator__btn--image-only .mtuc-product-calculator__logo img {
+	height: calc(var(--mtuc-logo-height) + 8px);
+	max-height: calc(var(--mtuc-logo-height) + 8px);
+}
+
+.mtuc-cart-calculator {
+	width: 100%;
+	margin-top: 0;
+}
+
+.woocommerce .wc-proceed-to-checkout .mtuc-cart-calculator {
+	margin-bottom: 12px;
+}
+
 .mtuc-product-calculator--stacked .mtuc-product-calculator__wrap {
 	flex-direction: column;
 	align-items: flex-start;

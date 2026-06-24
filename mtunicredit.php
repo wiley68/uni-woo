@@ -74,6 +74,7 @@ $mtuc_files = array(
 	'/admin.php',
 	'/functions.php',
 	'/mtuc-product-popup.php',
+	'/mtuc-cart-calculator.php',
 	'/mtuc-popup-order.php',
 );
 
@@ -135,5 +136,6 @@ function mtuc_plugin_bootstrap() {
 	mtuc_register_product_popup_ajax_hooks();
 	mtuc_register_popup_order_hooks();
 	mtuc_register_product_hooks();
+	mtuc_register_cart_hooks();
 	mtuc_register_reklama_hooks();
 }

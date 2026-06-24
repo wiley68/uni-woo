@@ -940,6 +940,11 @@ class WC_Product
 	{
 		return true;
 	}
+
+	public function exists(): bool
+	{
+		return true;
+	}
 }
 
 /**
@@ -1063,6 +1068,21 @@ class WC_Cart
 		return array();
 	}
 
+	public function get_cart_hash(): string
+	{
+		return '';
+	}
+
+	public function get_cart_contents_total(): float
+	{
+		return 0.0;
+	}
+
+	public function get_cart_contents_tax(): float
+	{
+		return 0.0;
+	}
+
 	public function add_to_cart(...$args) {}
 }
 
@@ -1155,6 +1175,11 @@ class WC_Order_Item_Product
 	public function get_total(): string
 	{
 		return '0';
+	}
+
+	public function get_total_tax(): float
+	{
+		return 0.0;
 	}
 
 	public function get_product(): ?WC_Product

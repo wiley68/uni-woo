@@ -133,11 +133,11 @@ class Mtuc_Smartucf_Api_Client {
 		);
 
 		if ( $use_certificate ) {
-			$curl_options[ CURLOPT_SSLKEY ]         = self::get_ssl_key_path();
-			$curl_options[ CURLOPT_SSLKEYPASSWD ] = MTUC_SSL_PASSWD;
-			$curl_options[ CURLOPT_SSLCERT ]        = self::get_ssl_cert_path();
+			$curl_options[ CURLOPT_SSLKEY ]        = self::get_ssl_key_path();
+			$curl_options[ CURLOPT_SSLKEYPASSWD ]  = MTUC_SSL_PASSWD;
+			$curl_options[ CURLOPT_SSLCERT ]       = self::get_ssl_cert_path();
 			$curl_options[ CURLOPT_SSLCERTPASSWD ] = MTUC_SSL_PASSWD;
-			$curl_options[ CURLOPT_SSLVERSION ]     = CURL_SSLVERSION_TLSv1_2;
+			$curl_options[ CURLOPT_SSLVERSION ]    = CURL_SSLVERSION_TLSv1_2;
 		}
 
 		$handle = curl_init();

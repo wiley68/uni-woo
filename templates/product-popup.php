@@ -12,14 +12,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$popup                    = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
-$show_first_vnoska        = ! empty( $popup['show_first_vnoska'] );
+$popup               = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
+$popup_source        = isset( $popup['source'] ) ? (string) $popup['source'] : 'product';
+$hide_add_to_cart    = ! empty( $popup['hide_add_to_cart'] ) || 'cart' === $popup_source;
+$show_first_vnoska   = ! empty( $popup['show_first_vnoska'] );
 $currency            = isset( $popup['currency'] ) && is_array( $popup['currency'] ) ? $popup['currency'] : mtuc_get_currency_display_config( array( 'uni_eur' => 0 ) );
 $customer            = isset( $popup['customer'] ) && is_array( $popup['customer'] ) ? $popup['customer'] : mtuc_get_popup_customer_defaults();
-$banner_url         = isset( $popup['banner_url'] ) ? (string) $popup['banner_url'] : '';
-$banner_url_mobile  = isset( $popup['banner_url_mobile'] ) ? (string) $popup['banner_url_mobile'] : '';
-$banner_src         = '' !== $banner_url ? $banner_url : $banner_url_mobile;
-$has_banner         = '' !== $banner_src;
+$banner_url          = isset( $popup['banner_url'] ) ? (string) $popup['banner_url'] : '';
+$banner_url_mobile   = isset( $popup['banner_url_mobile'] ) ? (string) $popup['banner_url_mobile'] : '';
+$banner_src          = '' !== $banner_url ? $banner_url : $banner_url_mobile;
+$has_banner          = '' !== $banner_src;
 $reklama_url         = isset( $popup['reklama_url'] ) ? (string) $popup['reklama_url'] : '';
 $product_id          = (int) ( $popup['product_id'] ?? 0 );
 $badge_logo_url      = mtuc_get_uni_mini_logo_url();
@@ -59,7 +61,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 						<div class="mtuc-popup__calc">
 							<div class="mtuc-popup__calc-fields">
 								<div class="mtuc-popup__row">
-									<div class="mtuc-popup__label"><?php esc_html_e( 'Цена на артикула', 'mtunicredit' ); ?></div>
+									<div class="mtuc-popup__label"><?php echo 'cart' === $popup_source ? esc_html__( 'Цена на количката', 'mtunicredit' ) : esc_html__( 'Цена на артикула', 'mtunicredit' ); ?></div>
 									<div class="mtuc-popup__value<?php echo esc_attr( $currency_dual_class ); ?>">
 										<span id="mtuc-popup-price-primary" class="mtuc-popup__amount-primary"></span>
 										<span id="mtuc-popup-price-secondary" class="mtuc-popup__amount-secondary"></span>
@@ -141,11 +143,13 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Отказ', 'mtunicredit' ); ?></span>
 								</span>
 							</button>
+							<?php if ( ! $hide_add_to_cart ) : ?>
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" id="mtuc-popup-add-to-cart">
 								<span class="mtuc-popup__btn-inner">
 									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Добавете в количката', 'mtunicredit' ); ?></span>
 								</span>
 							</button>
+							<?php endif; ?>
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary" id="mtuc-popup-buy">
 								<span class="mtuc-popup__btn-inner">
 									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Купете на изплащане', 'mtunicredit' ); ?></span>
@@ -234,5 +238,6 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 	</div>
 
 	<input type="hidden" id="mtuc-popup-product-id" value="<?php echo esc_attr( (string) $product_id ); ?>" />
+	<input type="hidden" id="mtuc-popup-source" value="<?php echo esc_attr( $popup_source ); ?>" />
 	<input type="hidden" id="mtuc-popup-offer-type" value="standard" />
 </div>
