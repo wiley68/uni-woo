@@ -369,6 +369,101 @@ function mtuc_resolve_cp_order_addresses( WC_Order $order, array $customer ): ar
 }
 
 /**
+ * Order grand total including taxes and fees.
+ *
+ * @param WC_Order $order WooCommerce order.
+ * @return float
+ */
+function mtuc_get_order_total_inc_tax( WC_Order $order ): float {
+	return round( (float) $order->get_total(), 2 );
+}
+
+/**
+ * Line item total including tax.
+ *
+ * @param WC_Order_Item_Product $item Order line item.
+ * @return float
+ */
+function mtuc_get_order_item_line_total_inc_tax( WC_Order_Item_Product $item ): float {
+	return round( (float) $item->get_total() + (float) $item->get_total_tax(), 2 );
+}
+
+/**
+ * Line item unit price including tax.
+ *
+ * @param WC_Order_Item_Product $item Order line item.
+ * @return float
+ */
+function mtuc_get_order_item_unit_price_inc_tax( WC_Order_Item_Product $item ): float {
+	$quantity = max( 1, (int) $item->get_quantity() );
+
+	return round( mtuc_get_order_item_line_total_inc_tax( $item ) / $quantity, 2 );
+}
+
+/**
+ * Set one order line to a tax-inclusive line total (WC stores ex-tax + tax rows).
+ *
+ * @param WC_Order_Item_Product $item               Order line item.
+ * @param WC_Product            $product            Product instance.
+ * @param float                 $line_price_inc_tax Expected line total including tax.
+ * @return void
+ */
+function mtuc_sync_order_item_line_price( WC_Order_Item_Product $item, WC_Product $product, float $line_price_inc_tax ): void {
+	$line_price_inc_tax = round( max( 0.0, $line_price_inc_tax ), 2 );
+	$quantity           = max( 1, (int) $item->get_quantity() );
+	$unit_inc           = $line_price_inc_tax / $quantity;
+
+	if ( function_exists( 'wc_get_price_excluding_tax' ) ) {
+		$line_ex  = (float) wc_get_price_excluding_tax(
+			$product,
+			array(
+				'qty'   => $quantity,
+				'price' => $unit_inc,
+			)
+		);
+		$decimals = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
+		$line_ex  = round( $line_ex, $decimals );
+	} else {
+		$line_ex = $line_price_inc_tax;
+	}
+
+	$item->set_subtotal( $line_ex );
+	$item->set_total( $line_ex );
+	$item->save();
+}
+
+/**
+ * Sync all cart lines to their tax-inclusive totals before calculate_totals().
+ *
+ * @param WC_Order                         $order      WooCommerce order.
+ * @param array<int, array<string, mixed>> $cart_lines Cart line entries.
+ * @return void
+ */
+function mtuc_sync_cart_order_line_prices( WC_Order $order, array $cart_lines ): void {
+	$items = array_values( $order->get_items( 'line_item' ) );
+	$count = min( count( $items ), count( $cart_lines ) );
+
+	for ( $index = 0; $index < $count; $index++ ) {
+		$item = $items[ $index ];
+		$line = $cart_lines[ $index ];
+
+		if ( ! $item instanceof WC_Order_Item_Product ) {
+			continue;
+		}
+		if ( ! isset( $line['product'] ) || ! $line['product'] instanceof WC_Product ) {
+			continue;
+		}
+
+		$line_total = isset( $line['line_total'] ) ? (float) $line['line_total'] : 0.0;
+		if ( $line_total <= 0 ) {
+			continue;
+		}
+
+		mtuc_sync_order_item_line_price( $item, $line['product'], $line_total );
+	}
+}
+
+/**
  * Adjust the first line item total to match the calculator line price (incl. tax).
  *
  * @param WC_Order $order              Order instance.
@@ -391,26 +486,7 @@ function mtuc_sync_order_line_price( WC_Order $order, float $line_price_inc_tax 
 		return;
 	}
 
-	$quantity = max( 1, (int) $item->get_quantity() );
-	$unit_inc = $line_price_inc_tax / $quantity;
-
-	if ( wc_prices_include_tax() ) {
-		$line_subtotal = $line_price_inc_tax;
-		$line_total    = $line_price_inc_tax;
-	} else {
-		$line_subtotal = (float) wc_get_price_excluding_tax(
-			$product,
-			array(
-				'qty'   => $quantity,
-				'price' => $unit_inc,
-			)
-		);
-		$line_total    = $line_subtotal;
-	}
-
-	$item->set_subtotal( $line_subtotal );
-	$item->set_total( $line_total );
-	$item->save();
+	mtuc_sync_order_item_line_price( $item, $product, $line_price_inc_tax );
 }
 
 /**
@@ -682,6 +758,7 @@ function mtuc_create_cart_popup_pending_order(
 		}
 	}
 
+	mtuc_sync_cart_order_line_prices( $order, $cart_lines );
 	$order->calculate_totals( false );
 
 	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
@@ -729,8 +806,7 @@ function mtuc_build_smartucf_items_from_order( WC_Order $order ): array {
 		}
 
 		$quantity   = max( 1, (int) $item->get_quantity() );
-		$line_total = (float) $item->get_total() + (float) $item->get_total_tax();
-		$unit_price = $quantity > 0 ? round( $line_total / $quantity, 2 ) : 0.0;
+		$unit_price = mtuc_get_order_item_unit_price_inc_tax( $item );
 
 		$variation_id = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
 		$parent_id    = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
@@ -827,7 +903,7 @@ function mtuc_build_cp_cart_order_payload(
 		'email'         => $email,
 		'address'       => $cp_addresses['address'],
 		'address2'      => $cp_addresses['address2'],
-		'price'         => round( (float) ( $calculation['price'] ?? 0 ), 2 ),
+		'price'         => mtuc_get_order_total_inc_tax( $order ),
 		'vnoska'        => round( (float) ( $calculation['monthly_installment'] ?? 0 ), 2 ),
 		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),
 		'vnoski'        => (int) ( $calculation['months'] ?? 0 ),
@@ -904,7 +980,7 @@ function mtuc_build_cart_smartucf_session_payload(
 		'clientEmail'           => mtuc_sanitize_smartucf_text( (string) ( $customer['email'] ?? '' ) ),
 		'clientDeliveryAddress' => mtuc_get_smartucf_delivery_address( $order, $customer ),
 		'onlineProductCode'     => (string) ( $calculation['kop_code'] ?? '' ),
-		'totalPrice'            => isset( $calculation['price'] ) ? (float) $calculation['price'] : 0.0,
+		'totalPrice'            => mtuc_get_order_total_inc_tax( $order ),
 		'initialPayment'        => isset( $calculation['parva'] ) ? (float) $calculation['parva'] : 0.0,
 		'installmentCount'      => isset( $calculation['months'] ) ? (int) $calculation['months'] : 0,
 		'monthlyPayment'        => isset( $calculation['monthly_installment'] ) ? (float) $calculation['monthly_installment'] : 0.0,
@@ -1153,7 +1229,7 @@ function mtuc_build_cp_order_payload(
 		'email'         => $email,
 		'address'       => $cp_addresses['address'],
 		'address2'      => $cp_addresses['address2'],
-		'price'         => round( (float) ( $calculation['price'] ?? 0 ), 2 ),
+		'price'         => mtuc_get_order_total_inc_tax( $order ),
 		'vnoska'        => round( (float) ( $calculation['monthly_installment'] ?? 0 ), 2 ),
 		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),
 		'vnoski'        => (int) ( $calculation['months'] ?? 0 ),
@@ -1261,50 +1337,6 @@ function mtuc_get_smartucf_delivery_address( WC_Order $order, array $customer ):
 }
 
 /**
- * Build SmartUCF line items array for popup order.
- *
- * @param WC_Product           $product      Product or variation line item.
- * @param int                  $parent_id    Parent product ID.
- * @param int                  $variation_id Variation ID (0 if none).
- * @param int                  $quantity     Line quantity.
- * @param array<string, mixed> $calculation  Server-side calculation snapshot.
- * @return array<int, array<string, mixed>>
- */
-function mtuc_build_smartucf_items(
-	WC_Product $product,
-	int $parent_id,
-	int $variation_id,
-	int $quantity,
-	array $calculation
-): array {
-	$quantity   = max( 1, $quantity );
-	$line_total = isset( $calculation['price'] ) ? (float) $calculation['price'] : 0.0;
-	$unit_price = round( $line_total / $quantity, 2 );
-
-	$category_product = $product;
-	if ( $variation_id > 0 ) {
-		$parent = mtuc_get_wc_product_by_id( $parent_id );
-		if ( $parent instanceof WC_Product ) {
-			$category_product = $parent;
-		}
-	}
-
-	$category_ids     = mtuc_get_product_category_ids( $category_product );
-	$product_category = ! empty( $category_ids ) ? (int) $category_ids[0] : 0;
-	$item_code        = $variation_id > 0 ? $variation_id : $parent_id;
-
-	return array(
-		array(
-			'name'        => mtuc_sanitize_smartucf_text( $product->get_name() ),
-			'code'        => $item_code,
-			'type'        => $product_category,
-			'count'       => $quantity,
-			'singlePrice' => $unit_price,
-		),
-	);
-}
-
-/**
  * Build SmartUCF sucfOnlineSessionStart payload.
  *
  * @param WC_Order              $order        WooCommerce order.
@@ -1327,6 +1359,8 @@ function mtuc_build_smartucf_session_payload(
 	int $quantity,
 	array $shop
 ): array {
+	unset( $product, $parent_id, $variation_id, $quantity );
+
 	return array(
 		'user'                  => (string) ( $shop['uni_user'] ?? '' ),
 		'pass'                  => (string) ( $shop['uni_password'] ?? '' ),
@@ -1337,11 +1371,11 @@ function mtuc_build_smartucf_session_payload(
 		'clientEmail'           => mtuc_sanitize_smartucf_text( (string) ( $customer['email'] ?? '' ) ),
 		'clientDeliveryAddress' => mtuc_get_smartucf_delivery_address( $order, $customer ),
 		'onlineProductCode'     => (string) ( $calculation['kop_code'] ?? '' ),
-		'totalPrice'            => isset( $calculation['price'] ) ? (float) $calculation['price'] : 0.0,
+		'totalPrice'            => mtuc_get_order_total_inc_tax( $order ),
 		'initialPayment'        => isset( $calculation['parva'] ) ? (float) $calculation['parva'] : 0.0,
 		'installmentCount'      => isset( $calculation['months'] ) ? (int) $calculation['months'] : 0,
 		'monthlyPayment'        => isset( $calculation['monthly_installment'] ) ? (float) $calculation['monthly_installment'] : 0.0,
-		'items'                 => mtuc_build_smartucf_items( $product, $parent_id, $variation_id, $quantity, $calculation ),
+		'items'                 => mtuc_build_smartucf_items_from_order( $order ),
 	);
 }
 
