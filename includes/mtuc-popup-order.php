@@ -401,31 +401,77 @@ function mtuc_get_order_item_unit_price_inc_tax( WC_Order_Item_Product $item ): 
 }
 
 /**
+ * Convert a tax-inclusive line total to ex-tax amount for WC order storage.
+ *
+ * @param WC_Product    $product            Product instance.
+ * @param int           $quantity           Line quantity.
+ * @param float         $line_total_inc_tax Line total including tax.
+ * @param WC_Order|null $order              Order for taxable location (optional).
+ * @return float
+ */
+function mtuc_get_line_total_excluding_tax( WC_Product $product, int $quantity, float $line_total_inc_tax, ?WC_Order $order = null ): float {
+	$line_total_inc_tax = round( max( 0.0, $line_total_inc_tax ), 2 );
+	$quantity           = max( 1, $quantity );
+
+	if ( ! $product->is_taxable() || ! class_exists( 'WC_Tax' ) ) {
+		return $line_total_inc_tax;
+	}
+
+	$tax_rates = array();
+
+	if ( $order instanceof WC_Order ) {
+		$tax_location = $order->get_taxable_location();
+		if ( is_array( $tax_location ) && ! empty( $tax_location['country'] ) ) {
+			$tax_rates = WC_Tax::find_rates(
+				array(
+					'country'   => (string) $tax_location['country'],
+					'state'     => (string) ( $tax_location['state'] ?? '' ),
+					'postcode'  => (string) ( $tax_location['postcode'] ?? '' ),
+					'city'      => (string) ( $tax_location['city'] ?? '' ),
+					'tax_class' => $product->get_tax_class(),
+				)
+			);
+		}
+	}
+
+	if ( empty( $tax_rates ) ) {
+		$tax_rates = WC_Tax::get_rates( $product->get_tax_class() );
+	}
+
+	if ( empty( $tax_rates ) ) {
+		if ( function_exists( 'wc_get_price_excluding_tax' ) && function_exists( 'wc_prices_include_tax' ) && wc_prices_include_tax() ) {
+			return (float) wc_get_price_excluding_tax(
+				$product,
+				array(
+					'qty'   => $quantity,
+					'price' => $line_total_inc_tax / $quantity,
+					'order' => $order,
+				)
+			);
+		}
+
+		return $line_total_inc_tax;
+	}
+
+	$taxes    = WC_Tax::calc_tax( $line_total_inc_tax, $tax_rates, true );
+	$line_ex  = $line_total_inc_tax - array_sum( $taxes );
+	$decimals = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
+
+	return round( $line_ex, $decimals );
+}
+
+/**
  * Set one order line to a tax-inclusive line total (WC stores ex-tax + tax rows).
  *
  * @param WC_Order_Item_Product $item               Order line item.
  * @param WC_Product            $product            Product instance.
  * @param float                 $line_price_inc_tax Expected line total including tax.
+ * @param WC_Order|null         $order              Order instance for tax location.
  * @return void
  */
-function mtuc_sync_order_item_line_price( WC_Order_Item_Product $item, WC_Product $product, float $line_price_inc_tax ): void {
-	$line_price_inc_tax = round( max( 0.0, $line_price_inc_tax ), 2 );
-	$quantity           = max( 1, (int) $item->get_quantity() );
-	$unit_inc           = $line_price_inc_tax / $quantity;
-
-	if ( function_exists( 'wc_get_price_excluding_tax' ) ) {
-		$line_ex  = (float) wc_get_price_excluding_tax(
-			$product,
-			array(
-				'qty'   => $quantity,
-				'price' => $unit_inc,
-			)
-		);
-		$decimals = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
-		$line_ex  = round( $line_ex, $decimals );
-	} else {
-		$line_ex = $line_price_inc_tax;
-	}
+function mtuc_sync_order_item_line_price( WC_Order_Item_Product $item, WC_Product $product, float $line_price_inc_tax, ?WC_Order $order = null ): void {
+	$quantity = max( 1, (int) $item->get_quantity() );
+	$line_ex  = mtuc_get_line_total_excluding_tax( $product, $quantity, $line_price_inc_tax, $order );
 
 	$item->set_subtotal( $line_ex );
 	$item->set_total( $line_ex );
@@ -459,7 +505,7 @@ function mtuc_sync_cart_order_line_prices( WC_Order $order, array $cart_lines ):
 			continue;
 		}
 
-		mtuc_sync_order_item_line_price( $item, $line['product'], $line_total );
+		mtuc_sync_order_item_line_price( $item, $line['product'], $line_total, $order );
 	}
 }
 
@@ -486,7 +532,7 @@ function mtuc_sync_order_line_price( WC_Order $order, float $line_price_inc_tax 
 		return;
 	}
 
-	mtuc_sync_order_item_line_price( $item, $product, $line_price_inc_tax );
+	mtuc_sync_order_item_line_price( $item, $product, $line_price_inc_tax, $order );
 }
 
 /**
@@ -681,7 +727,7 @@ function mtuc_create_popup_pending_order(
 	}
 
 	mtuc_sync_order_line_price( $order, $line_price );
-	$order->calculate_totals( false );
+	$order->calculate_totals();
 
 	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
 	$order->set_payment_method_title( __( 'УниКредит покупки на Кредит', 'mtunicredit' ) );
@@ -759,7 +805,7 @@ function mtuc_create_cart_popup_pending_order(
 	}
 
 	mtuc_sync_cart_order_line_prices( $order, $cart_lines );
-	$order->calculate_totals( false );
+	$order->calculate_totals();
 
 	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
 	$order->set_payment_method_title( __( 'УниКредит покупки на Кредит', 'mtunicredit' ) );

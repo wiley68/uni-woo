@@ -882,6 +882,47 @@ function wc_prices_include_tax(): bool
 	return false;
 }
 
+function wc_get_price_decimals(): int
+{
+	return 2;
+}
+
+class WC_Tax
+{
+	/**
+	 * @param array<string, mixed> $args
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function find_rates(array $args): array
+	{
+		unset($args);
+
+		return array();
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function get_rates(string $tax_class = ''): array
+	{
+		unset($tax_class);
+
+		return array();
+	}
+
+	/**
+	 * @param float $price
+	 * @param array<int, array<string, mixed>> $rates
+	 * @return array<int, float>
+	 */
+	public static function calc_tax($price, $rates, $price_includes_tax = false): array
+	{
+		unset($price, $rates, $price_includes_tax);
+
+		return array();
+	}
+}
+
 /**
  * @param mixed $product
  * @param array<string, mixed> $args
@@ -952,6 +993,16 @@ class WC_Product
 	public function exists(): bool
 	{
 		return true;
+	}
+
+	public function is_taxable(): bool
+	{
+		return true;
+	}
+
+	public function get_tax_class(): string
+	{
+		return '';
 	}
 }
 
@@ -1509,6 +1560,12 @@ class WC_Order extends WC_Data
 	{
 		unset($types);
 
+		return array();
+	}
+
+	/** @return array{country?: string, state?: string, postcode?: string, city?: string} */
+	public function get_taxable_location(): array
+	{
 		return array();
 	}
 
