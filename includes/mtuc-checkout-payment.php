@@ -94,12 +94,64 @@ function mtuc_apply_payment_gateway_to_order( WC_Order $order, string $status_no
 }
 
 /**
+ * Load classic payment gateway class after WooCommerce is available.
+ *
+ * @return bool
+ */
+function mtuc_load_payment_gateway_class(): bool {
+	static $loaded = false;
+
+	if ( $loaded ) {
+		return class_exists( 'Mtuc_Payment_Gateway', false );
+	}
+
+	if ( ! class_exists( 'WC_Payment_Gateway', false ) ) {
+		return false;
+	}
+
+	require_once MTUC_INCLUDES_DIR . '/class-mtuc-payment-gateway.php';
+	$loaded = true;
+
+	return class_exists( 'Mtuc_Payment_Gateway', false );
+}
+
+/**
+ * Load blocks payment gateway integration when WooCommerce Blocks is available.
+ *
+ * @return bool
+ */
+function mtuc_load_payment_gateway_blocks_class(): bool {
+	static $loaded = false;
+
+	if ( $loaded ) {
+		return class_exists( 'Mtuc_Payment_Gateway_Blocks', false );
+	}
+
+	if ( ! mtuc_load_payment_gateway_class() ) {
+		return false;
+	}
+
+	if ( ! class_exists( '\Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType', false ) ) {
+		return false;
+	}
+
+	require_once MTUC_INCLUDES_DIR . '/class-mtuc-payment-gateway-blocks.php';
+	$loaded = true;
+
+	return class_exists( 'Mtuc_Payment_Gateway_Blocks', false );
+}
+
+/**
  * Register WooCommerce payment gateway class.
  *
  * @param array<int, string> $gateways Gateway class names.
  * @return array<int, string>
  */
 function mtuc_register_payment_gateway( array $gateways ): array {
+	if ( ! mtuc_load_payment_gateway_class() ) {
+		return $gateways;
+	}
+
 	$gateways[] = 'Mtuc_Payment_Gateway';
 
 	return $gateways;
@@ -318,7 +370,11 @@ function mtuc_register_checkout_payment_hooks(): void {
  * @return void
  */
 function mtuc_register_blocks_payment_method(): void {
-	if ( ! class_exists( '\Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType' ) ) {
+	if ( ! class_exists( '\Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType', false ) ) {
+		return;
+	}
+
+	if ( ! mtuc_load_payment_gateway_blocks_class() ) {
 		return;
 	}
 
