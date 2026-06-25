@@ -1,6 +1,6 @@
 <?php
 /**
- * Database debug journal for CP and SmartUCF API requests and responses.
+ * Database debug journal for SmartUCF order creation requests.
  *
  * @package MTUC
  */
@@ -10,20 +10,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Persists API response bodies when debug mode is enabled in plugin settings.
+ * Persists SmartUCF sucfOnlineSessionStart request/response when debug mode is enabled.
  */
 class Mtuc_Debug_Log {
 
 	/** @var string Table name without prefix. */
 	public const TABLE = 'mtuc_debug_log';
 
-	/** @var string Log type: CP POST /orders response. */
-	public const TYPE_CP_ORDER = 'cp_order';
-
-	/** @var string Log type: CP PATCH /orders/status response. */
-	public const TYPE_CP_ORDER_STATUS = 'cp_order_status';
-
-	/** @var string Log type: SmartUCF sucfOnlineSessionStart response. */
+	/** @var string Log type: SmartUCF sucfOnlineSessionStart. */
 	public const TYPE_SMARTUCF = 'smartucf_session';
 
 	/** @var int Delete entries older than this many months on each insert. */
@@ -115,29 +109,23 @@ class Mtuc_Debug_Log {
 	 * @return string
 	 */
 	public static function get_type_label( string $type ): string {
-		switch ( $type ) {
-			case self::TYPE_CP_ORDER:
-				return __( 'КП — създаване на поръчка', 'mtunicredit' );
-			case self::TYPE_CP_ORDER_STATUS:
-				return __( 'КП — обновяване на статус', 'mtunicredit' );
-			case self::TYPE_SMARTUCF:
-				return __( 'SmartUCF — старт на сесия', 'mtunicredit' );
-			default:
-				return $type;
+		if ( self::TYPE_SMARTUCF === $type ) {
+			return __( 'SmartUCF — създаване на поръчка', 'mtunicredit' );
 		}
+
+		return $type;
 	}
 
 	/**
-	 * Store a raw API request/response pair in the debug journal.
+	 * Store SmartUCF sucfOnlineSessionStart request and response in the debug journal.
 	 *
-	 * @param string $type          Log type (see TYPE_* constants).
+	 * @param string $request_body  Raw JSON request body.
 	 * @param string $response_body Raw JSON response body.
 	 * @param int    $http_code     HTTP status code (0 if unavailable).
 	 * @param int    $wc_order_id   Related WooCommerce order ID.
-	 * @param string $request_body  Raw JSON request body (optional).
 	 * @return void
 	 */
-	public static function log_response( string $type, string $response_body, int $http_code = 0, int $wc_order_id = 0, string $request_body = '' ): void {
+	public static function log_smartucf_session( string $request_body, string $response_body, int $http_code = 0, int $wc_order_id = 0 ): void {
 		if ( ! self::is_enabled() ) {
 			return;
 		}
@@ -150,10 +138,10 @@ class Mtuc_Debug_Log {
 		$wpdb->insert(
 			self::table_name(),
 			array(
-				'log_type'      => sanitize_key( $type ),
+				'log_type'      => self::TYPE_SMARTUCF,
 				'order_id'      => max( 0, $wc_order_id ),
 				'http_code'     => max( 0, $http_code ),
-				'request_json'  => self::normalize_json_body( self::anonymize_request_body( $type, $request_body ) ),
+				'request_json'  => self::normalize_json_body( self::anonymize_request_body( $request_body ) ),
 				'response_json' => self::normalize_json_body( $response_body ),
 				'created_at'    => current_time( 'mysql', true ),
 			),
@@ -162,14 +150,13 @@ class Mtuc_Debug_Log {
 	}
 
 	/**
-	 * Remove personal data from a request body before it is stored in the journal.
+	 * Remove personal data from a SmartUCF request body before it is stored in the journal.
 	 *
-	 * @param string $type         Log type (see TYPE_* constants).
 	 * @param string $request_body Raw JSON request body.
 	 * @return string
 	 */
-	private static function anonymize_request_body( string $type, string $request_body ): string {
-		if ( self::TYPE_SMARTUCF !== $type || '' === trim( $request_body ) ) {
+	private static function anonymize_request_body( string $request_body ): string {
+		if ( '' === trim( $request_body ) ) {
 			return $request_body;
 		}
 
@@ -243,7 +230,7 @@ class Mtuc_Debug_Log {
 
 		$table = self::table_name();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$rows = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY id ASC", ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE log_type = %s ORDER BY id ASC", self::TYPE_SMARTUCF ), ARRAY_A );
 
 		if ( ! is_array( $rows ) ) {
 			$rows = array();
@@ -259,8 +246,8 @@ class Mtuc_Debug_Log {
 
 			$entries[] = array(
 				'id'              => isset( $row['id'] ) ? (int) $row['id'] : 0,
-				'type'            => isset( $row['log_type'] ) ? (string) $row['log_type'] : '',
-				'type_label'      => self::get_type_label( isset( $row['log_type'] ) ? (string) $row['log_type'] : '' ),
+				'type'            => self::TYPE_SMARTUCF,
+				'type_label'      => self::get_type_label( self::TYPE_SMARTUCF ),
 				'order_id'        => isset( $row['order_id'] ) ? (int) $row['order_id'] : 0,
 				'http_code'       => isset( $row['http_code'] ) ? (int) $row['http_code'] : 0,
 				'created_at_gmt'  => $created_gmt,

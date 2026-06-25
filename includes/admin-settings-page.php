@@ -167,7 +167,7 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 							<input type="checkbox" name="<?php echo esc_attr( Mtuc_Settings::OPTION_DEBUG ); ?>" id="mtuc_debug" value="1" <?php checked( 1, (int) $mtuc_settings[ Mtuc_Settings::OPTION_DEBUG ] ); ?> />
 							<?php esc_html_e( 'Моля изберете тази опция ако искате да включите режима за отстраняване на грешки.', 'mtunicredit' ); ?>
 						</label>
-						<p class="description"><?php esc_html_e( 'При активен режим отговорите от КП и SmartUCF се записват в журнал в базата данни (съхранение 3 месеца).', 'mtunicredit' ); ?></p>
+						<p class="description"><?php esc_html_e( 'При активен режим заявката и отговорът към SmartUCF при създаване на поръчка се записват в журнал в базата данни (съхранение 3 месеца).', 'mtunicredit' ); ?></p>
 					</td>
 				</tr>
 				<tr>

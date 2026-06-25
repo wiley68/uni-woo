@@ -70,7 +70,6 @@ class Mtuc_Cp_Api_Client {
 
 		$response = self::request( 'POST', 'orders', $payload, $token, true );
 		if ( is_wp_error( $response ) ) {
-			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER );
 			return $response;
 		}
 
@@ -84,11 +83,8 @@ class Mtuc_Cp_Api_Client {
 		}
 
 		if ( is_wp_error( $response ) ) {
-			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER );
 			return $response;
 		}
-
-		self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER );
 
 		return self::decode_response( $response );
 	}
@@ -124,7 +120,6 @@ class Mtuc_Cp_Api_Client {
 
 		$response = self::request( 'PATCH', 'orders/status', $body, $token, true );
 		if ( is_wp_error( $response ) ) {
-			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER_STATUS );
 			return $response;
 		}
 
@@ -138,11 +133,8 @@ class Mtuc_Cp_Api_Client {
 		}
 
 		if ( is_wp_error( $response ) ) {
-			self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER_STATUS );
 			return $response;
 		}
-
-		self::log_cp_api_response( $response, $wc_order_id, Mtuc_Debug_Log::TYPE_CP_ORDER_STATUS );
 
 		return self::decode_response( $response );
 	}
@@ -396,41 +388,5 @@ class Mtuc_Cp_Api_Client {
 		}
 
 		return $data;
-	}
-
-	/**
-	 * Write CP API response to the debug journal.
-	 *
-	 * @param array<string, mixed>|WP_Error $response    wp_remote_request response or transport error.
-	 * @param int                           $wc_order_id Related WooCommerce order ID.
-	 * @param string                        $log_type    Debug log type (see Mtuc_Debug_Log::TYPE_*).
-	 * @return void
-	 */
-	private static function log_cp_api_response( $response, int $wc_order_id, string $log_type ): void {
-		if ( is_wp_error( $response ) ) {
-			$body = wp_json_encode(
-				array(
-					'error' => $response->get_error_message(),
-					'code'  => $response->get_error_code(),
-				)
-			);
-			Mtuc_Debug_Log::log_response(
-				$log_type,
-				is_string( $body ) ? $body : '{}',
-				0,
-				$wc_order_id
-			);
-			return;
-		}
-
-		$code = (int) wp_remote_retrieve_response_code( $response );
-		$raw  = wp_remote_retrieve_body( $response );
-
-		Mtuc_Debug_Log::log_response(
-			$log_type,
-			is_string( $raw ) ? $raw : '{}',
-			$code,
-			$wc_order_id
-		);
 	}
 }

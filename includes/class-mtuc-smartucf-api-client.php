@@ -163,12 +163,11 @@ class Mtuc_Smartucf_Api_Client {
 					'http_code'  => $http_code,
 				)
 			);
-		Mtuc_Debug_Log::log_response(
-			Mtuc_Debug_Log::TYPE_SMARTUCF,
+		Mtuc_Debug_Log::log_smartucf_session(
+			$body,
 			is_string( $log_body ) ? $log_body : '{}',
 			$http_code,
-			$wc_order_id,
-			$body
+			$wc_order_id
 		);
 
 		if ( '' !== $curl_error ) {
