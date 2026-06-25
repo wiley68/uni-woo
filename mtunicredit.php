@@ -76,6 +76,9 @@ $mtuc_files = array(
 	'/mtuc-product-popup.php',
 	'/mtuc-cart-calculator.php',
 	'/mtuc-popup-order.php',
+	'/class-mtuc-payment-gateway.php',
+	'/class-mtuc-payment-gateway-blocks.php',
+	'/mtuc-checkout-payment.php',
 );
 
 foreach ( $mtuc_files as $file ) {
@@ -137,5 +140,6 @@ function mtuc_plugin_bootstrap() {
 	mtuc_register_popup_order_hooks();
 	mtuc_register_product_hooks();
 	mtuc_register_cart_hooks();
+	mtuc_register_checkout_payment_hooks();
 	mtuc_register_reklama_hooks();
 }

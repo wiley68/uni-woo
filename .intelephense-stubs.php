@@ -514,6 +514,29 @@ function get_posts($args = null): array
 }
 
 /**
+ * @param int|WP_Post|null $post   Post ID or object.
+ * @param string           $output Optional. OBJECT, ARRAY_A, or ARRAY_N.
+ * @param string           $filter Optional. Type of filter to apply.
+ * @return WP_Post|array<int, mixed>|null
+ */
+function get_post( $post = null, string $output = OBJECT, string $filter = 'raw' ) {
+	unset( $post, $output, $filter );
+
+	return null;
+}
+
+/**
+ * @param string           $block_name Full block type name.
+ * @param int|WP_Post|null $post       Post ID or object.
+ * @return bool
+ */
+function has_block( string $block_name, $post = null ): bool {
+	unset( $block_name, $post );
+
+	return false;
+}
+
+/**
  * @param int|WP_Post|null $post
  * @return string|false
  */
@@ -751,6 +774,12 @@ function wc_get_order($order = false): ?WC_Order
 	unset($order);
 
 	return null;
+}
+
+/** @return array<string, string> */
+function wc_get_order_statuses(): array
+{
+	return array();
 }
 
 /**
@@ -1606,11 +1635,18 @@ class WC_Payment_Gateway
 	public $enabled = 'yes';
 	public $order_button_text = '';
 
+	/** @var array<int, string> */
+	public $supports = array();
+
+	/** @var array<string, array<string, mixed>> */
+	public $form_fields = array();
+
 	/** Maximum transaction amount; 0 means no limit. */
 	public int $max_amount = 0;
 
 	public function init_form_fields() {}
 	public function init_settings() {}
+	/** @return mixed */
 	public function get_option($key, $empty_value = null) {}
 	public function process_admin_options() {}
 	public function is_available() {}

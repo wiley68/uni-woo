@@ -741,9 +741,10 @@ function mtuc_get_cart_calculator_context(): ?array {
  * @param array<string, mixed> $shop       Shop data.
  * @param array<string, mixed> $context    Cart calculator partial context.
  * @param float                $cart_total Cart total including tax.
+ * @param string               $source     product|cart|checkout.
  * @return array<string, mixed>
  */
-function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_total ): array {
+function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_total, string $source = 'cart' ): array {
 	$common_standard = isset( $context['common_standard'] ) && is_array( $context['common_standard'] )
 		? $context['common_standard']
 		: array();
@@ -769,7 +770,7 @@ function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_t
 	}
 
 	return array(
-		'source'                  => 'cart',
+		'source'                  => $source,
 		'cart_total'              => $cart_total,
 		'product_id'              => 0,
 		'banner_url'              => mtuc_get_shop_picture_url( $shop, false ),

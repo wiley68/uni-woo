@@ -711,6 +711,237 @@ function mtuc_get_popup_order_thankyou_url( WC_Order $order ): string {
 }
 
 /**
+ * Build customer payload from WooCommerce order billing fields.
+ *
+ * @param WC_Order $order Order instance.
+ * @return array<string, string>
+ */
+function mtuc_get_customer_from_order( WC_Order $order ): array {
+	$address = mtuc_join_address_parts(
+		array_filter(
+			array(
+				(string) $order->get_billing_address_1(),
+				(string) $order->get_billing_address_2(),
+				trim( (string) $order->get_billing_postcode() . ' ' . (string) $order->get_billing_city() ),
+			)
+		)
+	);
+
+	if ( '' === $address ) {
+		$address = (string) $order->get_billing_address_1();
+	}
+
+	return array(
+		'first_name' => (string) $order->get_billing_first_name(),
+		'last_name'  => (string) $order->get_billing_last_name(),
+		'address'    => $address,
+		'phone'      => (string) $order->get_billing_phone(),
+		'email'      => (string) $order->get_billing_email(),
+	);
+}
+
+/**
+ * Parse checkout/gateway scheme fields from POST payload.
+ *
+ * @param array<string, mixed> $posted Posted field values.
+ * @return array{scheme_key:string,offer_type:string,parva:float,months:int,filter_id:int,scheme_type:string}
+ */
+function mtuc_parse_checkout_scheme_post( array $posted ): array {
+	$scheme_key  = isset( $posted['scheme_key'] ) ? sanitize_text_field( (string) $posted['scheme_key'] ) : '';
+	$filter_id   = isset( $posted['filter_id'] ) ? absint( $posted['filter_id'] ) : 0;
+	$months      = isset( $posted['months'] ) ? absint( $posted['months'] ) : 0;
+	$scheme_type = isset( $posted['scheme_type'] ) ? sanitize_key( (string) $posted['scheme_type'] ) : 'standard';
+	$offer_type  = isset( $posted['offer_type'] ) ? sanitize_key( (string) $posted['offer_type'] ) : 'standard';
+	$parva_raw   = isset( $posted['parva'] ) ? $posted['parva'] : '0';
+	$parva       = is_numeric( $parva_raw ) ? (float) $parva_raw : 0.0;
+
+	if ( '' !== $scheme_key ) {
+		$parsed      = mtuc_parse_popup_scheme_option_key( $scheme_key );
+		$months      = (int) $parsed['months'];
+		$filter_id   = (int) $parsed['filter_id'];
+		$scheme_type = (string) $parsed['scheme_type'];
+	}
+
+	if ( ! in_array( $offer_type, array( 'standard', 'promo' ), true ) ) {
+		$offer_type = 'standard';
+	}
+
+	return array(
+		'scheme_key'  => $scheme_key,
+		'offer_type'  => $offer_type,
+		'parva'       => $parva,
+		'months'      => $months,
+		'filter_id'   => $filter_id,
+		'scheme_type' => $scheme_type,
+	);
+}
+
+/**
+ * Submit an existing order to CP and SmartUCF.
+ *
+ * @param WC_Order              $order       WooCommerce order.
+ * @param array<string, string> $customer    Validated customer fields.
+ * @param array<string, mixed>  $calculation Server-side calculation snapshot.
+ * @param array<string, mixed>  $shop        Shop data.
+ * @return array{redirect_url: string, cp_order_id?: int, bank_unavailable?: bool}|WP_Error
+ */
+function mtuc_complete_order_bank_submission(
+	WC_Order $order,
+	array $customer,
+	array $calculation,
+	array $shop
+) {
+	$cp_result = mtuc_send_cart_popup_order_to_cp( $order, $customer, $calculation, $shop );
+	if ( is_wp_error( $cp_result ) ) {
+		mtuc_handle_popup_order_bank_unavailable( $order );
+
+		return array(
+			'bank_unavailable' => true,
+			'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
+		);
+	}
+
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+
+	$smartucf_result = mtuc_send_cart_popup_order_to_smartucf( $order, $customer, $calculation, $shop );
+	if ( is_wp_error( $smartucf_result ) ) {
+		mtuc_handle_popup_order_bank_unavailable( $order );
+
+		return array(
+			'bank_unavailable' => true,
+			'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
+		);
+	}
+
+	$cp_status_result = mtuc_sync_cp_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
+	if ( is_wp_error( $cp_status_result ) ) {
+		mtuc_handle_popup_order_bank_unavailable( $order );
+
+		return array(
+			'bank_unavailable' => true,
+			'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
+		);
+	}
+
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
+	$order->save();
+
+	return array(
+		'redirect_url' => $smartucf_result['redirect_url'],
+		'cp_order_id'  => $cp_order_id,
+	);
+}
+
+/**
+ * Lock key for checkout payment processing.
+ *
+ * @param int $order_id WooCommerce order ID.
+ * @return string
+ */
+function mtuc_build_checkout_payment_lock_key( int $order_id ): string {
+	return hash( 'sha256', 'mtuc_checkout_payment|' . (string) max( 0, $order_id ) );
+}
+
+/**
+ * Process checkout payment for an existing WooCommerce order.
+ *
+ * @param WC_Order             $order  WooCommerce order.
+ * @param array<string, mixed> $posted Gateway POST fields.
+ * @return array{redirect_url: string, bank_unavailable?: bool}|WP_Error
+ */
+function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
+	$scheme = mtuc_parse_checkout_scheme_post( $posted );
+	if ( '' === $scheme['scheme_key'] || $scheme['months'] <= 0 ) {
+		return new WP_Error(
+			'mtuc_missing_scheme',
+			__( 'Моля, изберете схема за погасяване.', 'mtunicredit' )
+		);
+	}
+
+	$lock_key = mtuc_build_checkout_payment_lock_key( $order->get_id() );
+	if ( ! mtuc_acquire_popup_submit_lock( $lock_key ) ) {
+		return new WP_Error(
+			'mtuc_submit_locked',
+			__( 'Заявката вече се обработва. Моля, изчакайте.', 'mtunicredit' )
+		);
+	}
+
+	$customer = mtuc_validate_popup_customer_payload( mtuc_get_customer_from_order( $order ) );
+	if ( is_wp_error( $customer ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return $customer;
+	}
+
+	$cart_state = mtuc_resolve_cart_scheme_state();
+	if ( is_wp_error( $cart_state ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return $cart_state;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return $shop;
+	}
+
+	$cart_total = (float) ( $cart_state['cart_total'] ?? 0 );
+	$common     = 'promo' === $scheme['offer_type']
+		? (array) ( $cart_state['common_promo'] ?? array() )
+		: (array) ( $cart_state['common_standard'] ?? array() );
+
+	if ( empty( $common ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return new WP_Error(
+			'mtuc_no_common_scheme',
+			__( 'Няма обща схема за всички продукти в поръчката.', 'mtunicredit' )
+		);
+	}
+
+	$coeff_list  = mtuc_get_shop_coeff_list( $shop );
+	$calculation = mtuc_calculate_cart_popup_credit(
+		$shop,
+		$coeff_list,
+		$cart_total,
+		$scheme['months'],
+		$scheme['offer_type'],
+		$scheme['parva'],
+		$scheme['filter_id'],
+		$scheme['scheme_type'],
+		$common
+	);
+
+	if ( is_wp_error( $calculation ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return $calculation;
+	}
+
+	$line_count = count( $order->get_items( 'line_item' ) );
+
+	mtuc_save_order_credit_meta(
+		$order,
+		$calculation,
+		array(
+			'submission_source' => 'checkout',
+			'line_count'        => $line_count,
+		)
+	);
+
+	$order->set_created_via( 'mtuc_checkout' );
+	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_WC_CREATED );
+	mtuc_apply_payment_gateway_to_order( $order );
+	$order->save();
+
+	$result = mtuc_complete_order_bank_submission( $order, $customer, $calculation, $shop );
+	mtuc_release_popup_submit_lock( $lock_key );
+
+	if ( is_wp_error( $result ) ) {
+		return $result;
+	}
+
+	return $result;
+}
+
+/**
  * AJAX response: redirect customer to thank-you with bank-unavailable notice.
  *
  * @param WC_Order $order Order instance.
@@ -817,8 +1048,6 @@ function mtuc_create_popup_pending_order(
 	mtuc_sync_order_line_price( $order, $line_price );
 	$order->calculate_totals();
 
-	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
-	$order->set_payment_method_title( __( 'УниКредит покупки на Кредит', 'mtunicredit' ) );
 	$order->set_created_via( 'mtuc_product_popup' );
 
 	mtuc_save_order_credit_meta(
@@ -832,9 +1061,7 @@ function mtuc_create_popup_pending_order(
 	);
 
 	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_WC_CREATED );
-
-	$order->set_status( 'pending', '', true );
-
+	mtuc_apply_payment_gateway_to_order( $order );
 	$order->save();
 
 	return $order;
@@ -895,8 +1122,6 @@ function mtuc_create_cart_popup_pending_order(
 	mtuc_sync_cart_order_line_prices( $order, $cart_lines );
 	$order->calculate_totals();
 
-	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
-	$order->set_payment_method_title( __( 'УниКредит покупки на Кредит', 'mtunicredit' ) );
 	$order->set_created_via( 'mtuc_cart_popup' );
 
 	mtuc_save_order_credit_meta(
@@ -909,8 +1134,7 @@ function mtuc_create_cart_popup_pending_order(
 	);
 
 	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_WC_CREATED );
-
-	$order->set_status( 'pending', '', true );
+	mtuc_apply_payment_gateway_to_order( $order );
 	$order->save();
 
 	if ( function_exists( 'WC' ) && WC()->cart ) {
@@ -1285,41 +1509,25 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
 	}
 
-	$cp_result = mtuc_send_cart_popup_order_to_cp( $order, $customer, $calculation, $shop );
-	if ( is_wp_error( $cp_result ) ) {
+	$submission = mtuc_complete_order_bank_submission( $order, $customer, $calculation, $shop );
+	if ( is_wp_error( $submission ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		mtuc_handle_popup_order_bank_unavailable( $order );
-		mtuc_send_popup_bank_unavailable_response( $order );
+		wp_send_json_error( array( 'message' => $submission->get_error_message() ), 500 );
 	}
-
-	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
-
-	$smartucf_result = mtuc_send_cart_popup_order_to_smartucf( $order, $customer, $calculation, $shop );
-	if ( is_wp_error( $smartucf_result ) ) {
-		mtuc_release_popup_submit_lock( $lock_key );
-		mtuc_handle_popup_order_bank_unavailable( $order );
-		mtuc_send_popup_bank_unavailable_response( $order );
-	}
-
-	$cp_status_result = mtuc_sync_cp_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
-	if ( is_wp_error( $cp_status_result ) ) {
-		mtuc_release_popup_submit_lock( $lock_key );
-		mtuc_handle_popup_order_bank_unavailable( $order );
-		mtuc_send_popup_bank_unavailable_response( $order );
-	}
-
-	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
-	$order->save();
 
 	mtuc_release_popup_submit_lock( $lock_key );
+
+	if ( ! empty( $submission['bank_unavailable'] ) ) {
+		mtuc_send_popup_bank_unavailable_response( $order );
+	}
 
 	wp_send_json_success(
 		array(
 			'order_id'     => $order->get_id(),
 			'order_number' => $order->get_order_number(),
-			'cp_order_id'  => $cp_order_id,
+			'cp_order_id'  => (int) ( $submission['cp_order_id'] ?? 0 ),
 			'bank_status'  => MTUC_BANK_STATUS_SMARTUCF_SENT,
-			'redirect_url' => $smartucf_result['redirect_url'],
+			'redirect_url' => $submission['redirect_url'],
 			'message'      => __( 'Пренасочване към UniCredit за довършване на заявката.', 'mtunicredit' ),
 		)
 	);

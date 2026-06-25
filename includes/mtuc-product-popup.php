@@ -1395,7 +1395,7 @@ function mtuc_ajax_popup_calculate(): void {
 
 	$source = isset( $_POST['source'] ) ? sanitize_key( wp_unslash( $_POST['source'] ) ) : 'product';
 
-	if ( 'cart' === $source ) {
+	if ( in_array( $source, array( 'cart', 'checkout' ), true ) ) {
 		$cart_state = mtuc_resolve_cart_scheme_state();
 		if ( is_wp_error( $cart_state ) ) {
 			wp_send_json_error(
