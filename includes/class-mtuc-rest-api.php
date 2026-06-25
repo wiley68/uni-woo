@@ -20,6 +20,9 @@ class Mtuc_Rest_Api {
 	/** Route for CP-initiated shop cache updates. */
 	public const ROUTE_SHOP_CACHE = '/shop-cache';
 
+	/** Route for CP to fetch SmartUCF debug log by order number. */
+	public const ROUTE_SMARTUCF_DEBUG_LOG = '/smartucf-debug-log';
+
 	/**
 	 * Register hooks.
 	 *
@@ -39,6 +42,15 @@ class Mtuc_Rest_Api {
 	}
 
 	/**
+	 * Public URL for CP to fetch SmartUCF debug log for an order.
+	 *
+	 * @return string
+	 */
+	public static function get_smartucf_debug_log_url(): string {
+		return rest_url( self::NAMESPACE . self::ROUTE_SMARTUCF_DEBUG_LOG );
+	}
+
+	/**
 	 * Register REST routes.
 	 *
 	 * @return void
@@ -50,6 +62,16 @@ class Mtuc_Rest_Api {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( self::class, 'handle_shop_cache_push' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			self::ROUTE_SMARTUCF_DEBUG_LOG,
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( self::class, 'handle_smartucf_debug_log_fetch' ),
 				'permission_callback' => '__return_true',
 			)
 		);
@@ -111,6 +133,84 @@ class Mtuc_Rest_Api {
 				'success' => true,
 				'message' => __( 'Кешът на shop данни е обновен успешно.', 'mtunicredit' ),
 				'data'    => $result,
+			),
+			200
+		);
+	}
+
+	/**
+	 * POST /smartucf-debug-log — CP fetches SmartUCF request/response for an order.
+	 *
+	 * Expected JSON body:
+	 * {
+	 *   "unicid": "<store unicid>",
+	 *   "secret": "<store secret>",
+	 *   "order_id": "<shop order number sent to CP>"
+	 * }
+	 *
+	 * @param WP_REST_Request $request Incoming request.
+	 * @return WP_REST_Response
+	 */
+	public static function handle_smartucf_debug_log_fetch( WP_REST_Request $request ): WP_REST_Response {
+		if ( ! Mtuc_Settings::is_enabled() ) {
+			return self::error_response(
+				__( 'Модулът е изключен.', 'mtunicredit' ),
+				403
+			);
+		}
+
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) ) {
+			$params = array();
+		}
+
+		$unicid   = isset( $params['unicid'] ) ? sanitize_text_field( (string) $params['unicid'] ) : '';
+		$secret   = isset( $params['secret'] ) ? sanitize_text_field( (string) $params['secret'] ) : '';
+		$order_id = isset( $params['order_id'] ) ? sanitize_text_field( (string) $params['order_id'] ) : '';
+
+		$auth = self::verify_credentials( $unicid, $secret );
+		if ( is_wp_error( $auth ) ) {
+			return self::error_response( $auth->get_error_message(), 401 );
+		}
+
+		if ( '' === $order_id ) {
+			return self::error_response(
+				__( 'Липсва order_id в заявката.', 'mtunicredit' ),
+				400
+			);
+		}
+
+		if ( ! function_exists( 'mtuc_find_order_by_cp_order_id' ) ) {
+			return self::error_response(
+				__( 'WooCommerce не е наличен.', 'mtunicredit' ),
+				500
+			);
+		}
+
+		$order = mtuc_find_order_by_cp_order_id( $order_id );
+		if ( ! $order instanceof WC_Order ) {
+			return self::error_response(
+				__( 'Поръчката не е намерена в магазина.', 'mtunicredit' ),
+				404
+			);
+		}
+
+		$entry = Mtuc_Debug_Log::get_entry_for_wc_order_id( $order->get_id() );
+		if ( null === $entry ) {
+			return self::error_response(
+				__( 'Няма запис в дебъг журнала за тази поръчка.', 'mtunicredit' ),
+				404
+			);
+		}
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'data'    => array(
+					'order_id'    => mtuc_get_cp_shop_order_id( $order ),
+					'wc_order_id' => $order->get_id(),
+					'log'         => $entry,
+				),
 			),
 			200
 		);

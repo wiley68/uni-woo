@@ -74,6 +74,56 @@ function mtuc_get_cp_shop_order_id( WC_Order $order ): string {
 }
 
 /**
+ * Find WooCommerce order by CP shop order_id (same value as in CP payloads).
+ *
+ * @param string $cp_order_id Order identifier sent to CP (max 13 chars).
+ * @return WC_Order|null
+ */
+function mtuc_find_order_by_cp_order_id( string $cp_order_id ): ?WC_Order {
+	$cp_order_id = trim( $cp_order_id );
+	if ( '' === $cp_order_id || ! function_exists( 'wc_get_order' ) ) {
+		return null;
+	}
+
+	if ( strlen( $cp_order_id ) > 13 ) {
+		$cp_order_id = substr( $cp_order_id, 0, 13 );
+	}
+
+	if ( ctype_digit( $cp_order_id ) ) {
+		$order = wc_get_order( (int) $cp_order_id );
+		if ( $order instanceof WC_Order && mtuc_get_cp_shop_order_id( $order ) === $cp_order_id ) {
+			return $order;
+		}
+	}
+
+	if ( ! function_exists( 'wc_get_orders' ) ) {
+		return null;
+	}
+
+	$orders = wc_get_orders(
+		array(
+			'limit'   => 20,
+			'search'  => $cp_order_id,
+			'orderby' => 'date',
+			'order'   => 'DESC',
+			'return'  => 'objects',
+		)
+	);
+
+	if ( ! is_array( $orders ) ) {
+		return null;
+	}
+
+	foreach ( $orders as $order ) {
+		if ( $order instanceof WC_Order && mtuc_get_cp_shop_order_id( $order ) === $cp_order_id ) {
+			return $order;
+		}
+	}
+
+	return null;
+}
+
+/**
  * Sync CP order status with WooCommerce bank status meta.
  *
  * @param WC_Order $order           WooCommerce order.

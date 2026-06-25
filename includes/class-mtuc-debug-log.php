@@ -206,6 +206,63 @@ class Mtuc_Debug_Log {
 	}
 
 	/**
+	 * Format a database row as API/export entry.
+	 *
+	 * @param array<string, mixed> $row Database row.
+	 * @return array<string, mixed>
+	 */
+	private static function format_entry_from_row( array $row ): array {
+		$raw_request     = isset( $row['request_json'] ) ? (string) $row['request_json'] : '';
+		$raw_response    = isset( $row['response_json'] ) ? (string) $row['response_json'] : '';
+		$created_gmt     = isset( $row['created_at'] ) ? (string) $row['created_at'] : '';
+		$datetime_format = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
+
+		return array(
+			'id'              => isset( $row['id'] ) ? (int) $row['id'] : 0,
+			'type'            => self::TYPE_SMARTUCF,
+			'type_label'      => self::get_type_label( self::TYPE_SMARTUCF ),
+			'order_id'        => isset( $row['order_id'] ) ? (int) $row['order_id'] : 0,
+			'http_code'       => isset( $row['http_code'] ) ? (int) $row['http_code'] : 0,
+			'created_at_gmt'  => $created_gmt,
+			'created_at_site' => '' !== $created_gmt ? get_date_from_gmt( $created_gmt, $datetime_format ) : '',
+			'created_at_iso'  => '' !== $created_gmt ? get_date_from_gmt( $created_gmt, 'c' ) : '',
+			'request'         => self::decode_json_body( $raw_request ),
+			'response'        => self::decode_json_body( $raw_response ),
+		);
+	}
+
+	/**
+	 * Get the latest SmartUCF debug journal entry for a WooCommerce order.
+	 *
+	 * @param int $wc_order_id WooCommerce order ID.
+	 * @return array<string, mixed>|null
+	 */
+	public static function get_entry_for_wc_order_id( int $wc_order_id ): ?array {
+		if ( $wc_order_id <= 0 ) {
+			return null;
+		}
+
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE log_type = %s AND order_id = %d ORDER BY id DESC LIMIT 1",
+				self::TYPE_SMARTUCF,
+				$wc_order_id
+			),
+			ARRAY_A
+		);
+
+		if ( ! is_array( $row ) ) {
+			return null;
+		}
+
+		return self::format_entry_from_row( $row );
+	}
+
+	/**
 	 * Delete journal rows older than RETENTION_MONTHS.
 	 *
 	 * @return void
@@ -236,26 +293,14 @@ class Mtuc_Debug_Log {
 			$rows = array();
 		}
 
-		$datetime_format = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
-		$entries         = array();
+		$entries = array();
 
 		foreach ( $rows as $row ) {
-			$raw_request  = isset( $row['request_json'] ) ? (string) $row['request_json'] : '';
-			$raw_response = isset( $row['response_json'] ) ? (string) $row['response_json'] : '';
-			$created_gmt  = isset( $row['created_at'] ) ? (string) $row['created_at'] : '';
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
 
-			$entries[] = array(
-				'id'              => isset( $row['id'] ) ? (int) $row['id'] : 0,
-				'type'            => self::TYPE_SMARTUCF,
-				'type_label'      => self::get_type_label( self::TYPE_SMARTUCF ),
-				'order_id'        => isset( $row['order_id'] ) ? (int) $row['order_id'] : 0,
-				'http_code'       => isset( $row['http_code'] ) ? (int) $row['http_code'] : 0,
-				'created_at_gmt'  => $created_gmt,
-				'created_at_site' => '' !== $created_gmt ? get_date_from_gmt( $created_gmt, $datetime_format ) : '',
-				'created_at_iso'  => '' !== $created_gmt ? get_date_from_gmt( $created_gmt, 'c' ) : '',
-				'request'         => self::decode_json_body( $raw_request ),
-				'response'        => self::decode_json_body( $raw_response ),
-			);
+			$entries[] = self::format_entry_from_row( $row );
 		}
 
 		return array(
