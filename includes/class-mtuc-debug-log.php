@@ -1,6 +1,6 @@
 <?php
 /**
- * Database debug journal for CP and SmartUCF API responses.
+ * Database debug journal for CP and SmartUCF API requests and responses.
  *
  * @package MTUC
  */
@@ -28,6 +28,20 @@ class Mtuc_Debug_Log {
 
 	/** @var int Delete entries older than this many months on each insert. */
 	private const RETENTION_MONTHS = 3;
+
+	/** @var string Placeholder for redacted PII in stored request bodies. */
+	private const REDACTED_VALUE = '[REDACTED]';
+
+	/** @var list<string> SmartUCF request keys to anonymize before journaling. */
+	private const SMARTUCF_PII_KEYS = array(
+		'user',
+		'pass',
+		'clientFirstName',
+		'clientLastName',
+		'clientPhone',
+		'clientEmail',
+		'clientDeliveryAddress',
+	);
 
 	/**
 	 * Whether debug journaling is enabled in module settings.
@@ -69,6 +83,7 @@ class Mtuc_Debug_Log {
 			log_type varchar(32) NOT NULL,
 			order_id bigint(20) unsigned NOT NULL DEFAULT 0,
 			http_code smallint(5) unsigned NOT NULL DEFAULT 0,
+			request_json longtext NOT NULL,
 			response_json longtext NOT NULL,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
@@ -113,15 +128,16 @@ class Mtuc_Debug_Log {
 	}
 
 	/**
-	 * Store a raw API response body in the debug journal.
+	 * Store a raw API request/response pair in the debug journal.
 	 *
 	 * @param string $type          Log type (see TYPE_* constants).
 	 * @param string $response_body Raw JSON response body.
 	 * @param int    $http_code     HTTP status code (0 if unavailable).
 	 * @param int    $wc_order_id   Related WooCommerce order ID.
+	 * @param string $request_body  Raw JSON request body (optional).
 	 * @return void
 	 */
-	public static function log_response( string $type, string $response_body, int $http_code = 0, int $wc_order_id = 0 ): void {
+	public static function log_response( string $type, string $response_body, int $http_code = 0, int $wc_order_id = 0, string $request_body = '' ): void {
 		if ( ! self::is_enabled() ) {
 			return;
 		}
@@ -130,11 +146,6 @@ class Mtuc_Debug_Log {
 
 		self::purge_old_entries();
 
-		$body = trim( $response_body );
-		if ( '' === $body ) {
-			$body = '{}';
-		}
-
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
 		$wpdb->insert(
 			self::table_name(),
@@ -142,11 +153,69 @@ class Mtuc_Debug_Log {
 				'log_type'      => sanitize_key( $type ),
 				'order_id'      => max( 0, $wc_order_id ),
 				'http_code'     => max( 0, $http_code ),
-				'response_json' => $body,
+				'request_json'  => self::normalize_json_body( self::anonymize_request_body( $type, $request_body ) ),
+				'response_json' => self::normalize_json_body( $response_body ),
 				'created_at'    => current_time( 'mysql', true ),
 			),
-			array( '%s', '%d', '%d', '%s', '%s' )
+			array( '%s', '%d', '%d', '%s', '%s', '%s' )
 		);
+	}
+
+	/**
+	 * Remove personal data from a request body before it is stored in the journal.
+	 *
+	 * @param string $type         Log type (see TYPE_* constants).
+	 * @param string $request_body Raw JSON request body.
+	 * @return string
+	 */
+	private static function anonymize_request_body( string $type, string $request_body ): string {
+		if ( self::TYPE_SMARTUCF !== $type || '' === trim( $request_body ) ) {
+			return $request_body;
+		}
+
+		$decoded = json_decode( $request_body, true );
+		if ( ! is_array( $decoded ) ) {
+			return $request_body;
+		}
+
+		foreach ( self::SMARTUCF_PII_KEYS as $key ) {
+			if ( array_key_exists( $key, $decoded ) ) {
+				$decoded[ $key ] = self::REDACTED_VALUE;
+			}
+		}
+
+		$encoded = wp_json_encode( $decoded );
+
+		return is_string( $encoded ) ? $encoded : $request_body;
+	}
+
+	/**
+	 * Normalize a JSON body string for storage.
+	 *
+	 * @param string $body Raw JSON body.
+	 * @return string
+	 */
+	private static function normalize_json_body( string $body ): string {
+		$body = trim( $body );
+
+		return '' === $body ? '{}' : $body;
+	}
+
+	/**
+	 * Decode a stored JSON body for export.
+	 *
+	 * @param string $raw_body Stored JSON string.
+	 * @return mixed
+	 */
+	private static function decode_json_body( string $raw_body ) {
+		$raw_body = trim( $raw_body );
+		if ( '' === $raw_body ) {
+			return null;
+		}
+
+		$decoded = json_decode( $raw_body, true );
+
+		return ( JSON_ERROR_NONE === json_last_error() ) ? $decoded : $raw_body;
 	}
 
 	/**
@@ -184,11 +253,9 @@ class Mtuc_Debug_Log {
 		$entries         = array();
 
 		foreach ( $rows as $row ) {
+			$raw_request  = isset( $row['request_json'] ) ? (string) $row['request_json'] : '';
 			$raw_response = isset( $row['response_json'] ) ? (string) $row['response_json'] : '';
-			$decoded      = json_decode( $raw_response, true );
-			$response     = ( JSON_ERROR_NONE === json_last_error() ) ? $decoded : $raw_response;
-
-			$created_gmt = isset( $row['created_at'] ) ? (string) $row['created_at'] : '';
+			$created_gmt  = isset( $row['created_at'] ) ? (string) $row['created_at'] : '';
 
 			$entries[] = array(
 				'id'              => isset( $row['id'] ) ? (int) $row['id'] : 0,
@@ -199,7 +266,8 @@ class Mtuc_Debug_Log {
 				'created_at_gmt'  => $created_gmt,
 				'created_at_site' => '' !== $created_gmt ? get_date_from_gmt( $created_gmt, $datetime_format ) : '',
 				'created_at_iso'  => '' !== $created_gmt ? get_date_from_gmt( $created_gmt, 'c' ) : '',
-				'response'        => $response,
+				'request'         => self::decode_json_body( $raw_request ),
+				'response'        => self::decode_json_body( $raw_response ),
 			);
 		}
 
