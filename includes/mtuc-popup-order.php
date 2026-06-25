@@ -623,14 +623,17 @@ function mtuc_save_order_credit_meta( WC_Order $order, array $calculation, array
 /**
  * Update bank status meta and append an order note.
  *
- * @param WC_Order $order       Order instance.
- * @param string   $status_key  Status key (see MTUC_BANK_STATUS_*).
- * @param string   $extra_note  Optional detail appended to the note.
+ * @param WC_Order    $order       Order instance.
+ * @param string      $status_key  Status key (see MTUC_BANK_STATUS_*).
+ * @param string      $extra_note  Optional detail appended to the note.
+ * @param string|null $status_label Optional human-readable label (e.g. from CP).
  * @return void
  */
-function mtuc_update_order_bank_status( WC_Order $order, string $status_key, string $extra_note = '' ): void {
+function mtuc_update_order_bank_status( WC_Order $order, string $status_key, string $extra_note = '', ?string $status_label = null ): void {
 	$labels = mtuc_get_bank_status_labels();
-	$label  = $labels[ $status_key ] ?? $status_key;
+	$label  = null !== $status_label && '' !== trim( $status_label )
+		? trim( $status_label )
+		: ( $labels[ $status_key ] ?? $status_key );
 
 	$order->update_meta_data( MTUC_ORDER_META_BANK_STATUS, $status_key );
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'bank_status_label', $label );
@@ -645,6 +648,41 @@ function mtuc_update_order_bank_status( WC_Order $order, string $status_key, str
 	}
 
 	$order->add_order_note( $note );
+}
+
+/**
+ * Apply bank status pushed from CP to a WooCommerce order.
+ *
+ * @param WC_Order $order        Order instance.
+ * @param string   $status_id    Machine-readable status key from CP.
+ * @param string   $status_label Human-readable status label from CP.
+ * @return true|WP_Error
+ */
+function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, string $status_label = '' ) {
+	$status_id = sanitize_key( $status_id );
+	if ( '' === $status_id ) {
+		return new WP_Error(
+			'mtuc_missing_status_id',
+			__( 'Липсва status_id в заявката.', 'mtunicredit' )
+		);
+	}
+
+	if ( MTUC_PAYMENT_GATEWAY_ID !== $order->get_payment_method() ) {
+		return new WP_Error(
+			'mtuc_not_mtuc_order',
+			__( 'Поръчката не е с метод на плащане УниКредит.', 'mtunicredit' )
+		);
+	}
+
+	mtuc_update_order_bank_status(
+		$order,
+		$status_id,
+		__( 'обновено от КП', 'mtunicredit' ),
+		$status_label
+	);
+	$order->save();
+
+	return true;
 }
 
 /**
