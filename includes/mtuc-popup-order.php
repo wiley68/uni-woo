@@ -165,6 +165,7 @@ function mtuc_register_popup_order_hooks(): void {
 	add_action( 'manage_woocommerce_page_wc-orders_custom_column', 'mtuc_render_orders_list_bank_status_column', 10, 2 );
 	add_filter( 'woocommerce_thankyou_order_received_text', 'mtuc_filter_thankyou_text_bank_unavailable', 20, 2 );
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_thankyou_styles' );
+	add_action( 'woocommerce_email_after_order_table', 'mtuc_email_after_order_table_credit_details', 15, 4 );
 }
 
 /**
@@ -939,7 +940,8 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 
 	$order->set_created_via( 'mtuc_checkout' );
 	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_WC_CREATED );
-	mtuc_apply_payment_gateway_to_order( $order );
+	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
+	$order->set_payment_method_title( mtuc_get_payment_gateway_title() );
 	$order->save();
 
 	$result = mtuc_complete_order_bank_submission( $order, $customer, $calculation, $shop );
@@ -948,6 +950,8 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 	if ( is_wp_error( $result ) ) {
 		return $result;
 	}
+
+	mtuc_apply_payment_gateway_to_order( $order );
 
 	return $result;
 }
@@ -1072,7 +1076,8 @@ function mtuc_create_popup_pending_order(
 	);
 
 	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_WC_CREATED );
-	mtuc_apply_payment_gateway_to_order( $order );
+	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
+	$order->set_payment_method_title( mtuc_get_payment_gateway_title() );
 	$order->save();
 
 	return $order;
@@ -1145,7 +1150,8 @@ function mtuc_create_cart_popup_pending_order(
 	);
 
 	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_WC_CREATED );
-	mtuc_apply_payment_gateway_to_order( $order );
+	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
+	$order->set_payment_method_title( mtuc_get_payment_gateway_title() );
 	$order->save();
 
 	if ( function_exists( 'WC' ) && WC()->cart ) {
@@ -1525,6 +1531,8 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		mtuc_release_popup_submit_lock( $lock_key );
 		wp_send_json_error( array( 'message' => $submission->get_error_message() ), 500 );
 	}
+
+	mtuc_apply_payment_gateway_to_order( $order );
 
 	mtuc_release_popup_submit_lock( $lock_key );
 
@@ -1979,6 +1987,7 @@ function mtuc_ajax_popup_submit(): void {
 	if ( is_wp_error( $cp_result ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		mtuc_handle_popup_order_bank_unavailable( $order );
+		mtuc_apply_payment_gateway_to_order( $order );
 		mtuc_send_popup_bank_unavailable_response( $order );
 	}
 
@@ -1998,6 +2007,7 @@ function mtuc_ajax_popup_submit(): void {
 	if ( is_wp_error( $smartucf_result ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		mtuc_handle_popup_order_bank_unavailable( $order );
+		mtuc_apply_payment_gateway_to_order( $order );
 		mtuc_send_popup_bank_unavailable_response( $order );
 	}
 
@@ -2005,11 +2015,14 @@ function mtuc_ajax_popup_submit(): void {
 	if ( is_wp_error( $cp_status_result ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		mtuc_handle_popup_order_bank_unavailable( $order );
+		mtuc_apply_payment_gateway_to_order( $order );
 		mtuc_send_popup_bank_unavailable_response( $order );
 	}
 
 	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
 	$order->save();
+
+	mtuc_apply_payment_gateway_to_order( $order );
 
 	mtuc_release_popup_submit_lock( $lock_key );
 
@@ -2221,4 +2234,78 @@ function mtuc_render_admin_order_credit_meta_box( $post_or_order ): void {
 
 	echo '</tbody>';
 	echo '</table>';
+}
+
+/**
+ * Whether transactional emails should include UniCredit leasing details.
+ *
+ * @param WC_Order $order Order instance.
+ * @return bool
+ */
+function mtuc_should_show_order_credit_in_email( WC_Order $order ): bool {
+	return MTUC_PAYMENT_GATEWAY_ID === $order->get_payment_method();
+}
+
+/**
+ * Render UniCredit leasing details in WooCommerce order emails.
+ *
+ * @param WC_Order $order      Order instance.
+ * @param bool     $plain_text Whether the email is plain text.
+ * @return void
+ */
+function mtuc_render_order_credit_email_section( WC_Order $order, bool $plain_text = false ): void {
+	if ( ! mtuc_should_show_order_credit_in_email( $order ) ) {
+		return;
+	}
+
+	$rows = mtuc_get_admin_order_credit_meta_rows( $order );
+	if ( empty( $rows ) ) {
+		return;
+	}
+
+	if ( $plain_text ) {
+		echo "\n" . esc_html__( 'УниКредит лизинг', 'mtunicredit' ) . "\n\n";
+
+		foreach ( $rows as $label => $value ) {
+			echo esc_html( $label . ': ' . $value ) . "\n";
+		}
+
+		echo "\n";
+		return;
+	}
+
+	?>
+	<h2><?php esc_html_e( 'УниКредит лизинг', 'mtunicredit' ); ?></h2>
+	<div style="margin-bottom: 40px;">
+		<table class="td" cellspacing="0" cellpadding="6" style="width: 100%; font-family: 'Helvetica Neue', Helvetica, Roboto, Arial, sans-serif;" border="1">
+			<tbody>
+			<?php foreach ( $rows as $label => $value ) : ?>
+				<tr>
+					<th class="td" scope="row" style="text-align: left; vertical-align: middle; border: 1px solid #eee; padding: 12px;"><?php echo esc_html( $label ); ?></th>
+					<td class="td" style="text-align: left; vertical-align: middle; border: 1px solid #eee; padding: 12px;"><?php echo esc_html( $value ); ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+	</div>
+	<?php
+}
+
+/**
+ * Append UniCredit leasing details after the order table in transactional emails.
+ *
+ * @param WC_Order      $order          Order instance.
+ * @param bool          $sent_to_admin  Whether the email goes to admin.
+ * @param bool          $plain_text     Whether the email is plain text.
+ * @param WC_Email|null $email          Email object.
+ * @return void
+ */
+function mtuc_email_after_order_table_credit_details( $order, $sent_to_admin, $plain_text, $email ): void {
+	unset( $sent_to_admin, $email );
+
+	if ( ! $order instanceof WC_Order ) {
+		return;
+	}
+
+	mtuc_render_order_credit_email_section( $order, (bool) $plain_text );
 }
