@@ -1406,9 +1406,15 @@ function mtuc_ajax_popup_calculate(): void {
 
 		$shop       = mtuc_get_shop_data();
 		$coeff_list = mtuc_get_shop_coeff_list( $shop );
-		$common     = 'promo' === $type
-			? (array) ( $cart_state['common_promo'] ?? array() )
-			: (array) ( $cart_state['common_standard'] ?? array() );
+
+		if ( 'checkout' === $source ) {
+			$common = mtuc_resolve_checkout_scheme_common( $cart_state );
+			$type   = 'standard';
+		} else {
+			$common = 'promo' === $type
+				? (array) ( $cart_state['common_promo'] ?? array() )
+				: (array) ( $cart_state['common_standard'] ?? array() );
+		}
 
 		$result = mtuc_calculate_cart_popup_credit(
 			$shop,

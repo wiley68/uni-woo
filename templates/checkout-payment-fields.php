@@ -14,48 +14,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 $popup               = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
 $show_first_vnoska   = ! empty( $popup['show_first_vnoska'] );
 $currency            = isset( $popup['currency'] ) && is_array( $popup['currency'] ) ? $popup['currency'] : mtuc_get_currency_display_config( array( 'uni_eur' => 0 ) );
-$has_standard        = ! empty( $popup['has_standard'] );
-$has_promo           = ! empty( $popup['has_promo'] );
-$default_offer       = $has_standard ? 'standard' : ( $has_promo ? 'promo' : 'standard' );
+$has_schemes         = ! empty( $popup['has_schemes'] );
 $parva_row_class     = $show_first_vnoska ? '' : ' mtuc-popup__row--hidden';
 $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual' : '';
-$offer_tabs_class    = ( $has_standard && $has_promo ) ? '' : ' mtuc-checkout-payment__offers--single';
 ?>
 <div class="mtuc-checkout-payment" id="mtuc-checkout-payment">
-	<input type="hidden" name="mtuc_offer_type" id="mtuc-checkout-offer-type" value="<?php echo esc_attr( $default_offer ); ?>" />
+	<input type="hidden" name="mtuc_offer_type" id="mtuc-checkout-offer-type" value="standard" />
 	<input type="hidden" name="mtuc_scheme_key" id="mtuc-checkout-scheme-key" value="" />
 	<input type="hidden" name="mtuc_parva" id="mtuc-checkout-parva-hidden" value="0" />
 
 	<div class="mtuc-checkout-payment__panel mtuc-popup__panel">
 		<h3 class="mtuc-checkout-payment__title"><?php esc_html_e( 'Избор на схема за лизинг', 'mtunicredit' ); ?></h3>
 
-		<?php if ( $has_standard || $has_promo ) : ?>
-		<div class="mtuc-checkout-payment__offers<?php echo esc_attr( $offer_tabs_class ); ?>" role="tablist" aria-label="<?php esc_attr_e( 'Тип оферта', 'mtunicredit' ); ?>">
-			<?php if ( $has_standard ) : ?>
-				<button
-					type="button"
-					class="mtuc-checkout-payment__offer<?php echo 'standard' === $default_offer ? ' is-active' : ''; ?>"
-					data-mtuc-checkout-offer="standard"
-					role="tab"
-					aria-selected="<?php echo 'standard' === $default_offer ? 'true' : 'false'; ?>"
-				>
-					<?php esc_html_e( 'Стандарт', 'mtunicredit' ); ?>
-				</button>
-			<?php endif; ?>
-			<?php if ( $has_promo ) : ?>
-				<button
-					type="button"
-					class="mtuc-checkout-payment__offer<?php echo 'promo' === $default_offer ? ' is-active' : ''; ?>"
-					data-mtuc-checkout-offer="promo"
-					role="tab"
-					aria-selected="<?php echo 'promo' === $default_offer ? 'true' : 'false'; ?>"
-				>
-					<?php esc_html_e( 'Промо 0%', 'mtunicredit' ); ?>
-				</button>
-			<?php endif; ?>
-		</div>
-		<?php endif; ?>
-
+		<?php if ( ! $has_schemes ) : ?>
+			<p class="mtuc-checkout-payment__notice"><?php esc_html_e( 'Няма налични схеми за текущата поръчка.', 'mtunicredit' ); ?></p>
+		<?php else : ?>
 		<div class="mtuc-popup__calc">
 			<div class="mtuc-popup__calc-fields">
 				<div class="mtuc-popup__row">
@@ -123,5 +96,6 @@ $offer_tabs_class    = ( $has_standard && $has_promo ) ? '' : ' mtuc-checkout-pa
 				</div>
 			</div>
 		</div>
+		<?php endif; ?>
 	</div>
 </div>

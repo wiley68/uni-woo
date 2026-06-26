@@ -276,22 +276,21 @@ function mtuc_get_checkout_payment_script_config( ?array $context = null ): arra
 		? $context['popup']
 		: array();
 
+	$enabled_schemes = isset( $popup_context['enabled_schemes'] ) && is_array( $popup_context['enabled_schemes'] )
+		? $popup_context['enabled_schemes']
+		: array();
+
 	return array(
-		'ajaxUrl'              => admin_url( 'admin-ajax.php' ),
-		'nonce'                => wp_create_nonce( 'mtuc_popup' ),
-		'source'               => 'checkout',
-		'cartTotal'            => (float) ( $context['cart_total'] ?? 0 ),
-		'hasStandard'          => ! empty( $popup_context['has_standard'] ),
-		'hasPromo'             => ! empty( $popup_context['has_promo'] ),
-		'enabledMonthsByOffer' => isset( $popup_context['enabled_months_by_offer'] ) && is_array( $popup_context['enabled_months_by_offer'] )
-			? $popup_context['enabled_months_by_offer']
-			: array(),
-		'defaultSchemeByOffer' => isset( $popup_context['default_scheme_by_offer'] ) && is_array( $popup_context['default_scheme_by_offer'] )
-			? $popup_context['default_scheme_by_offer']
-			: array(),
-		'currencyDual'         => ! empty( $popup_context['currency']['dual'] ),
-		'showFirstVnoska'      => ! empty( $popup_context['show_first_vnoska'] ),
-		'i18n'                 => mtuc_get_calculator_i18n_strings(),
+		'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
+		'nonce'            => wp_create_nonce( 'mtuc_popup' ),
+		'source'           => 'checkout',
+		'offerType'        => 'standard',
+		'cartTotal'        => (float) ( $context['cart_total'] ?? 0 ),
+		'enabledSchemes'   => $enabled_schemes,
+		'defaultSchemeKey' => isset( $popup_context['default_scheme_key'] ) ? (string) $popup_context['default_scheme_key'] : '',
+		'currencyDual'     => ! empty( $popup_context['currency']['dual'] ),
+		'showFirstVnoska'  => ! empty( $popup_context['show_first_vnoska'] ),
+		'i18n'             => mtuc_get_calculator_i18n_strings(),
 	);
 }
 

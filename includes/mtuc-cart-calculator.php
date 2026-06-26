@@ -360,6 +360,55 @@ function mtuc_intersect_cart_scheme_options( array $line_option_sets ): array {
 }
 
 /**
+ * Unified checkout scheme list (standard-button popup: common standard + extra promo).
+ *
+ * @param array<int, array<string, mixed>> $common_standard Common standard schemes.
+ * @param array<int, array<string, mixed>> $common_promo    Common promo schemes.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_build_checkout_unified_scheme_options( array $common_standard, array $common_promo ): array {
+	$schemes = $common_standard;
+	$seen    = array();
+
+	foreach ( $schemes as $option ) {
+		if ( ! is_array( $option ) ) {
+			continue;
+		}
+
+		$seen[ mtuc_build_cart_scheme_match_key( $option ) ] = true;
+	}
+
+	foreach ( $common_promo as $option ) {
+		if ( ! is_array( $option ) ) {
+			continue;
+		}
+
+		$key = mtuc_build_cart_scheme_match_key( $option );
+		if ( isset( $seen[ $key ] ) ) {
+			continue;
+		}
+
+		$schemes[]    = $option;
+		$seen[ $key ] = true;
+	}
+
+	return mtuc_sort_popup_scheme_options( $schemes );
+}
+
+/**
+ * Resolve unified checkout schemes from cart state.
+ *
+ * @param array<string, mixed> $cart_state Cart scheme state.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_resolve_checkout_scheme_common( array $cart_state ): array {
+	return mtuc_build_checkout_unified_scheme_options(
+		(array) ( $cart_state['common_standard'] ?? array() ),
+		(array) ( $cart_state['common_promo'] ?? array() )
+	);
+}
+
+/**
  * Resolve cart button offer from common scheme options.
  *
  * @param array<string, mixed>             $shop           Shop data.
@@ -769,7 +818,7 @@ function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_t
 		$reklama_url = esc_url_raw( $shop['uni_backurl'] );
 	}
 
-	return array(
+	$popup = array(
 		'source'                  => $source,
 		'cart_total'              => $cart_total,
 		'product_id'              => 0,
@@ -786,6 +835,20 @@ function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_t
 		'has_promo'               => ! empty( $common_promo ),
 		'hide_add_to_cart'        => true,
 	);
+
+	if ( 'checkout' === $source ) {
+		$unified_schemes = mtuc_build_checkout_unified_scheme_options( $common_standard, $common_promo );
+
+		$popup['enabled_schemes']    = $unified_schemes;
+		$popup['default_scheme_key'] = mtuc_pick_default_popup_scheme_key(
+			$shop,
+			$unified_schemes,
+			$context['standard'] ?? null
+		);
+		$popup['has_schemes']        = ! empty( $unified_schemes );
+	}
+
+	return $popup;
 }
 
 /**

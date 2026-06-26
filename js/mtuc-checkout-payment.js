@@ -48,6 +48,41 @@
 		return months ? String(months) + ":0" : "";
 	};
 
+	const getEnabledSchemes = (config) => {
+		if (
+			Array.isArray(config.enabledSchemes) &&
+			config.enabledSchemes.length
+		) {
+			return config.enabledSchemes;
+		}
+
+		const offerType = config.offerType || "standard";
+		if (
+			config.enabledMonthsByOffer &&
+			Array.isArray(config.enabledMonthsByOffer[offerType])
+		) {
+			return config.enabledMonthsByOffer[offerType];
+		}
+
+		return [];
+	};
+
+	const getDefaultSchemeKey = (config) => {
+		if (config.defaultSchemeKey) {
+			return String(config.defaultSchemeKey);
+		}
+
+		const offerType = config.offerType || "standard";
+		if (
+			config.defaultSchemeByOffer &&
+			config.defaultSchemeByOffer[offerType]
+		) {
+			return String(config.defaultSchemeByOffer[offerType]);
+		}
+
+		return "";
+	};
+
 	const parseSchemeKey = (schemeKey) => {
 		const key = String(schemeKey || "");
 		if (key.indexOf("p:") === 0) {
@@ -104,21 +139,14 @@
 	};
 
 	const rebuildMonthsSelect = (
-		offerType,
 		$months,
 		$schemeKey,
 		$parva,
 		$parvaHidden,
 		config,
 	) => {
-		const enabled =
-			(config.enabledMonthsByOffer &&
-				config.enabledMonthsByOffer[offerType]) ||
-			[];
-		const preferred =
-			(config.defaultSchemeByOffer &&
-				config.defaultSchemeByOffer[offerType]) ||
-			"";
+		const enabled = getEnabledSchemes(config);
+		const preferred = getDefaultSchemeKey(config);
 
 		$months.empty();
 
@@ -184,7 +212,6 @@
 		const $months = $scope.find("#mtuc-checkout-months");
 		const $parva = $scope.find("#mtuc-checkout-parva");
 		const $parvaRow = $scope.find("#mtuc-checkout-parva-row");
-		const $offerButtons = $root.find("[data-mtuc-checkout-offer]");
 
 		const syncFn = () =>
 			syncHiddenFields($schemeKey, $parva, $parvaHidden, $months);
@@ -205,7 +232,7 @@
 				action: "mtuc_popup_calculate",
 				security: config.nonce,
 				source: config.source || "checkout",
-				offer_type: $offerType.val(),
+				offer_type: config.offerType || $offerType.val() || "standard",
 				scheme_key: schemeKey,
 				scheme_type: scheme.schemeType,
 				months: scheme.months,
@@ -250,17 +277,8 @@
 			);
 		};
 
-		const setOfferType = (offerType) => {
-			$offerType.val(offerType);
-			$offerButtons
-				.removeClass("is-active")
-				.attr("aria-selected", "false");
-			$offerButtons
-				.filter('[data-mtuc-checkout-offer="' + offerType + '"]')
-				.addClass("is-active")
-				.attr("aria-selected", "true");
+		const refreshSchemes = () => {
 			rebuildMonthsSelect(
-				offerType,
 				$months,
 				$schemeKey,
 				$parva,
@@ -273,13 +291,6 @@
 			}
 			calculateNow();
 		};
-
-		$offerButtons.off(NS).on("click" + NS, function (event) {
-			event.preventDefault();
-			setOfferType(
-				String($(this).data("mtuc-checkout-offer") || "standard"),
-			);
-		});
 
 		$months.off(NS).on("change" + NS, calculateNow);
 		$parva.off(NS).on("input" + NS + " change" + NS, scheduleCalculate);
@@ -309,33 +320,11 @@
 					if (!$("#mtuc-checkout-payment").length) {
 						return;
 					}
-					const currentOffer = String($offerType.val() || "standard");
-					rebuildMonthsSelect(
-						currentOffer,
-						$months,
-						$schemeKey,
-						$parva,
-						$parvaHidden,
-						config,
-					);
-					if (!$months.prop("disabled")) {
-						calculateNow();
-					}
+					refreshSchemes();
 				});
 		}
 
-		const initialOffer = String($offerType.val() || "standard");
-		rebuildMonthsSelect(
-			initialOffer,
-			$months,
-			$schemeKey,
-			$parva,
-			$parvaHidden,
-			config,
-		);
-		if (!$months.prop("disabled")) {
-			calculateNow();
-		}
+		refreshSchemes();
 
 		return {
 			validate: () => {
@@ -358,13 +347,12 @@
 					valid: true,
 					paymentMethodData: {
 						mtuc_scheme_key: String($schemeKey.val() || ""),
-						mtuc_offer_type: String($offerType.val() || "standard"),
+						mtuc_offer_type: "standard",
 						mtuc_parva: String($parvaHidden.val() || "0"),
 					},
 				};
 			},
 			destroy: () => {
-				$offerButtons.off(NS);
 				$months.off(NS);
 				$parva.off(NS);
 				$("form.checkout").off("checkout_place_order_mtunicredit" + NS);

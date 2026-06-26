@@ -885,9 +885,7 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 	}
 
 	$cart_total = (float) ( $cart_state['cart_total'] ?? 0 );
-	$common     = 'promo' === $scheme['offer_type']
-		? (array) ( $cart_state['common_promo'] ?? array() )
-		: (array) ( $cart_state['common_standard'] ?? array() );
+	$common     = mtuc_resolve_checkout_scheme_common( $cart_state );
 
 	if ( empty( $common ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
@@ -903,7 +901,7 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		$coeff_list,
 		$cart_total,
 		$scheme['months'],
-		$scheme['offer_type'],
+		'standard',
 		$scheme['parva'],
 		$scheme['filter_id'],
 		$scheme['scheme_type'],

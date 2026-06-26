@@ -168,9 +168,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			return false;
 		}
 
-		$common = 'promo' === $posted['offer_type']
-			? (array) ( $cart_state['common_promo'] ?? array() )
-			: (array) ( $cart_state['common_standard'] ?? array() );
+		$common = mtuc_resolve_checkout_scheme_common( $cart_state );
 
 		$coeff_list  = mtuc_get_shop_coeff_list( $shop );
 		$calculation = mtuc_calculate_cart_popup_credit(
@@ -178,7 +176,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			$coeff_list,
 			(float) ( $cart_state['cart_total'] ?? 0 ),
 			$posted['months'],
-			$posted['offer_type'],
+			'standard',
 			$posted['parva'],
 			$posted['filter_id'],
 			$posted['scheme_type'],
