@@ -1269,23 +1269,42 @@ function mtuc_financial_rate( float $periods, float $payment, float $present_val
 }
 
 /**
+ * Whether the product-page calculator shell may load (shop active, no price gate).
+ *
+ * @return bool
+ */
+function mtuc_can_render_product_calculator_shell(): bool {
+	if ( ! is_product() || is_admin() ) {
+		return false;
+	}
+
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		return false;
+	}
+
+	if ( '' === (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID ) ) {
+		return false;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+		return false;
+	}
+
+	return mtuc_is_yes_flag( $shop['uni_status'] ?? 0 );
+}
+
+/**
  * Build product calculator context when the template should be shown.
  *
  * @return array<string, mixed>|null
  */
 function mtuc_get_product_calculator_context(): ?array {
-	if ( ! is_product() || is_admin() ) {
-		return null;
-	}
-
-	if ( ! Mtuc_Settings::is_enabled() ) {
+	if ( ! mtuc_can_render_product_calculator_shell() ) {
 		return null;
 	}
 
 	$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
-	if ( '' === $unicid ) {
-		return null;
-	}
 
 	static $context  = null;
 	static $resolved = false;
@@ -1298,21 +1317,20 @@ function mtuc_get_product_calculator_context(): ?array {
 	$context  = null;
 
 	$shop = mtuc_get_shop_data( $unicid );
-	if ( is_wp_error( $shop ) ) {
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
 		return null;
 	}
 
-	if ( ! mtuc_is_yes_flag( $shop['uni_status'] ?? 0 ) ) {
-		return null;
+	$offer = null;
+	if ( mtuc_is_product_price_in_shop_range( $shop ) ) {
+		$offer = mtuc_get_product_calculator_offer( $shop );
 	}
 
-	if ( ! mtuc_is_product_price_in_shop_range( $shop ) ) {
-		return null;
-	}
-
-	$offer = mtuc_get_product_calculator_offer( $shop );
-	if ( null === $offer ) {
-		return null;
+	$standard = null;
+	$promo    = null;
+	if ( is_array( $offer ) ) {
+		$standard = $offer['standard'] ?? null;
+		$promo    = $offer['promo'] ?? null;
 	}
 
 	$is_dark_button = mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 );
@@ -1329,12 +1347,13 @@ function mtuc_get_product_calculator_context(): ?array {
 	}
 
 	$current_product = mtuc_get_current_wc_product();
+	$line_price      = mtuc_get_product_price( $current_product );
 
 	$context = array(
 		'product_id'       => $current_product instanceof WC_Product ? $current_product->get_id() : 0,
 		'offer'            => $offer,
-		'standard'         => $offer['standard'],
-		'promo'            => $offer['promo'],
+		'standard'         => $standard,
+		'promo'            => $promo,
 		'show_installment' => mtuc_is_yes_flag( $shop['uni_vnoska'] ?? 0 ),
 		'buttons_in_row'   => 1 === (int) ( $shop['uni_button_row'] ?? 1 ),
 		'button_width'     => $button_width,
@@ -1345,9 +1364,11 @@ function mtuc_get_product_calculator_context(): ?array {
 		'popup'            => mtuc_get_product_popup_context(
 			$shop,
 			array(
-				'standard' => $offer['standard'],
-				'promo'    => $offer['promo'],
-			)
+				'standard' => $standard,
+				'promo'    => $promo,
+			),
+			$current_product instanceof WC_Product ? $current_product : null,
+			null !== $line_price ? (float) $line_price : null
 		),
 	);
 

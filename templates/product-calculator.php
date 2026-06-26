@@ -47,6 +47,10 @@ $mtuc_standard_visible = null !== $mtuc_standard && ! empty( $mtuc_standard['vis
 $mtuc_promo_visible    = null !== $mtuc_promo && ! empty( $mtuc_promo['visible'] );
 $mtuc_standard_style   = $mtuc_standard_visible ? '' : 'display:none;';
 $mtuc_promo_style      = $mtuc_promo_visible ? '' : 'display:none;';
+
+if ( ! $mtuc_standard_visible && ! $mtuc_promo_visible ) {
+	$mtuc_root_style .= 'display:none;';
+}
 ?>
 <div
 	class="<?php echo esc_attr( $mtuc_root_classes ); ?>"

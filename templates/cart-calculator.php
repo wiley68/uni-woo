@@ -46,6 +46,10 @@ $mtuc_promo_image_only    = $mtuc_promo_visible && ! empty( $mtuc_promo['image_o
 $mtuc_standard_style      = $mtuc_standard_visible ? '' : 'display:none;';
 $mtuc_promo_style         = $mtuc_promo_visible ? '' : 'display:none;';
 
+if ( ! $mtuc_standard_visible && ! $mtuc_promo_visible ) {
+	$mtuc_root_style .= 'display:none;';
+}
+
 if ( $mtuc_standard_visible && ( $mtuc_standard_image_only || ! $mtuc_show_installment ) ) {
 	$mtuc_root_classes .= ' mtuc-product-calculator--no-vnoska';
 }

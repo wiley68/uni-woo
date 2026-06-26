@@ -503,60 +503,111 @@ function mtuc_cart_has_any_line_scheme_options(
 }
 
 /**
+ * Whether the cart calculator shell may load (shop active, cart has lines, no price gate).
+ *
+ * @return bool
+ */
+function mtuc_can_render_cart_calculator_shell(): bool {
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		return false;
+	}
+
+	if ( '' === (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID ) ) {
+		return false;
+	}
+
+	if ( empty( mtuc_get_cart_line_entries() ) ) {
+		return false;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+		return false;
+	}
+
+	return mtuc_is_yes_flag( $shop['uni_status'] ?? 0 );
+}
+
+/**
  * Build cart calculator context from the current cart (no page guard).
  *
  * @return array<string, mixed>|null
  */
 function mtuc_build_cart_calculator_context(): ?array {
-	if ( ! Mtuc_Settings::is_enabled() ) {
-		return null;
-	}
-
-	if ( '' === (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID ) ) {
+	if ( ! mtuc_can_render_cart_calculator_shell() ) {
 		return null;
 	}
 
 	$lines = mtuc_get_cart_line_entries();
-	if ( empty( $lines ) ) {
-		return null;
-	}
-
-	$shop = mtuc_get_shop_data();
+	$shop  = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
 		return null;
 	}
 
-	if ( ! mtuc_is_yes_flag( $shop['uni_status'] ?? 0 ) ) {
-		return null;
+	$cart_total       = mtuc_get_cart_contents_total_inc_tax();
+	$coeff_list       = mtuc_get_shop_coeff_list( $shop );
+	$standard         = null;
+	$promo            = null;
+	$common_standard  = array();
+	$common_promo     = array();
+	$has_any_standard = false;
+	$has_any_promo    = false;
+
+	if ( $cart_total > 0 && mtuc_is_product_price_in_shop_range( $shop, $cart_total ) ) {
+		$standard_line_sets = array();
+		$promo_line_sets    = array();
+
+		foreach ( $lines as $line ) {
+			$standard_line_sets[] = mtuc_get_cart_line_scheme_options( $shop, $coeff_list, $cart_total, $line['product'], 'standard' );
+			$promo_line_sets[]    = mtuc_get_cart_line_scheme_options( $shop, $coeff_list, $cart_total, $line['product'], 'promo' );
+		}
+
+		$common_standard  = mtuc_intersect_cart_scheme_options( $standard_line_sets );
+		$common_promo     = mtuc_intersect_cart_scheme_options( $promo_line_sets );
+		$has_any_standard = mtuc_cart_has_any_line_scheme_options( $shop, $coeff_list, $cart_total, $lines, 'standard' );
+		$has_any_promo    = mtuc_cart_has_any_line_scheme_options( $shop, $coeff_list, $cart_total, $lines, 'promo' );
+
+		if ( $has_any_standard || $has_any_promo ) {
+			$standard_offer = mtuc_build_cart_button_offer_from_options( $shop, $coeff_list, $cart_total, $common_standard, 'standard' );
+			$promo_offer    = mtuc_build_cart_button_offer_from_options( $shop, $coeff_list, $cart_total, $common_promo, 'promo' );
+
+			$standard = null !== $standard_offer
+				? array_merge(
+					$standard_offer,
+					array(
+						'visible'    => true,
+						'image_only' => false,
+					)
+				)
+				: ( $has_any_standard
+					? array(
+						'type'       => 'standard',
+						'visible'    => true,
+						'image_only' => true,
+					)
+					: null );
+
+			$promo = null !== $promo_offer
+				? array_merge(
+					$promo_offer,
+					array(
+						'visible'    => true,
+						'image_only' => false,
+					)
+				)
+				: ( $has_any_promo
+					? array(
+						'type'       => 'promo',
+						'visible'    => true,
+						'image_only' => true,
+					)
+					: null );
+
+			if ( is_array( $standard ) && ! empty( $standard['image_only'] ) ) {
+				$promo = null;
+			}
+		}
 	}
-
-	$cart_total = mtuc_get_cart_contents_total_inc_tax();
-	if ( $cart_total <= 0 || ! mtuc_is_product_price_in_shop_range( $shop, $cart_total ) ) {
-		return null;
-	}
-
-	$coeff_list = mtuc_get_shop_coeff_list( $shop );
-
-	$standard_line_sets = array();
-	$promo_line_sets    = array();
-
-	foreach ( $lines as $line ) {
-		$standard_line_sets[] = mtuc_get_cart_line_scheme_options( $shop, $coeff_list, $cart_total, $line['product'], 'standard' );
-		$promo_line_sets[]    = mtuc_get_cart_line_scheme_options( $shop, $coeff_list, $cart_total, $line['product'], 'promo' );
-	}
-
-	$common_standard = mtuc_intersect_cart_scheme_options( $standard_line_sets );
-	$common_promo    = mtuc_intersect_cart_scheme_options( $promo_line_sets );
-
-	$has_any_standard = mtuc_cart_has_any_line_scheme_options( $shop, $coeff_list, $cart_total, $lines, 'standard' );
-	$has_any_promo    = mtuc_cart_has_any_line_scheme_options( $shop, $coeff_list, $cart_total, $lines, 'promo' );
-
-	if ( ! $has_any_standard && ! $has_any_promo ) {
-		return null;
-	}
-
-	$standard_offer = mtuc_build_cart_button_offer_from_options( $shop, $coeff_list, $cart_total, $common_standard, 'standard' );
-	$promo_offer    = mtuc_build_cart_button_offer_from_options( $shop, $coeff_list, $cart_total, $common_promo, 'promo' );
 
 	$is_dark_button = mtuc_is_yes_flag( $shop['uni_type_button'] ?? 0 );
 	$button_width   = isset( $shop['uni_button_width'] ) ? absint( $shop['uni_button_width'] ) : 0;
@@ -567,43 +618,6 @@ function mtuc_build_cart_calculator_context(): ?array {
 	}
 	if ( $button_height <= 0 ) {
 		$button_height = 56;
-	}
-
-	$standard = null !== $standard_offer
-		? array_merge(
-			$standard_offer,
-			array(
-				'visible'    => true,
-				'image_only' => false,
-			)
-		)
-		: ( $has_any_standard
-			? array(
-				'type'       => 'standard',
-				'visible'    => true,
-				'image_only' => true,
-			)
-			: null );
-
-	$promo = null !== $promo_offer
-		? array_merge(
-			$promo_offer,
-			array(
-				'visible'    => true,
-				'image_only' => false,
-			)
-		)
-		: ( $has_any_promo
-			? array(
-				'type'       => 'promo',
-				'visible'    => true,
-				'image_only' => true,
-			)
-			: null );
-
-	// No common cart scheme: one image-only standard button is enough (same alert on both).
-	if ( is_array( $standard ) && ! empty( $standard['image_only'] ) ) {
-		$promo = null;
 	}
 
 	return array(
@@ -624,8 +638,8 @@ function mtuc_build_cart_calculator_context(): ?array {
 		'popup'            => mtuc_get_cart_popup_context(
 			$shop,
 			array(
-				'standard'        => $standard_offer,
-				'promo'           => $promo_offer,
+				'standard'        => $standard,
+				'promo'           => $promo,
 				'common_standard' => $common_standard,
 				'common_promo'    => $common_promo,
 			),
@@ -667,6 +681,14 @@ function mtuc_build_cart_calculator_refresh_payload(): array {
 			'visible'    => true,
 			'image_only' => ! empty( $promo['image_only'] ),
 			'price_text' => ! empty( $promo['image_only'] ) ? '' : (string) ( $promo['price_text'] ?? '' ),
+		);
+	}
+
+	$has_visible_buttons = null !== $standard_payload || null !== $promo_payload;
+	if ( ! $has_visible_buttons ) {
+		return array(
+			'visible'    => false,
+			'cart_total' => (float) ( $context['cart_total'] ?? 0 ),
 		);
 	}
 
@@ -729,7 +751,14 @@ function mtuc_get_cart_calculator_fragment_html(): string {
 	}
 
 	ob_start();
-	echo '<div class="mtuc-cart-calculator-fragment">';
+
+	$mtuc_standard = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
+	$mtuc_promo    = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
+	$mtuc_visible  = ( null !== $mtuc_standard && ! empty( $mtuc_standard['visible'] ) )
+		|| ( null !== $mtuc_promo && ! empty( $mtuc_promo['visible'] ) );
+	$mtuc_fragment_style = $mtuc_visible ? '' : ' style="display:none;"';
+
+	echo '<div class="mtuc-cart-calculator-fragment"' . $mtuc_fragment_style . '>';
 	include $template;
 	echo '</div>';
 

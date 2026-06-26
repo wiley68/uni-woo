@@ -211,5 +211,7 @@
 				refreshCartCalculator();
 			},
 		);
+
+		refreshCartCalculator();
 	});
 })(jQuery);

@@ -244,13 +244,21 @@
 			refreshCalculator();
 		});
 
-		if ($('[name="quantity"]').length) {
-			$('[name="quantity"]')
-				.first()
-				.on("change input", function () {
-					refreshCalculator();
-				});
-		}
+		$(document.body).on(
+			"change input",
+			"form.cart .qty, form.cart input.qty, form.cart input[name='quantity']",
+			function () {
+				refreshCalculator();
+			},
+		);
+
+		$(document.body).on(
+			"click",
+			"form.cart .quantity .plus, form.cart .quantity .minus, form.cart .qty_button",
+			function () {
+				window.setTimeout(refreshCalculator, 0);
+			},
+		);
 
 		const variationNode = document.querySelector(
 			"div.woocommerce-variation.single_variation",
@@ -277,9 +285,7 @@
 			});
 		}
 
-		if (!variationNode) {
-			refreshCalculator();
-		}
+		refreshCalculator();
 
 		window.mtucGetProductLineContext = function () {
 			const quantity = parseInt(
