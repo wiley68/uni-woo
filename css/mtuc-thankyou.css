@@ -10,3 +10,11 @@
 	font-weight: 600;
 	color: #ed1c24;
 }
+
+.mtuc-thankyou-credit-details {
+	margin-top: 2em;
+}
+
+.mtuc-thankyou-credit-details__table th {
+	width: 40%;
+}

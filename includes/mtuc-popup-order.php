@@ -171,6 +171,7 @@ function mtuc_register_popup_order_hooks(): void {
 	add_filter( 'manage_woocommerce_page_wc-orders_columns', 'mtuc_add_orders_list_bank_status_column' );
 	add_action( 'manage_woocommerce_page_wc-orders_custom_column', 'mtuc_render_orders_list_bank_status_column', 10, 2 );
 	add_filter( 'woocommerce_thankyou_order_received_text', 'mtuc_filter_thankyou_text_bank_unavailable', 20, 2 );
+	add_action( 'woocommerce_order_details_after_order_table', 'mtuc_render_thankyou_process2_credit_section', 10, 1 );
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_thankyou_styles' );
 	add_action( 'woocommerce_email_after_order_table', 'mtuc_email_after_order_table_credit_details', 15, 4 );
 }
@@ -2471,6 +2472,43 @@ function mtuc_email_after_order_table_credit_details( $order, $sent_to_admin, $p
 	}
 
 	mtuc_render_order_credit_email_section( $order, (bool) $plain_text );
+}
+
+/**
+ * Render UniCredit leasing details table on the thank-you page (Process 2).
+ *
+ * @param WC_Order $order Order instance.
+ * @return void
+ */
+function mtuc_render_thankyou_process2_credit_section( WC_Order $order ): void {
+	if ( ! function_exists( 'is_order_received_page' ) || ! is_order_received_page() ) {
+		return;
+	}
+
+	if ( ! mtuc_is_process2_order( $order ) || ! mtuc_should_show_order_credit_in_email( $order ) ) {
+		return;
+	}
+
+	$rows = mtuc_get_admin_order_credit_meta_rows( $order );
+	if ( empty( $rows ) ) {
+		return;
+	}
+
+	?>
+	<section class="woocommerce-order-details mtuc-thankyou-credit-details">
+		<h2 class="woocommerce-order-details__title"><?php esc_html_e( 'УниКредит лизинг', 'mtunicredit' ); ?></h2>
+		<table class="woocommerce-table woocommerce-table--order-details shop_table mtuc-thankyou-credit-details__table">
+			<tbody>
+			<?php foreach ( $rows as $label => $value ) : ?>
+				<tr>
+					<th scope="row"><?php echo esc_html( (string) $label ); ?></th>
+					<td><?php echo esc_html( (string) $value ); ?></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+	</section>
+	<?php
 }
 
 /**
