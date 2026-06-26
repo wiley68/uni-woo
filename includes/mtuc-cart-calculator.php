@@ -1046,6 +1046,9 @@ function mtuc_calculate_cart_popup_credit(
  * @return void
  */
 function mtuc_register_cart_hooks(): void {
+	add_action( 'wp_ajax_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
+	add_action( 'wp_ajax_nopriv_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
+
 	if ( is_admin() ) {
 		return;
 	}
@@ -1053,8 +1056,6 @@ function mtuc_register_cart_hooks(): void {
 	add_action( 'woocommerce_proceed_to_checkout', 'mtuc_render_cart_calculator', 5 );
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_cart_assets' );
 	add_filter( 'woocommerce_add_to_cart_fragments', 'mtuc_append_cart_calculator_fragment' );
-	add_action( 'wp_ajax_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
-	add_action( 'wp_ajax_nopriv_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
 }
 
 /**

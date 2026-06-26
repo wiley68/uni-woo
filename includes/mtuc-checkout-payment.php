@@ -576,6 +576,8 @@ function mtuc_ajax_checkout_blocks_refresh(): void {
 function mtuc_register_checkout_payment_hooks(): void {
 	add_filter( 'woocommerce_payment_gateways', 'mtuc_register_payment_gateway' );
 	add_action( 'woocommerce_blocks_loaded', 'mtuc_register_blocks_payment_method' );
+	add_action( 'wp_ajax_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
+	add_action( 'wp_ajax_nopriv_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
 
 	if ( is_admin() ) {
 		return;
@@ -583,8 +585,6 @@ function mtuc_register_checkout_payment_hooks(): void {
 
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_checkout_payment_assets', 100 );
 	add_action( 'template_redirect', 'mtuc_checkout_maybe_redirect_to_bank_on_thankyou', 5 );
-	add_action( 'wp_ajax_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
-	add_action( 'wp_ajax_nopriv_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
 }
 
 /**
