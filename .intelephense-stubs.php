@@ -277,6 +277,38 @@ function get_site_url($blog_id = null, string $path = '', ?string $scheme = null
 }
 
 /**
+ * @param string $show
+ * @return string
+ */
+function get_bloginfo( $show = '', $filter = 'raw' ): string {
+	unset( $show, $filter );
+
+	return '';
+}
+
+/**
+ * @param string $string
+ * @param int    $quote_style
+ * @return string
+ */
+function wp_specialchars_decode( $string, $quote_style = ENT_NOQUOTES ): string {
+	return (string) $string;
+}
+
+/**
+ * @param string|string[] $to
+ * @param string          $subject
+ * @param string          $message
+ * @param string|string[] $headers
+ * @return bool
+ */
+function wp_mail( $to, $subject, $message, $headers = '' ): bool {
+	unset( $to, $subject, $message, $headers );
+
+	return true;
+}
+
+/**
  * @return string|false Sanitized email, or false if invalid.
  */
 function is_email(string $email): string|false
@@ -412,7 +444,13 @@ function sanitize_key( $key ): string
 	return (string) $key;
 }
 
-function sanitize_email($email) {}
+/**
+ * @param string $email
+ * @return string
+ */
+function sanitize_email( $email ): string {
+	return (string) $email;
+}
 
 function absint($maybeint): int
 {
@@ -1000,6 +1038,11 @@ class WC_Product
 		return '';
 	}
 
+	public function get_sku(): string
+	{
+		return '';
+	}
+
 	/** @return array<int, int> */
 	public function get_category_ids(): array
 	{
@@ -1202,6 +1245,26 @@ class WC_Session
 	public function get_customer_id(): string
 	{
 		return '';
+	}
+
+	/**
+	 * @param string $key
+	 * @param mixed  $default
+	 * @return mixed
+	 */
+	public function get( $key, $default = null ) {
+		unset( $key );
+
+		return $default;
+	}
+
+	/**
+	 * @param string $key
+	 * @param mixed  $value
+	 * @return void
+	 */
+	public function set( $key, $value ): void {
+		unset( $key, $value );
 	}
 }
 

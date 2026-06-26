@@ -713,6 +713,22 @@
 			);
 		};
 
+		const notifyCartSplitRequired = () => {
+			if (
+				!mtucPopup ||
+				mtucPopup.source !== "cart" ||
+				!mtucPopup.ajaxUrl ||
+				!mtucPopup.nonce
+			) {
+				return;
+			}
+
+			$.post(mtucPopup.ajaxUrl, {
+				action: "mtuc_cart_split_notify",
+				security: mtucPopup.nonce,
+			});
+		};
+
 		$(document).on(
 			"click",
 			".mtuc-product-calculator__btn[data-mtuc-offer]",
@@ -724,6 +740,7 @@
 						mtucPopup.i18n.cartSplitRequired ||
 							"Не може да закупите цялата количка на изплащане. Моля, разделете поръчката си ако желаете да я закупите на изплащане.",
 					);
+					notifyCartSplitRequired();
 					return;
 				}
 

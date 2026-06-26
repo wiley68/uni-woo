@@ -771,6 +771,254 @@ function mtuc_ajax_cart_calculator_refresh(): void {
 }
 
 /**
+ * Whether the current cart cannot be purchased on leasing as a whole.
+ *
+ * @return bool
+ */
+function mtuc_is_cart_split_required(): bool {
+	$context = mtuc_build_cart_calculator_context();
+	if ( null === $context ) {
+		return false;
+	}
+
+	$standard = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
+
+	return null !== $standard && ! empty( $standard['image_only'] );
+}
+
+/**
+ * Parse shop notification emails from CP shop cache (`uni_email`).
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return array<int, string>
+ */
+function mtuc_parse_shop_notification_emails( array $shop ): array {
+	$raw   = isset( $shop['uni_email'] ) ? (string) $shop['uni_email'] : '';
+	$parts = preg_split( '/\s*,\s*/', $raw );
+	$parts = is_array( $parts ) ? $parts : array();
+
+	$emails = array();
+	foreach ( $parts as $part ) {
+		$part = trim( (string) $part );
+		if ( '' !== $part && is_email( $part ) ) {
+			$emails[] = $part;
+		}
+	}
+
+	return array_values( array_unique( $emails ) );
+}
+
+/**
+ * Stable fingerprint for cart split notification deduplication.
+ *
+ * @param array<int, array<string, mixed>> $lines      Cart line entries.
+ * @param float                            $cart_total Cart total.
+ * @return string
+ */
+function mtuc_get_cart_split_notification_fingerprint( array $lines, float $cart_total ): string {
+	$payload = array(
+		'cart_total' => round( $cart_total, 2 ),
+		'lines'      => array(),
+	);
+
+	foreach ( $lines as $line ) {
+		if ( ! is_array( $line ) ) {
+			continue;
+		}
+
+		$payload['lines'][] = array(
+			'parent_id'    => (int) ( $line['parent_id'] ?? 0 ),
+			'variation_id' => (int) ( $line['variation_id'] ?? 0 ),
+			'quantity'     => (int) ( $line['quantity'] ?? 0 ),
+			'line_total'   => round( (float) ( $line['line_total'] ?? 0 ), 2 ),
+		);
+	}
+
+	return md5( (string) wp_json_encode( $payload ) );
+}
+
+/**
+ * Build HTML body for cart split required shop notification.
+ *
+ * @param array<string, mixed>             $shop       Shop `data` object from CP.
+ * @param array<int, array<string,mixed>>  $lines      Cart line entries.
+ * @param float                            $cart_total Cart total.
+ * @return string
+ */
+function mtuc_build_cart_split_notification_body( array $shop, array $lines, float $cart_total ): string {
+	$message = __( 'Не може да закупите цялата количка на изплащане. Моля, разделете поръчката си ако желаете да я закупите на изплащане.', 'mtunicredit' );
+
+	$shop_rows = array(
+		__( 'Магазин', 'mtunicredit' ) => isset( $shop['name'] ) ? (string) $shop['name'] : '',
+		__( 'Тип', 'mtunicredit' )     => isset( $shop['type'] ) ? (string) $shop['type'] : '',
+	);
+
+	$shop_html = '';
+	foreach ( $shop_rows as $label => $value ) {
+		$value = trim( (string) $value );
+		if ( '' === $value ) {
+			continue;
+		}
+
+		$shop_html .= '<tr><th style="text-align:left;padding:4px 12px 4px 0;vertical-align:top;">'
+			. esc_html( (string) $label )
+			. '</th><td style="padding:4px 0;">'
+			. esc_html( $value )
+			. '</td></tr>';
+	}
+
+	$cart_rows = '';
+	foreach ( $lines as $line ) {
+		if ( ! is_array( $line ) || ! isset( $line['product'] ) || ! $line['product'] instanceof WC_Product ) {
+			continue;
+		}
+
+		$product  = $line['product'];
+		$name     = $product->get_name();
+		$sku      = $product->get_sku();
+		$quantity = max( 1, (int) ( $line['quantity'] ?? 1 ) );
+		$total    = round( (float) ( $line['line_total'] ?? 0 ), 2 );
+		$display  = mtuc_format_popup_amount_display( $total, $shop );
+		$price    = $display['primary'];
+		if ( ! empty( $display['dual'] ) && ! empty( $display['secondary'] ) ) {
+			$price .= ' / ' . $display['secondary'];
+		}
+
+		$label = $name;
+		if ( '' !== $sku ) {
+			$label .= ' (SKU: ' . $sku . ')';
+		}
+
+		$cart_rows .= '<tr>'
+			. '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;">' . esc_html( $label ) . '</td>'
+			. '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:center;">' . esc_html( (string) $quantity ) . '</td>'
+			. '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;">' . esc_html( $price ) . '</td>'
+			. '</tr>';
+	}
+
+	$cart_total_display = mtuc_format_popup_amount_display( $cart_total, $shop );
+	$cart_total_text    = $cart_total_display['primary'];
+	if ( ! empty( $cart_total_display['dual'] ) && ! empty( $cart_total_display['secondary'] ) ) {
+		$cart_total_text .= ' / ' . $cart_total_display['secondary'];
+	}
+
+	$html  = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111;">';
+	$html .= '<p style="margin:0 0 16px;">' . esc_html( $message ) . '</p>';
+	$html .= '<h2 style="margin:0 0 8px;font-size:16px;">' . esc_html__( 'Информация за магазина', 'mtunicredit' ) . '</h2>';
+	$html .= '<table style="border-collapse:collapse;margin:0 0 20px;">' . $shop_html . '</table>';
+	$html .= '<h2 style="margin:0 0 8px;font-size:16px;">' . esc_html__( 'Съдържание на количката', 'mtunicredit' ) . '</h2>';
+	$html .= '<table style="border-collapse:collapse;width:100%;max-width:640px;">';
+	$html .= '<thead><tr>'
+		. '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ccc;">' . esc_html__( 'Продукт', 'mtunicredit' ) . '</th>'
+		. '<th style="text-align:center;padding:6px 8px;border-bottom:2px solid #ccc;">' . esc_html__( 'Кол.', 'mtunicredit' ) . '</th>'
+		. '<th style="text-align:right;padding:6px 8px;border-bottom:2px solid #ccc;">' . esc_html__( 'Сума', 'mtunicredit' ) . '</th>'
+		. '</tr></thead><tbody>' . $cart_rows . '</tbody>';
+	$html .= '<tfoot><tr>'
+		. '<td colspan="2" style="padding:8px 8px 0;text-align:right;font-weight:bold;">' . esc_html__( 'Общо:', 'mtunicredit' ) . '</td>'
+		. '<td style="padding:8px 8px 0;text-align:right;font-weight:bold;">' . esc_html( $cart_total_text ) . '</td>'
+		. '</tr></tfoot></table>';
+	$html .= '</div>';
+
+	return $html;
+}
+
+/**
+ * Send shop notification when the cart cannot be purchased on leasing as a whole.
+ *
+ * @return bool True when at least one recipient was mailed successfully.
+ */
+function mtuc_send_cart_split_required_notification(): bool {
+	if ( ! mtuc_is_cart_split_required() ) {
+		return false;
+	}
+
+	$lines = mtuc_get_cart_line_entries();
+	if ( empty( $lines ) ) {
+		return false;
+	}
+
+	$cart_total = mtuc_get_cart_contents_total_inc_tax();
+	$shop       = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+		return false;
+	}
+
+	$recipients = mtuc_parse_shop_notification_emails( $shop );
+	if ( empty( $recipients ) ) {
+		return false;
+	}
+
+	$fingerprint = mtuc_get_cart_split_notification_fingerprint( $lines, $cart_total );
+	$session_key = 'mtuc_cart_split_notified';
+
+	if ( function_exists( 'WC' ) && WC()->session ) {
+		$sent_for = (string) WC()->session->get( $session_key, '' );
+		if ( $sent_for === $fingerprint ) {
+			return false;
+		}
+	}
+
+	$to      = array_shift( $recipients );
+	$cc      = $recipients;
+	$subject = sprintf(
+		/* translators: %s: site name */
+		__( '%s — не може цялата количка на изплащане', 'mtunicredit' ),
+		wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES )
+	);
+	$body    = mtuc_build_cart_split_notification_body( $shop, $lines, $cart_total );
+
+	$headers = array( 'Content-Type: text/html; charset=UTF-8' );
+	if ( ! empty( $cc ) ) {
+		$headers[] = 'Cc: ' . implode( ', ', $cc );
+	}
+
+	if ( function_exists( 'wc_mail' ) ) {
+		$sent = wc_mail( $to, $subject, $body, $headers );
+	} else {
+		$sent = wp_mail( $to, $subject, $body, $headers );
+	}
+
+	if ( $sent && function_exists( 'WC' ) && WC()->session ) {
+		WC()->session->set( $session_key, $fingerprint );
+	}
+
+	return (bool) $sent;
+}
+
+/**
+ * AJAX: notify shop recipients that the cart cannot be purchased on leasing as a whole.
+ *
+ * @return void
+ */
+function mtuc_ajax_cart_split_notify(): void {
+	check_ajax_referer( 'mtuc_popup', 'security' );
+
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		wp_send_json_error(
+			array( 'message' => __( 'Модулът не е активен.', 'mtunicredit' ) ),
+			403
+		);
+	}
+
+	if ( ! mtuc_is_cart_split_required() ) {
+		wp_send_json_success(
+			array(
+				'sent'    => false,
+				'skipped' => true,
+			)
+		);
+	}
+
+	$sent = mtuc_send_cart_split_required_notification();
+
+	wp_send_json_success(
+		array(
+			'sent' => $sent,
+		)
+	);
+}
+
+/**
  * Build cart calculator context.
  *
  * @return array<string, mixed>|null
@@ -1057,6 +1305,8 @@ function mtuc_calculate_cart_popup_credit(
 function mtuc_register_cart_hooks(): void {
 	add_action( 'wp_ajax_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
 	add_action( 'wp_ajax_nopriv_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
+	add_action( 'wp_ajax_mtuc_cart_split_notify', 'mtuc_ajax_cart_split_notify' );
+	add_action( 'wp_ajax_nopriv_mtuc_cart_split_notify', 'mtuc_ajax_cart_split_notify' );
 
 	if ( is_admin() ) {
 		return;
