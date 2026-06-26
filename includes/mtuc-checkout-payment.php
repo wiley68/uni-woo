@@ -40,16 +40,16 @@ function mtuc_get_payment_gateway_settings(): array {
 /**
  * Order status configured for the mtunicredit payment method.
  *
- * @return string Status slug without wc- prefix (default: pending).
+ * @return string Status slug without wc- prefix (default: on-hold).
  */
 function mtuc_get_payment_gateway_order_status(): string {
 	$settings = mtuc_get_payment_gateway_settings();
 	$status   = isset( $settings['order_status'] )
 		? mtuc_normalize_wc_order_status( (string) $settings['order_status'] )
-		: 'pending';
+		: 'on-hold';
 
 	if ( '' === $status ) {
-		return 'pending';
+		return 'on-hold';
 	}
 
 	if ( function_exists( 'wc_get_order_statuses' ) ) {
@@ -57,7 +57,7 @@ function mtuc_get_payment_gateway_order_status(): string {
 		$prefixed       = 'wc-' . $status;
 
 		if ( ! isset( $valid_statuses[ $prefixed ] ) && ! isset( $valid_statuses[ $status ] ) ) {
-			return 'pending';
+			return 'on-hold';
 		}
 	}
 
@@ -81,6 +81,75 @@ function mtuc_get_payment_gateway_title(): string {
 }
 
 /**
+ * Default order note when leasing order is submitted to the bank.
+ *
+ * @return string
+ */
+function mtuc_get_payment_gateway_status_note(): string {
+	return __( 'Поръчка за лизинг УниКредит — изпратена към банката.', 'mtunicredit' );
+}
+
+/**
+ * WooCommerce transactional email handler, when available.
+ *
+ * @return WC_Emails|null
+ */
+function mtuc_get_wc_mailer(): ?WC_Emails {
+	if ( ! function_exists( 'WC' ) ) {
+		return null;
+	}
+
+	$woocommerce = WC();
+
+	return $woocommerce->mailer();
+}
+
+/**
+ * Send admin/customer emails for a leasing order when WC did not fire a status transition.
+ *
+ * WooCommerce sends transactional emails on status changes (e.g. pending → on-hold).
+ * If the order stays on pending, no emails are sent unless we trigger them explicitly.
+ *
+ * @param WC_Order $order Order instance.
+ * @return void
+ */
+function mtuc_send_leasing_order_notifications_once( WC_Order $order ): void {
+	if ( (int) $order->get_meta( MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT ) ) {
+		return;
+	}
+
+	if ( MTUC_PAYMENT_GATEWAY_ID !== $order->get_payment_method() ) {
+		return;
+	}
+
+	$mailer = mtuc_get_wc_mailer();
+	if ( ! $mailer ) {
+		return;
+	}
+
+	$emails   = $mailer->get_emails();
+	$order_id = $order->get_id();
+
+	if ( ! empty( $emails['WC_Email_New_Order'] ) ) {
+		$emails['WC_Email_New_Order']->trigger( $order_id, $order );
+	}
+
+	$customer_email_map = array(
+		'processing' => 'WC_Email_Customer_Processing_Order',
+		'on-hold'    => 'WC_Email_Customer_On_Hold_Order',
+		'completed'  => 'WC_Email_Customer_Completed_Order',
+	);
+
+	$status = $order->get_status();
+	if ( isset( $customer_email_map[ $status ], $emails[ $customer_email_map[ $status ] ] ) ) {
+		$emails[ $customer_email_map[ $status ] ]->trigger( $order_id, $order );
+	}
+
+	$order->update_meta_data( MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT, 1 );
+	$order->save();
+}
+
+/**
  * Mark order as paid via mtunicredit and apply configured WC status.
  *
  * @param WC_Order $order       WooCommerce order.
@@ -90,7 +159,22 @@ function mtuc_get_payment_gateway_title(): string {
 function mtuc_apply_payment_gateway_to_order( WC_Order $order, string $status_note = '' ): void {
 	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
 	$order->set_payment_method_title( mtuc_get_payment_gateway_title() );
-	$order->set_status( mtuc_get_payment_gateway_order_status(), $status_note, true );
+
+	$target_status = mtuc_get_payment_gateway_order_status();
+	$note          = '' !== $status_note ? $status_note : mtuc_get_payment_gateway_status_note();
+
+	if ( $order->get_status() !== $target_status ) {
+		$order->update_status( $target_status, $note );
+		return;
+	}
+
+	$order->save();
+	mtuc_send_leasing_order_notifications_once( $order );
+
+	if ( '' !== $note ) {
+		$order->add_order_note( $note );
+		$order->save();
+	}
 }
 
 /**
@@ -175,12 +259,19 @@ function mtuc_checkout_maybe_redirect_to_bank_on_thankyou(): void {
 		return;
 	}
 
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) ) {
+		return;
+	}
+
+	if ( ! Mtuc_Smartucf_Api_Client::is_trusted_redirect_url( $redirect_url, $shop ) ) {
+		return;
+	}
+
 	$order->update_meta_data( MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED, 1 );
 	$order->save();
 
-	nocache_headers();
-	wp_safe_redirect( $redirect_url );
-	exit;
+	Mtuc_Smartucf_Api_Client::redirect_browser( $redirect_url, $shop );
 }
 
 /**

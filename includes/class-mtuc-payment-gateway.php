@@ -19,7 +19,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 	 *
 	 * @var string
 	 */
-	public $order_status = 'pending';
+	public $order_status = 'on-hold';
 
 	/**
 	 * Constructor.
@@ -37,7 +37,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 		$this->title        = $this->get_option( 'title', __( 'УниКредит покупки на Кредит', 'mtunicredit' ) );
 		$this->description  = $this->get_option( 'description', __( 'Плащате стоката с УниКредит покупки на Кредит', 'mtunicredit' ) );
 		$this->enabled      = $this->get_option( 'enabled', 'yes' );
-		$this->order_status = $this->get_option( 'order_status', 'pending' );
+		$this->order_status = $this->get_option( 'order_status', 'on-hold' );
 
 		add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
 	}
@@ -73,8 +73,8 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 				'title'       => __( 'Състояние на поръчката', 'mtunicredit' ),
 				'type'        => 'select',
 				'class'       => 'wc-enhanced-select',
-				'description' => __( 'Състояние на поръчката след изпращане към банката.', 'mtunicredit' ),
-				'default'     => 'pending',
+				'description' => __( 'Препоръчително: „На изчакване“ — WooCommerce изпраща имейли при преход от „Чакащо плащане“. При „Чакащо плащане“ без промяна имейлите не се изпращат.', 'mtunicredit' ),
+				'default'     => 'on-hold',
 				'desc_tip'    => true,
 				'options'     => wc_get_order_statuses(),
 			),

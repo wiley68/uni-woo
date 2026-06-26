@@ -1205,6 +1205,24 @@ class WC_Session
 	}
 }
 
+class WC_Email
+{
+	public function trigger(int $order_id, $order = false): void
+	{
+	}
+}
+
+class WC_Emails
+{
+	/**
+	 * @return array<string, WC_Email>
+	 */
+	public function get_emails(): array
+	{
+		return array();
+	}
+}
+
 class WooCommerce
 {
 	/** @var WC_Cart|null */
@@ -1216,6 +1234,11 @@ class WooCommerce
 	public function payment_gateways(): WC_Payment_Gateways
 	{
 		return new WC_Payment_Gateways();
+	}
+
+	public function mailer(): WC_Emails
+	{
+		return new WC_Emails();
 	}
 }
 

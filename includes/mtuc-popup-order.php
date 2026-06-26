@@ -24,6 +24,9 @@ const MTUC_ORDER_META_SMARTUCF_REDIRECT_URL = '_mtuc_smartucf_redirect_url';
 /** Order meta: checkout thank-you already redirected the customer to the bank. */
 const MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED = '_mtuc_bank_redirect_dispatched';
 
+/** Order meta: leasing order emails dispatched manually (pending without status transition). */
+const MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT = '_mtuc_leasing_notifications_sent';
+
 /** Order meta prefix for credit calculation snapshot. */
 const MTUC_ORDER_META_PREFIX = '_mtuc_';
 

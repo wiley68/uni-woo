@@ -57,6 +57,64 @@ class Mtuc_Smartucf_Api_Client {
 	}
 
 	/**
+	 * SmartUCF application base URLs allowed for browser redirect.
+	 *
+	 * @param array<string, mixed> $shop Shop `data` object from CP.
+	 * @return array<int, string>
+	 */
+	public static function get_application_redirect_bases( array $shop ): array {
+		$bases = array(
+			untrailingslashit( (string) ( $shop['uni_test_application'] ?? '' ) ),
+			untrailingslashit( (string) ( $shop['uni_production_application'] ?? '' ) ),
+		);
+
+		return array_values( array_filter( $bases ) );
+	}
+
+	/**
+	 * Whether a redirect URL was issued by our SmartUCF integration.
+	 *
+	 * @param string               $redirect_url Candidate browser URL.
+	 * @param array<string, mixed> $shop         Shop `data` object from CP.
+	 * @return bool
+	 */
+	public static function is_trusted_redirect_url( string $redirect_url, array $shop ): bool {
+		$redirect_url = esc_url_raw( $redirect_url );
+		if ( '' === $redirect_url || false === filter_var( $redirect_url, FILTER_VALIDATE_URL ) ) {
+			return false;
+		}
+
+		$normalized = untrailingslashit( $redirect_url );
+		foreach ( self::get_application_redirect_bases( $shop ) as $base ) {
+			if ( 0 === stripos( $normalized, $base ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Redirect the browser to SmartUCF after validating the target host.
+	 *
+	 * wp_safe_redirect() only allows same-site hosts; SmartUCF is external.
+	 *
+	 * @param string               $redirect_url Candidate browser URL.
+	 * @param array<string, mixed> $shop         Shop `data` object from CP.
+	 * @return bool True when redirect was sent.
+	 */
+	public static function redirect_browser( string $redirect_url, array $shop ): bool {
+		if ( ! self::is_trusted_redirect_url( $redirect_url, $shop ) ) {
+			return false;
+		}
+
+		nocache_headers();
+		// phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- external bank URL validated above.
+		wp_redirect( $redirect_url );
+		exit;
+	}
+
+	/**
 	 * Absolute path to plugin SSL key file.
 	 *
 	 * @return string
