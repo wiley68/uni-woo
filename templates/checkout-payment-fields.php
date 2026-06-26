@@ -121,27 +121,33 @@ $process2            = ! empty( $popup['process2'] );
 						<span id="mtuc-checkout-gpr" class="mtuc-popup__percent"></span>
 					</div>
 				</div>
-			</div>
-		</div>
 
-		<?php if ( $process2 ) : ?>
-		<div class="mtuc-checkout-payment__customer mtuc-popup__form">
-			<div class="mtuc-popup__field">
-				<label class="mtuc-popup__field-label" for="mtuc-checkout-egn">
-					<?php esc_html_e( 'ЕГН', 'mtunicredit' ); ?>
-					<span class="mtuc-popup__required" aria-hidden="true">*</span>
-				</label>
-				<input type="text" name="mtuc_egn" id="mtuc-checkout-egn" class="mtuc-popup__input" required aria-required="true" inputmode="numeric" maxlength="10" pattern="\d{10}" autocomplete="off" />
-			</div>
-			<div class="mtuc-popup__field">
-				<label class="mtuc-popup__field-label" for="mtuc-checkout-phone2">
-					<?php esc_html_e( 'Втори телефон', 'mtunicredit' ); ?>
-					<span class="mtuc-popup__required" aria-hidden="true">*</span>
-				</label>
-				<input type="tel" name="mtuc_phone2" id="mtuc-checkout-phone2" class="mtuc-popup__input" required aria-required="true" inputmode="tel" autocomplete="tel" />
+				<?php if ( $process2 ) : ?>
+				<div class="mtuc-popup__row">
+					<div class="mtuc-popup__label">
+						<label for="mtuc-checkout-egn">
+							<?php esc_html_e( 'ЕГН', 'mtunicredit' ); ?>
+							<span class="mtuc-popup__required" aria-hidden="true">*</span>
+						</label>
+					</div>
+					<div class="mtuc-popup__value">
+						<input type="text" name="mtuc_egn" id="mtuc-checkout-egn" class="mtuc-popup__input" value="" required aria-required="true" inputmode="numeric" maxlength="10" pattern="\d{10}" autocomplete="off" />
+					</div>
+				</div>
+				<div class="mtuc-popup__row">
+					<div class="mtuc-popup__label">
+						<label for="mtuc-checkout-phone2">
+							<?php esc_html_e( 'Втори телефон', 'mtunicredit' ); ?>
+							<span class="mtuc-popup__required" aria-hidden="true">*</span>
+						</label>
+					</div>
+					<div class="mtuc-popup__value">
+						<input type="tel" name="mtuc_phone2" id="mtuc-checkout-phone2" class="mtuc-popup__input" value="" required aria-required="true" inputmode="tel" autocomplete="tel" />
+					</div>
+				</div>
+				<?php endif; ?>
 			</div>
 		</div>
-		<?php endif; ?>
 
 		<?php endif; ?>
 	</div>
