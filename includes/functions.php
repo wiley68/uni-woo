@@ -30,6 +30,91 @@ function mtuc_is_yes_flag( $value ): bool {
 }
 
 /**
+ * Whether the shop uses leasing Process 2 (WC + CP only, no SmartUCF).
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return bool
+ */
+function mtuc_is_shop_process_2( array $shop ): bool {
+	return 1 === (int) ( $shop['uni_proces'] ?? 0 );
+}
+
+/**
+ * Process 2 follow-up message shown in leasing emails.
+ *
+ * @return string
+ */
+function mtuc_get_process2_confirmation_message(): string {
+	return __( 'Очаквайте контакт за потвърждаване на направената от Вас заявка.', 'mtunicredit' );
+}
+
+/**
+ * Strip non-digits from an EGN input value.
+ *
+ * @param string $value Raw EGN.
+ * @return string
+ */
+function mtuc_sanitize_egn( string $value ): string {
+	$digits = preg_replace( '/\D/', '', $value );
+
+	return is_string( $digits ) ? $digits : '';
+}
+
+/**
+ * Validate Bulgarian EGN: 10 digits, first 8 are a valid YYYYMMDD date.
+ *
+ * @param string $egn Raw or sanitized EGN.
+ * @return bool
+ */
+function mtuc_validate_bulgarian_egn( string $egn ): bool {
+	$egn = mtuc_sanitize_egn( $egn );
+	if ( ! preg_match( '/^\d{10}$/', $egn ) ) {
+		return false;
+	}
+
+	$year  = (int) substr( $egn, 0, 4 );
+	$month = (int) substr( $egn, 4, 2 );
+	$day   = (int) substr( $egn, 6, 2 );
+
+	return checkdate( $month, $day, $year );
+}
+
+/**
+ * Validate a customer phone number (primary or secondary).
+ *
+ * @param string $phone Raw phone input.
+ * @return bool
+ */
+function mtuc_validate_customer_phone( string $phone ): bool {
+	$phone = preg_replace( '/[^0-9+() -]/', '', $phone );
+	$phone = is_string( $phone ) ? trim( $phone ) : '';
+
+	return '' !== $phone && preg_match( '/^[-0-9+() ]+$/', $phone ) && preg_match( '/\d/', $phone );
+}
+
+/**
+ * Parse shop notification emails from CP shop cache (`uni_email`).
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return array<int, string>
+ */
+function mtuc_parse_shop_notification_emails( array $shop ): array {
+	$raw   = isset( $shop['uni_email'] ) ? (string) $shop['uni_email'] : '';
+	$parts = preg_split( '/\s*,\s*/', $raw );
+	$parts = is_array( $parts ) ? $parts : array();
+
+	$emails = array();
+	foreach ( $parts as $part ) {
+		$part = trim( (string) $part );
+		if ( '' !== $part && is_email( $part ) ) {
+			$emails[] = $part;
+		}
+	}
+
+	return array_values( array_unique( $emails ) );
+}
+
+/**
  * Get shop configuration — uses cache when fresh, otherwise refreshes from CP.
  *
  * Wrapper for module code that needs shop data. The admin "refresh" button
@@ -1383,6 +1468,7 @@ function mtuc_enqueue_product_assets(): void {
 				: array(),
 			'currencyDual'         => ! empty( $popup_context['currency']['dual'] ),
 			'hideAddToCart'        => ! empty( $popup_context['hide_add_to_cart'] ),
+			'process2'             => ! empty( $popup_context['process2'] ),
 			'customer'             => isset( $popup_context['customer'] ) && is_array( $popup_context['customer'] )
 				? array(
 					'first_name' => (string) ( $popup_context['customer']['first_name'] ?? '' ),
@@ -1401,6 +1487,7 @@ function mtuc_enqueue_product_assets(): void {
 				'fieldRequired'  => __( 'Полето е задължително.', 'mtunicredit' ),
 				'phoneInvalid'   => __( 'Въведете валиден телефонен номер.', 'mtunicredit' ),
 				'emailInvalid'   => __( 'Въведете валиден e-mail адрес.', 'mtunicredit' ),
+				'egnInvalid'     => __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ),
 				'submitError'    => __( 'Заявката не може да бъде изпратена. Моля, опитайте отново.', 'mtunicredit' ),
 				'submitNoCalc'   => __( 'Липсват данни за изчисление. Моля, върнете се и изберете схема отново.', 'mtunicredit' ),
 				'submitting'     => __( 'Изпращане...', 'mtunicredit' ),

@@ -147,6 +147,8 @@ function mtuc_send_leasing_order_notifications_once( WC_Order $order ): void {
 
 	$order->update_meta_data( MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT, 1 );
 	$order->save();
+
+	mtuc_send_process2_uni_email_notifications( $order );
 }
 
 /**
@@ -467,6 +469,7 @@ function mtuc_get_checkout_payment_script_config( ?array $context = null ): arra
 		'source'           => 'checkout',
 		'offerType'        => 'standard',
 		'cartTotal'        => (float) ( $context['cart_total'] ?? 0 ),
+		'process2'         => ! empty( $popup_context['process2'] ),
 		'enabledSchemes'   => array_values( $enabled_schemes ),
 		'defaultSchemeKey' => isset( $popup_context['default_scheme_key'] ) ? (string) $popup_context['default_scheme_key'] : '',
 		'currencyDual'     => ! empty( $popup_context['currency']['dual'] ),
@@ -585,6 +588,60 @@ function mtuc_register_checkout_payment_hooks(): void {
 
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_checkout_payment_assets', 100 );
 	add_action( 'template_redirect', 'mtuc_checkout_maybe_redirect_to_bank_on_thankyou', 5 );
+	add_action( 'woocommerce_checkout_process', 'mtuc_checkout_validate_process2_fields' );
+	add_action( 'woocommerce_checkout_create_order', 'mtuc_checkout_save_process2_order_meta', 10, 2 );
+}
+
+/**
+ * Validate Process 2 fields during classic checkout.
+ *
+ * @return void
+ */
+function mtuc_checkout_validate_process2_fields(): void {
+	if ( ! isset( $_POST['payment_method'] ) || MTUC_PAYMENT_GATEWAY_ID !== sanitize_text_field( wp_unslash( (string) $_POST['payment_method'] ) ) ) {
+		return;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) || ! mtuc_is_shop_process_2( $shop ) ) {
+		return;
+	}
+
+	$validated = mtuc_validate_process2_fields_from_post( $_POST );
+	if ( is_wp_error( $validated ) ) {
+		wc_add_notice( $validated->get_error_message(), 'error' );
+	}
+}
+
+/**
+ * Persist Process 2 fields on the WooCommerce order during checkout.
+ *
+ * @param WC_Order             $order Order instance.
+ * @param array<string, mixed> $data  Checkout posted data.
+ * @return void
+ */
+function mtuc_checkout_save_process2_order_meta( $order, array $data ): void {
+	unset( $data );
+
+	if ( ! $order instanceof WC_Order ) {
+		return;
+	}
+
+	if ( ! isset( $_POST['payment_method'] ) || MTUC_PAYMENT_GATEWAY_ID !== sanitize_text_field( wp_unslash( (string) $_POST['payment_method'] ) ) ) {
+		return;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) || ! mtuc_is_shop_process_2( $shop ) ) {
+		return;
+	}
+
+	$validated = mtuc_validate_process2_fields_from_post( $_POST );
+	if ( is_wp_error( $validated ) ) {
+		return;
+	}
+
+	mtuc_save_order_process2_customer_meta( $order, $validated );
 }
 
 /**

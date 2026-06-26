@@ -39,6 +39,12 @@ const MTUC_BANK_STATUS_CP_SENT = 'cp_sent';
 /** Bank status: order sent to SmartUCF (step 3) — synced with CP as smartucf_sent. */
 const MTUC_BANK_STATUS_SMARTUCF_SENT = 'smartucf_sent';
 
+/** Bank status: Process 2 order created in CP (no SmartUCF). */
+const MTUC_BANK_STATUS_PROCESS2_CP_SENT = 'process2_cp_sent';
+
+/** Order meta: Process 2 uni_email shop notification sent. */
+const MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT = '_mtuc_process2_uni_email_sent';
+
 /**
  * Human-readable bank status labels (WC admin and CP API must stay aligned).
  *
@@ -46,9 +52,10 @@ const MTUC_BANK_STATUS_SMARTUCF_SENT = 'smartucf_sent';
  */
 function mtuc_get_bank_status_labels(): array {
 	return array(
-		MTUC_BANK_STATUS_WC_CREATED    => __( 'Създаден в магазина', 'mtunicredit' ),
-		MTUC_BANK_STATUS_CP_SENT       => __( 'Създаден в КП Банка', 'mtunicredit' ),
-		MTUC_BANK_STATUS_SMARTUCF_SENT => __( 'Създаден в SmartUCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_WC_CREATED       => __( 'Създаден в магазина', 'mtunicredit' ),
+		MTUC_BANK_STATUS_CP_SENT          => __( 'Създаден в КП Банка', 'mtunicredit' ),
+		MTUC_BANK_STATUS_SMARTUCF_SENT    => __( 'Създаден в SmartUCF', 'mtunicredit' ),
+		MTUC_BANK_STATUS_PROCESS2_CP_SENT => __( 'Създаден от Процес 2', 'mtunicredit' ),
 	);
 }
 
@@ -189,12 +196,35 @@ function mtuc_enqueue_thankyou_styles(): void {
 }
 
 /**
+ * Bank status key used when a CP order is first created.
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return string
+ */
+function mtuc_get_cp_create_bank_status_key( array $shop ): string {
+	return mtuc_is_shop_process_2( $shop )
+		? MTUC_BANK_STATUS_PROCESS2_CP_SENT
+		: MTUC_BANK_STATUS_CP_SENT;
+}
+
+/**
+ * Whether a WooCommerce order was submitted via Process 2.
+ *
+ * @param WC_Order $order Order instance.
+ * @return bool
+ */
+function mtuc_is_process2_order( WC_Order $order ): bool {
+	return MTUC_BANK_STATUS_PROCESS2_CP_SENT === (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS );
+}
+
+/**
  * Validate popup step-2 customer payload from POST.
  *
- * @param array<string, mixed> $post Raw POST.
+ * @param array<string, mixed> $post      Raw POST.
+ * @param bool                 $process2  Whether Process 2 extra fields are required.
  * @return array<string, string>|WP_Error
  */
-function mtuc_validate_popup_customer_payload( array $post ) {
+function mtuc_validate_popup_customer_payload( array $post, bool $process2 = false ) {
 	$first_name = isset( $post['first_name'] ) ? sanitize_text_field( wp_unslash( $post['first_name'] ) ) : '';
 	$last_name  = isset( $post['last_name'] ) ? sanitize_text_field( wp_unslash( $post['last_name'] ) ) : '';
 	$address    = isset( $post['address'] ) ? sanitize_text_field( wp_unslash( $post['address'] ) ) : '';
@@ -213,20 +243,86 @@ function mtuc_validate_popup_customer_payload( array $post ) {
 	if ( '' === $address ) {
 		return new WP_Error( 'mtuc_missing_address', __( 'Полето „Адрес“ е задължително.', 'mtunicredit' ) );
 	}
-	if ( '' === $phone || ! preg_match( '/^[-0-9+() ]+$/', $phone ) || ! preg_match( '/\d/', $phone ) ) {
+	if ( ! mtuc_validate_customer_phone( $phone ) ) {
 		return new WP_Error( 'mtuc_invalid_phone', __( 'Въведете валиден телефонен номер.', 'mtunicredit' ) );
 	}
 	if ( '' === $email || ! is_email( $email ) ) {
 		return new WP_Error( 'mtuc_invalid_email', __( 'Въведете валиден e-mail адрес.', 'mtunicredit' ) );
 	}
 
-	return array(
+	$customer = array(
 		'first_name' => $first_name,
 		'last_name'  => $last_name,
 		'address'    => $address,
 		'phone'      => $phone,
 		'email'      => $email,
 	);
+
+	if ( $process2 ) {
+		$egn    = isset( $post['egn'] ) ? mtuc_sanitize_egn( (string) wp_unslash( $post['egn'] ) ) : '';
+		$phone2 = isset( $post['phone2'] ) ? sanitize_text_field( wp_unslash( $post['phone2'] ) ) : '';
+		$phone2 = preg_replace( '/[^0-9+() -]/', '', $phone2 );
+		$phone2 = is_string( $phone2 ) ? trim( $phone2 ) : '';
+
+		if ( '' === $egn ) {
+			return new WP_Error( 'mtuc_missing_egn', __( 'Полето „ЕГН“ е задължително.', 'mtunicredit' ) );
+		}
+		if ( ! mtuc_validate_bulgarian_egn( $egn ) ) {
+			return new WP_Error( 'mtuc_invalid_egn', __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ) );
+		}
+		if ( ! mtuc_validate_customer_phone( $phone2 ) ) {
+			return new WP_Error( 'mtuc_invalid_phone2', __( 'Въведете валиден втори телефонен номер.', 'mtunicredit' ) );
+		}
+
+		$customer['egn']     = $egn;
+		$customer['phone2']  = $phone2;
+	}
+
+	return $customer;
+}
+
+/**
+ * Validate Process 2-only fields from POST (checkout).
+ *
+ * @param array<string, mixed> $post Raw POST.
+ * @return array{egn:string,phone2:string}|WP_Error
+ */
+function mtuc_validate_process2_fields_from_post( array $post ) {
+	$egn    = isset( $post['mtuc_egn'] ) ? mtuc_sanitize_egn( (string) wp_unslash( $post['mtuc_egn'] ) ) : '';
+	$phone2 = isset( $post['mtuc_phone2'] ) ? sanitize_text_field( wp_unslash( $post['mtuc_phone2'] ) ) : '';
+	$phone2 = preg_replace( '/[^0-9+() -]/', '', $phone2 );
+	$phone2 = is_string( $phone2 ) ? trim( $phone2 ) : '';
+
+	if ( '' === $egn ) {
+		return new WP_Error( 'mtuc_missing_egn', __( 'Полето „ЕГН“ е задължително.', 'mtunicredit' ) );
+	}
+	if ( ! mtuc_validate_bulgarian_egn( $egn ) ) {
+		return new WP_Error( 'mtuc_invalid_egn', __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ) );
+	}
+	if ( ! mtuc_validate_customer_phone( $phone2 ) ) {
+		return new WP_Error( 'mtuc_invalid_phone2', __( 'Въведете валиден втори телефонен номер.', 'mtunicredit' ) );
+	}
+
+	return array(
+		'egn'    => $egn,
+		'phone2' => $phone2,
+	);
+}
+
+/**
+ * Persist Process 2 customer fields on the order (not sent to CP).
+ *
+ * @param WC_Order              $order    Order instance.
+ * @param array<string, string> $customer Validated customer fields.
+ * @return void
+ */
+function mtuc_save_order_process2_customer_meta( WC_Order $order, array $customer ): void {
+	if ( isset( $customer['egn'] ) && '' !== $customer['egn'] ) {
+		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'egn', (string) $customer['egn'] );
+	}
+	if ( isset( $customer['phone2'] ) && '' !== $customer['phone2'] ) {
+		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'phone2', (string) $customer['phone2'] );
+	}
 }
 
 /**
@@ -813,6 +909,16 @@ function mtuc_complete_order_bank_submission(
 
 	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
 
+	if ( mtuc_is_shop_process_2( $shop ) ) {
+		$order->save();
+
+		return array(
+			'redirect_url' => mtuc_get_popup_order_thankyou_url( $order ),
+			'cp_order_id'  => $cp_order_id,
+			'process2'     => true,
+		);
+	}
+
 	$smartucf_result = mtuc_send_cart_popup_order_to_smartucf( $order, $customer, $calculation, $shop );
 	if ( is_wp_error( $smartucf_result ) ) {
 		mtuc_handle_popup_order_bank_unavailable( $order );
@@ -896,6 +1002,18 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 	if ( is_wp_error( $shop ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		return $shop;
+	}
+
+	if ( mtuc_is_shop_process_2( $shop ) ) {
+		$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
+		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
+		if ( '' === $egn || ! mtuc_validate_bulgarian_egn( $egn ) || ! mtuc_validate_customer_phone( $phone2 ) ) {
+			mtuc_release_popup_submit_lock( $lock_key );
+			return new WP_Error(
+				'mtuc_missing_process2_fields',
+				__( 'Моля, попълнете валидни ЕГН и втори телефон.', 'mtunicredit' )
+			);
+		}
 	}
 
 	$cart_total = (float) ( $cart_state['cart_total'] ?? 0 );
@@ -1316,7 +1434,7 @@ function mtuc_build_cp_cart_order_payload(
 	}
 
 	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
-	$cp_status    = mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_CP_SENT );
+	$cp_status    = mtuc_get_cp_order_status_payload( mtuc_get_cp_create_bank_status_key( $shop ) );
 
 	return array(
 		'order_id'      => $order_number,
@@ -1371,7 +1489,7 @@ function mtuc_send_cart_popup_order_to_cp(
 		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
 	}
 
-	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_CP_SENT );
+	mtuc_update_order_bank_status( $order, mtuc_get_cp_create_bank_status_key( $shop ) );
 	$order->save();
 
 	return $response;
@@ -1526,6 +1644,10 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
 	}
 
+	if ( mtuc_is_shop_process_2( $shop ) ) {
+		mtuc_save_order_process2_customer_meta( $order, $customer );
+	}
+
 	$submission = mtuc_complete_order_bank_submission( $order, $customer, $calculation, $shop );
 	if ( is_wp_error( $submission ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
@@ -1540,14 +1662,18 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		mtuc_send_popup_bank_unavailable_response( $order );
 	}
 
+	$is_process2 = ! empty( $submission['process2'] );
+
 	wp_send_json_success(
 		array(
 			'order_id'     => $order->get_id(),
 			'order_number' => $order->get_order_number(),
 			'cp_order_id'  => (int) ( $submission['cp_order_id'] ?? 0 ),
-			'bank_status'  => MTUC_BANK_STATUS_SMARTUCF_SENT,
+			'bank_status'  => $is_process2 ? MTUC_BANK_STATUS_PROCESS2_CP_SENT : MTUC_BANK_STATUS_SMARTUCF_SENT,
 			'redirect_url' => $submission['redirect_url'],
-			'message'      => __( 'Пренасочване към UniCredit за довършване на заявката.', 'mtunicredit' ),
+			'message'      => $is_process2
+				? mtuc_get_process2_confirmation_message()
+				: __( 'Пренасочване към UniCredit за довършване на заявката.', 'mtunicredit' ),
 		)
 	);
 }
@@ -1622,7 +1748,7 @@ function mtuc_build_cp_order_payload(
 	}
 
 	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
-	$cp_status    = mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_CP_SENT );
+	$cp_status    = mtuc_get_cp_order_status_payload( mtuc_get_cp_create_bank_status_key( $shop ) );
 
 	$product_id_for_cp = $variation_id > 0 ? $variation_id : $parent_id;
 	$cp_products       = mtuc_build_cp_products_fields(
@@ -1701,7 +1827,7 @@ function mtuc_send_popup_order_to_cp(
 		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
 	}
 
-	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_CP_SENT );
+	mtuc_update_order_bank_status( $order, mtuc_get_cp_create_bank_status_key( $shop ) );
 
 	$order->save();
 
@@ -1848,7 +1974,10 @@ function mtuc_ajax_popup_submit(): void {
 		);
 	}
 
-	$customer = mtuc_validate_popup_customer_payload( $_POST );
+	$shop = mtuc_get_shop_data();
+	$process2 = ! is_wp_error( $shop ) && is_array( $shop ) && mtuc_is_shop_process_2( $shop );
+
+	$customer = mtuc_validate_popup_customer_payload( $_POST, $process2 );
 	if ( is_wp_error( $customer ) ) {
 		wp_send_json_error( array( 'message' => $customer->get_error_message() ), 400 );
 	}
@@ -1973,6 +2102,10 @@ function mtuc_ajax_popup_submit(): void {
 		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
 	}
 
+	if ( $process2 ) {
+		mtuc_save_order_process2_customer_meta( $order, $customer );
+	}
+
 	$cp_result = mtuc_send_popup_order_to_cp(
 		$order,
 		$customer,
@@ -1992,6 +2125,22 @@ function mtuc_ajax_popup_submit(): void {
 	}
 
 	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+
+	if ( $process2 ) {
+		mtuc_apply_payment_gateway_to_order( $order );
+		mtuc_release_popup_submit_lock( $lock_key );
+
+		wp_send_json_success(
+			array(
+				'order_id'     => $order->get_id(),
+				'order_number' => $order->get_order_number(),
+				'cp_order_id'  => $cp_order_id,
+				'bank_status'  => MTUC_BANK_STATUS_PROCESS2_CP_SENT,
+				'redirect_url' => mtuc_get_popup_order_thankyou_url( $order ),
+				'message'      => mtuc_get_process2_confirmation_message(),
+			)
+		);
+	}
 
 	$smartucf_result = mtuc_send_popup_order_to_smartucf(
 		$order,
@@ -2201,6 +2350,20 @@ function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 	$rows[ __( 'Обща дължима сума', 'mtunicredit' ) ]   = number_format( $total, 2, '.', '' );
 	$rows[ __( 'ГЛП / ГПР', 'mtunicredit' ) ]           = number_format( $glp, 2, '.', '' ) . '% / ' . number_format( $gpr, 2, '.', '' ) . '%';
 
+	if ( mtuc_is_process2_order( $order ) ) {
+		$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
+		if ( '' !== $egn ) {
+			$rows[ __( 'ЕГН', 'mtunicredit' ) ] = $egn;
+		}
+
+		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
+		if ( '' !== $phone2 ) {
+			$rows[ __( 'Втори телефон', 'mtunicredit' ) ] = $phone2;
+		}
+
+		$rows[ __( 'Съобщение', 'mtunicredit' ) ] = mtuc_get_process2_confirmation_message();
+	}
+
 	return $rows;
 }
 
@@ -2308,4 +2471,93 @@ function mtuc_email_after_order_table_credit_details( $order, $sent_to_admin, $p
 	}
 
 	mtuc_render_order_credit_email_section( $order, (bool) $plain_text );
+}
+
+/**
+ * Send Process 2 leasing notification to shop uni_email recipients (excluding store admin).
+ *
+ * @param WC_Order $order Order instance.
+ * @return void
+ */
+function mtuc_send_process2_uni_email_notifications( WC_Order $order ): void {
+	if ( ! mtuc_is_process2_order( $order ) ) {
+		return;
+	}
+
+	if ( (int) $order->get_meta( MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT ) ) {
+		return;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+		return;
+	}
+
+	$recipients = mtuc_parse_shop_notification_emails( $shop );
+	if ( empty( $recipients ) ) {
+		return;
+	}
+
+	$admin_email = sanitize_email( (string) get_option( 'admin_email' ) );
+	if ( '' !== $admin_email ) {
+		$recipients = array_values(
+			array_filter(
+				$recipients,
+				static function ( $email ) use ( $admin_email ) {
+					return strtolower( $email ) !== strtolower( $admin_email );
+				}
+			)
+		);
+	}
+
+	if ( empty( $recipients ) ) {
+		$order->update_meta_data( MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT, 1 );
+		$order->save();
+		return;
+	}
+
+	$rows = mtuc_get_admin_order_credit_meta_rows( $order );
+	if ( empty( $rows ) ) {
+		return;
+	}
+
+	$to      = array_shift( $recipients );
+	$cc      = $recipients;
+	$subject = sprintf(
+		/* translators: 1: site name, 2: order number */
+		__( '%1$s — лизинг заявка №%2$s', 'mtunicredit' ),
+		wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
+		$order->get_order_number()
+	);
+
+	$body  = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111;">';
+	$body .= '<p style="margin:0 0 16px;">' . esc_html__( 'Нова заявка за лизинг (Процес 2).', 'mtunicredit' ) . '</p>';
+	$body .= '<h2 style="margin:0 0 8px;font-size:16px;">' . esc_html__( 'УниКредит лизинг', 'mtunicredit' ) . '</h2>';
+	$body .= '<table cellspacing="0" cellpadding="6" style="width:100%;max-width:640px;border-collapse:collapse;" border="1">';
+	$body .= '<tbody>';
+
+	foreach ( $rows as $label => $value ) {
+		$body .= '<tr>'
+			. '<th style="text-align:left;padding:8px;border:1px solid #eee;">' . esc_html( (string) $label ) . '</th>'
+			. '<td style="text-align:left;padding:8px;border:1px solid #eee;">' . esc_html( (string) $value ) . '</td>'
+			. '</tr>';
+	}
+
+	$body .= '</tbody></table></div>';
+
+	$headers = array( 'Content-Type: text/html; charset=UTF-8' );
+	if ( ! empty( $cc ) ) {
+		$headers[] = 'Cc: ' . implode( ', ', $cc );
+	}
+
+	if ( function_exists( 'wc_mail' ) ) {
+		$sent = wc_mail( $to, $subject, $body, $headers );
+	} else {
+		$sent = wp_mail( $to, $subject, $body, $headers );
+	}
+
+	if ( $sent ) {
+		$order->update_meta_data( MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT, 1 );
+		$order->save();
+	}
 }

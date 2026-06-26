@@ -787,28 +787,6 @@ function mtuc_is_cart_split_required(): bool {
 }
 
 /**
- * Parse shop notification emails from CP shop cache (`uni_email`).
- *
- * @param array<string, mixed> $shop Shop `data` object from CP.
- * @return array<int, string>
- */
-function mtuc_parse_shop_notification_emails( array $shop ): array {
-	$raw   = isset( $shop['uni_email'] ) ? (string) $shop['uni_email'] : '';
-	$parts = preg_split( '/\s*,\s*/', $raw );
-	$parts = is_array( $parts ) ? $parts : array();
-
-	$emails = array();
-	foreach ( $parts as $part ) {
-		$part = trim( (string) $part );
-		if ( '' !== $part && is_email( $part ) ) {
-			$emails[] = $part;
-		}
-	}
-
-	return array_values( array_unique( $emails ) );
-}
-
-/**
  * Stable fingerprint for cart split notification deduplication.
  *
  * @param array<int, array<string, mixed>> $lines      Cart line entries.
@@ -1091,6 +1069,7 @@ function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_t
 		'has_standard'            => ! empty( $common_standard ),
 		'has_promo'               => ! empty( $common_promo ),
 		'hide_add_to_cart'        => true,
+		'process2'                => mtuc_is_shop_process_2( $shop ),
 	);
 
 	if ( 'checkout' === $source ) {
@@ -1389,6 +1368,7 @@ function mtuc_enqueue_cart_assets(): void {
 			'productId'            => 0,
 			'cartTotal'            => (float) ( $context['cart_total'] ?? 0 ),
 			'hideAddToCart'        => true,
+			'process2'             => ! empty( $popup_context['process2'] ),
 			'enabledMonthsByOffer' => isset( $popup_context['enabled_months_by_offer'] ) && is_array( $popup_context['enabled_months_by_offer'] )
 				? $popup_context['enabled_months_by_offer']
 				: array(),
@@ -1407,6 +1387,7 @@ function mtuc_enqueue_cart_assets(): void {
 				'fieldRequired'     => __( 'Полето е задължително.', 'mtunicredit' ),
 				'phoneInvalid'      => __( 'Въведете валиден телефонен номер.', 'mtunicredit' ),
 				'emailInvalid'      => __( 'Въведете валиден e-mail адрес.', 'mtunicredit' ),
+				'egnInvalid'        => __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ),
 				'submitError'       => __( 'Заявката не може да бъде изпратена. Моля, опитайте отново.', 'mtunicredit' ),
 				'submitNoCalc'      => __( 'Липсват данни за изчисление. Моля, върнете се и изберете схема отново.', 'mtunicredit' ),
 				'submitting'        => __( 'Изпращане...', 'mtunicredit' ),

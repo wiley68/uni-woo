@@ -832,6 +832,7 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
 		'has_promo'               => ! empty( $context['promo']['visible'] ),
 		'source'                  => 'product',
 		'hide_add_to_cart'        => false,
+		'process2'                => mtuc_is_shop_process_2( $shop ),
 	);
 }
 

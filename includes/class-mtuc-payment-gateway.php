@@ -188,6 +188,14 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			return false;
 		}
 
+		if ( mtuc_is_shop_process_2( $shop ) ) {
+			$validated = mtuc_validate_process2_fields_from_post( $_POST );
+			if ( is_wp_error( $validated ) ) {
+				wc_add_notice( $validated->get_error_message(), 'error' );
+				return false;
+			}
+		}
+
 		return true;
 	}
 

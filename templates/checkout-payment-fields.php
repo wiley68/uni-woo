@@ -22,6 +22,7 @@ $default_scheme_key  = isset( $popup['default_scheme_key'] ) ? (string) $popup['
 $data_config         = mtuc_build_checkout_payment_fields_data_config( $popup );
 $parva_row_class     = $show_first_vnoska ? '' : ' mtuc-popup__row--hidden';
 $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual' : '';
+$process2            = ! empty( $popup['process2'] );
 ?>
 <div
 	class="mtuc-checkout-payment"
@@ -122,6 +123,26 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 				</div>
 			</div>
 		</div>
+
+		<?php if ( $process2 ) : ?>
+		<div class="mtuc-checkout-payment__customer mtuc-popup__form">
+			<div class="mtuc-popup__field">
+				<label class="mtuc-popup__field-label" for="mtuc-checkout-egn">
+					<?php esc_html_e( 'ЕГН', 'mtunicredit' ); ?>
+					<span class="mtuc-popup__required" aria-hidden="true">*</span>
+				</label>
+				<input type="text" name="mtuc_egn" id="mtuc-checkout-egn" class="mtuc-popup__input" required aria-required="true" inputmode="numeric" maxlength="10" pattern="\d{10}" autocomplete="off" />
+			</div>
+			<div class="mtuc-popup__field">
+				<label class="mtuc-popup__field-label" for="mtuc-checkout-phone2">
+					<?php esc_html_e( 'Втори телефон', 'mtunicredit' ); ?>
+					<span class="mtuc-popup__required" aria-hidden="true">*</span>
+				</label>
+				<input type="tel" name="mtuc_phone2" id="mtuc-checkout-phone2" class="mtuc-popup__input" required aria-required="true" inputmode="tel" autocomplete="tel" />
+			</div>
+		</div>
+		<?php endif; ?>
+
 		<?php endif; ?>
 	</div>
 </div>
