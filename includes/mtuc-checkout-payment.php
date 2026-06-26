@@ -400,7 +400,7 @@ function mtuc_register_checkout_payment_hooks(): void {
 		return;
 	}
 
-	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_checkout_payment_assets' );
+	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_checkout_payment_assets', 100 );
 	add_action( 'wp_ajax_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
 	add_action( 'wp_ajax_nopriv_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
 }

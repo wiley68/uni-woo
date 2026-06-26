@@ -33,7 +33,7 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 	<input type="hidden" name="mtuc_parva" id="mtuc-checkout-parva-hidden" value="0" />
 
 	<div class="mtuc-checkout-payment__panel mtuc-popup__panel">
-		<h3 class="mtuc-checkout-payment__title"><?php esc_html_e( 'Избор на схема за лизинг', 'mtunicredit' ); ?></h3>
+		<p class="mtuc-checkout-payment__intro"><?php esc_html_e( 'Можете да изберете \'Срок за кредита\', предпочитаната от Вас \'Месечна вноска\', както и при желание \'Първоначална вноска\'. След което да потвърдите избора си. Ще бъдете прехвърлени към страницата на UniCredit за довършване на покупката си на кредит.', 'mtunicredit' ); ?></p>
 
 		<?php if ( ! $has_schemes ) : ?>
 			<p class="mtuc-checkout-payment__notice"><?php esc_html_e( 'Няма налични схеми за текущата поръчка.', 'mtunicredit' ); ?></p>
