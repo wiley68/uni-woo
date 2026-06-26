@@ -7,8 +7,43 @@
 	let calculateTimer = null;
 	let lastCalculation = null;
 	let activeConfig = null;
+	let activeController = null;
 
 	const getConfig = () => activeConfig || window.mtucCheckout || null;
+
+	const normalizeSchemeList = (value) => {
+		if (Array.isArray(value)) {
+			return value;
+		}
+		if (value && typeof value === "object") {
+			return Object.values(value);
+		}
+		return [];
+	};
+
+	const readConfigFromRoot = ($root) => {
+		const raw = $root.attr("data-mtuc-config");
+		if (!raw) {
+			return {};
+		}
+
+		try {
+			const parsed = JSON.parse(raw);
+			return parsed && typeof parsed === "object" ? parsed : {};
+		} catch (error) {
+			return {};
+		}
+	};
+
+	const mergeCheckoutConfig = (baseConfig, $root) => {
+		const rootConfig = readConfigFromRoot($root);
+		return Object.assign({}, baseConfig || {}, rootConfig, {
+			enabledSchemes: normalizeSchemeList(
+				rootConfig.enabledSchemes ||
+					(baseConfig && baseConfig.enabledSchemes),
+			),
+		});
+	};
 
 	const formatPercent = (value) => {
 		const num = Math.abs(parseFloat(value) || 0);
@@ -49,37 +84,13 @@
 	};
 
 	const getEnabledSchemes = (config) => {
-		if (
-			Array.isArray(config.enabledSchemes) &&
-			config.enabledSchemes.length
-		) {
-			return config.enabledSchemes;
-		}
-
-		const offerType = config.offerType || "standard";
-		if (
-			config.enabledMonthsByOffer &&
-			Array.isArray(config.enabledMonthsByOffer[offerType])
-		) {
-			return config.enabledMonthsByOffer[offerType];
-		}
-
-		return [];
+		return normalizeSchemeList(config && config.enabledSchemes);
 	};
 
 	const getDefaultSchemeKey = (config) => {
-		if (config.defaultSchemeKey) {
+		if (config && config.defaultSchemeKey) {
 			return String(config.defaultSchemeKey);
 		}
-
-		const offerType = config.offerType || "standard";
-		if (
-			config.defaultSchemeByOffer &&
-			config.defaultSchemeByOffer[offerType]
-		) {
-			return String(config.defaultSchemeByOffer[offerType]);
-		}
-
 		return "";
 	};
 
@@ -147,43 +158,57 @@
 	) => {
 		const enabled = getEnabledSchemes(config);
 		const preferred = getDefaultSchemeKey(config);
-
-		$months.empty();
+		const currentValue = String($months.val() || "");
 
 		if (!enabled.length) {
-			$months.append(
-				$("<option>", {
-					value: "",
-					text: config.i18n.noMonths || "Няма налични срокове",
-				}),
-			);
+			if (!$months.find("option").length) {
+				$months.append(
+					$("<option>", {
+						value: "",
+						text: config.i18n.noMonths || "Няма налични срокове",
+					}),
+				);
+			}
 			$months.prop("disabled", true);
 			syncHiddenFields($schemeKey, $parva, $parvaHidden, $months);
 			return "";
 		}
 
-		const schemeKeys = [];
-		enabled.forEach((entry) => {
-			const months = getMonthOptionValue(entry);
-			const desc = getMonthOptionDesc(entry);
-			const schemeKey = getMonthOptionKey(entry);
-			if (!months || !schemeKey) {
-				return;
-			}
-			schemeKeys.push(schemeKey);
-			$months.append(
-				$("<option>", {
-					value: schemeKey,
-					text: formatMonthLabel(months, desc, config),
-				}),
-			);
-		});
+		const hasServerOptions = $months.find("option").length > 0;
+		if (!hasServerOptions) {
+			$months.empty();
+			const schemeKeys = [];
+			enabled.forEach((entry) => {
+				const months = getMonthOptionValue(entry);
+				const desc = getMonthOptionDesc(entry);
+				const schemeKey = getMonthOptionKey(entry);
+				if (!months || !schemeKey) {
+					return;
+				}
+				schemeKeys.push(schemeKey);
+				$months.append(
+					$("<option>", {
+						value: schemeKey,
+						text: formatMonthLabel(months, desc, config),
+					}),
+				);
+			});
+			$months.prop("disabled", false);
 
-		$months.prop("disabled", false);
-		if (schemeKeys.indexOf(String(preferred)) !== -1) {
-			$months.val(String(preferred));
-		} else if (schemeKeys.length) {
-			$months.val(schemeKeys[0]);
+			if (schemeKeys.indexOf(currentValue) !== -1) {
+				$months.val(currentValue);
+			} else if (schemeKeys.indexOf(String(preferred)) !== -1) {
+				$months.val(String(preferred));
+			} else if (schemeKeys.length) {
+				$months.val(schemeKeys[0]);
+			}
+		} else {
+			$months.prop("disabled", false);
+			if (currentValue) {
+				$months.val(currentValue);
+			} else if (preferred) {
+				$months.val(preferred);
+			}
 		}
 
 		syncHiddenFields($schemeKey, $parva, $parvaHidden, $months);
@@ -191,20 +216,29 @@
 	};
 
 	const bindCheckoutPayment = (options) => {
-		const config = options.config || getConfig();
+		const baseConfig = options.config || getConfig();
 		const mode = options.mode || "classic";
 		const $scope = options.$scope || $(document);
 
-		if (!config) {
+		if (!baseConfig) {
 			return null;
 		}
-
-		activeConfig = config;
 
 		const $root = $scope.find("#mtuc-checkout-payment");
 		if (!$root.length) {
 			return null;
 		}
+
+		if (
+			activeController &&
+			typeof activeController.destroy === "function"
+		) {
+			activeController.destroy();
+			activeController = null;
+		}
+
+		const config = mergeCheckoutConfig(baseConfig, $root);
+		activeConfig = config;
 
 		const $offerType = $scope.find("#mtuc-checkout-offer-type");
 		const $schemeKey = $scope.find("#mtuc-checkout-scheme-key");
@@ -285,6 +319,7 @@
 				$parvaHidden,
 				config,
 			);
+			syncFn();
 			if ($months.prop("disabled")) {
 				lastCalculation = null;
 				return;
@@ -313,20 +348,11 @@
 					}
 					return true;
 				});
-
-			$(document.body)
-				.off("updated_checkout" + NS)
-				.on("updated_checkout" + NS, function () {
-					if (!$("#mtuc-checkout-payment").length) {
-						return;
-					}
-					refreshSchemes();
-				});
 		}
 
 		refreshSchemes();
 
-		return {
+		const controller = {
 			validate: () => {
 				syncFn();
 				if (!String($schemeKey.val() || "")) {
@@ -356,9 +382,13 @@
 				$months.off(NS);
 				$parva.off(NS);
 				$("form.checkout").off("checkout_place_order_mtunicredit" + NS);
-				$(document.body).off("updated_checkout" + NS);
 			},
 		};
+
+		activeController = controller;
+		window.mtucCheckoutBlocksController = controller;
+
+		return controller;
 	};
 
 	window.mtucInitCheckoutPayment = function (container, config) {
@@ -373,21 +403,36 @@
 
 	window.mtucGetCheckoutPaymentValidation = function () {
 		if (
-			window.mtucCheckoutBlocksController &&
-			typeof window.mtucCheckoutBlocksController.validate === "function"
+			activeController &&
+			typeof activeController.validate === "function"
 		) {
-			return window.mtucCheckoutBlocksController.validate();
+			return activeController.validate();
 		}
 		return { valid: true, paymentMethodData: {} };
 	};
 
-	$(function () {
-		if (typeof window.mtucCheckout === "undefined") {
-			return;
-		}
-		if (window.mtucCheckout.blocks) {
+	const bootClassicCheckoutPayment = () => {
+		if (
+			typeof window.mtucCheckout === "undefined" ||
+			window.mtucCheckout.blocks
+		) {
 			return;
 		}
 		window.mtucInitCheckoutPayment(null, window.mtucCheckout);
+	};
+
+	$(function () {
+		bootClassicCheckoutPayment();
+
+		$(document.body).on("updated_checkout" + NS, function () {
+			if (!$("#mtuc-checkout-payment").length) {
+				return;
+			}
+			bootClassicCheckoutPayment();
+		});
+
+		$(document.body).on("payment_method_selected" + NS, function () {
+			window.setTimeout(bootClassicCheckoutPayment, 0);
+		});
 	});
 })(jQuery);

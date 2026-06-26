@@ -15,12 +15,21 @@ $popup               = isset( $context['popup'] ) && is_array( $context['popup']
 $show_first_vnoska   = ! empty( $popup['show_first_vnoska'] );
 $currency            = isset( $popup['currency'] ) && is_array( $popup['currency'] ) ? $popup['currency'] : mtuc_get_currency_display_config( array( 'uni_eur' => 0 ) );
 $has_schemes         = ! empty( $popup['has_schemes'] );
+$enabled_schemes     = isset( $popup['enabled_schemes'] ) && is_array( $popup['enabled_schemes'] )
+	? array_values( $popup['enabled_schemes'] )
+	: array();
+$default_scheme_key  = isset( $popup['default_scheme_key'] ) ? (string) $popup['default_scheme_key'] : '';
+$data_config         = mtuc_build_checkout_payment_fields_data_config( $popup );
 $parva_row_class     = $show_first_vnoska ? '' : ' mtuc-popup__row--hidden';
 $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual' : '';
 ?>
-<div class="mtuc-checkout-payment" id="mtuc-checkout-payment">
+<div
+	class="mtuc-checkout-payment"
+	id="mtuc-checkout-payment"
+	data-mtuc-config="<?php echo esc_attr( $data_config ); ?>"
+>
 	<input type="hidden" name="mtuc_offer_type" id="mtuc-checkout-offer-type" value="standard" />
-	<input type="hidden" name="mtuc_scheme_key" id="mtuc-checkout-scheme-key" value="" />
+	<input type="hidden" name="mtuc_scheme_key" id="mtuc-checkout-scheme-key" value="<?php echo esc_attr( $default_scheme_key ); ?>" />
 	<input type="hidden" name="mtuc_parva" id="mtuc-checkout-parva-hidden" value="0" />
 
 	<div class="mtuc-checkout-payment__panel mtuc-popup__panel">
@@ -44,7 +53,24 @@ $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual'
 						<label for="mtuc-checkout-months"><?php esc_html_e( 'Брой месеци за погасяване', 'mtunicredit' ); ?></label>
 					</div>
 					<div class="mtuc-popup__value">
-						<select id="mtuc-checkout-months" name="mtuc_checkout_months_ui" class="mtuc-popup__select"></select>
+						<select id="mtuc-checkout-months" name="mtuc_checkout_months_ui" class="mtuc-popup__select">
+							<?php foreach ( $enabled_schemes as $scheme_index => $scheme_option ) : ?>
+								<?php
+								if ( ! is_array( $scheme_option ) ) {
+									continue;
+								}
+								$scheme_key = isset( $scheme_option['key'] ) ? (string) $scheme_option['key'] : '';
+								if ( '' === $scheme_key ) {
+									continue;
+								}
+								$is_selected = ( '' !== $default_scheme_key && $scheme_key === $default_scheme_key )
+									|| ( '' === $default_scheme_key && 0 === (int) $scheme_index );
+								?>
+								<option value="<?php echo esc_attr( $scheme_key ); ?>"<?php selected( $is_selected ); ?>>
+									<?php echo esc_html( mtuc_format_checkout_scheme_option_label( $scheme_option ) ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
 					</div>
 				</div>
 

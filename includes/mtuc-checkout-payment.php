@@ -286,12 +286,54 @@ function mtuc_get_checkout_payment_script_config( ?array $context = null ): arra
 		'source'           => 'checkout',
 		'offerType'        => 'standard',
 		'cartTotal'        => (float) ( $context['cart_total'] ?? 0 ),
-		'enabledSchemes'   => $enabled_schemes,
+		'enabledSchemes'   => array_values( $enabled_schemes ),
 		'defaultSchemeKey' => isset( $popup_context['default_scheme_key'] ) ? (string) $popup_context['default_scheme_key'] : '',
 		'currencyDual'     => ! empty( $popup_context['currency']['dual'] ),
 		'showFirstVnoska'  => ! empty( $popup_context['show_first_vnoska'] ),
 		'i18n'             => mtuc_get_calculator_i18n_strings(),
 	);
+}
+
+/**
+ * Human-readable label for a checkout scheme select option.
+ *
+ * @param array<string, mixed> $option Scheme option row.
+ * @return string
+ */
+function mtuc_format_checkout_scheme_option_label( array $option ): string {
+	$months = max( 0, (int) ( $option['months'] ?? 0 ) );
+	$desc   = trim( (string) ( $option['desc'] ?? '' ) );
+	$label  = sprintf(
+		/* translators: %d: number of months */
+		__( '%d месеца', 'mtunicredit' ),
+		$months
+	);
+
+	if ( '' !== $desc ) {
+		$label .= ' - ' . $desc;
+	}
+
+	return $label . "\xc2\xa0\xc2\xa0\xc2\xa0";
+}
+
+/**
+ * Build inline checkout config for data-mtuc-config attribute.
+ *
+ * @param array<string, mixed> $popup Checkout popup context.
+ * @return string JSON attribute value.
+ */
+function mtuc_build_checkout_payment_fields_data_config( array $popup ): string {
+	$enabled_schemes = isset( $popup['enabled_schemes'] ) && is_array( $popup['enabled_schemes'] )
+		? array_values( $popup['enabled_schemes'] )
+		: array();
+
+	$config = array(
+		'enabledSchemes'   => $enabled_schemes,
+		'defaultSchemeKey' => isset( $popup['default_scheme_key'] ) ? (string) $popup['default_scheme_key'] : '',
+		'offerType'        => 'standard',
+	);
+
+	return (string) wp_json_encode( $config );
 }
 
 /**
