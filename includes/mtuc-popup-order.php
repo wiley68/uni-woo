@@ -18,6 +18,12 @@ const MTUC_ORDER_META_BANK_STATUS = '_mtuc_bank_status';
 /** Order meta: show bank-unavailable notice once on thank-you page. */
 const MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE = '_mtuc_bank_unavailable_notice';
 
+/** Order meta: SmartUCF browser redirect URL (checkout thank-you hop). */
+const MTUC_ORDER_META_SMARTUCF_REDIRECT_URL = '_mtuc_smartucf_redirect_url';
+
+/** Order meta: checkout thank-you already redirected the customer to the bank. */
+const MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED = '_mtuc_bank_redirect_dispatched';
+
 /** Order meta prefix for credit calculation snapshot. */
 const MTUC_ORDER_META_PREFIX = '_mtuc_';
 
@@ -824,6 +830,10 @@ function mtuc_complete_order_bank_submission(
 	}
 
 	mtuc_update_order_bank_status( $order, MTUC_BANK_STATUS_SMARTUCF_SENT );
+	$order->update_meta_data(
+		MTUC_ORDER_META_SMARTUCF_REDIRECT_URL,
+		esc_url_raw( (string) $smartucf_result['redirect_url'] )
+	);
 	$order->save();
 
 	return array(

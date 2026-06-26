@@ -224,16 +224,20 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			);
 		}
 
+		mtuc_empty_checkout_cart_after_order();
+
+		$thankyou_url = mtuc_get_checkout_order_thankyou_url( $order );
+
 		if ( ! empty( $result['bank_unavailable'] ) ) {
 			return array(
 				'result'   => 'success',
-				'redirect' => $result['redirect_url'],
+				'redirect' => $thankyou_url,
 			);
 		}
 
 		return array(
 			'result'   => 'success',
-			'redirect' => $result['redirect_url'],
+			'redirect' => $thankyou_url,
 		);
 	}
 }

@@ -94,6 +94,96 @@ function mtuc_apply_payment_gateway_to_order( WC_Order $order, string $status_no
 }
 
 /**
+ * Whether the order was placed via WooCommerce checkout (not product/cart popup).
+ *
+ * @param WC_Order $order Order instance.
+ * @return bool
+ */
+function mtuc_is_checkout_gateway_order( WC_Order $order ): bool {
+	$source = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'submission_source' );
+
+	return 'checkout' === $source;
+}
+
+/**
+ * Clear cart after a successful checkout placement (same as core BACS/COD gateways).
+ *
+ * @return void
+ */
+function mtuc_empty_checkout_cart_after_order(): void {
+	if ( ! function_exists( 'WC' ) || ! WC()->cart ) {
+		return;
+	}
+
+	WC()->cart->empty_cart();
+}
+
+/**
+ * Thank-you URL used after checkout payment (before bank hop).
+ *
+ * @param WC_Order $order Order instance.
+ * @return string
+ */
+function mtuc_get_checkout_order_thankyou_url( WC_Order $order ): string {
+	return mtuc_get_popup_order_thankyou_url( $order );
+}
+
+/**
+ * One-time server redirect from order-received to SmartUCF (checkout only).
+ *
+ * Keeps the standard WooCommerce checkout completion lifecycle (emails, session)
+ * while avoiding duplicate bank submissions on thank-you refresh.
+ *
+ * @return void
+ */
+function mtuc_checkout_maybe_redirect_to_bank_on_thankyou(): void {
+	if ( ! function_exists( 'is_order_received_page' ) || ! is_order_received_page() ) {
+		return;
+	}
+
+	global $wp;
+
+	$order_id = (int) ( $wp->query_vars['order-received'] ?? 0 );
+	if ( $order_id <= 0 ) {
+		return;
+	}
+
+	$order = wc_get_order( $order_id );
+	if ( ! $order instanceof WC_Order ) {
+		return;
+	}
+
+	if ( MTUC_PAYMENT_GATEWAY_ID !== $order->get_payment_method() || ! mtuc_is_checkout_gateway_order( $order ) ) {
+		return;
+	}
+
+	$order_key = isset( $_GET['key'] ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) ) : '';
+	if ( '' === $order_key || ! hash_equals( $order->get_order_key(), $order_key ) ) {
+		return;
+	}
+
+	if ( (int) $order->get_meta( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE ) ) {
+		return;
+	}
+
+	if ( (int) $order->get_meta( MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED ) ) {
+		return;
+	}
+
+	$redirect_url = (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_REDIRECT_URL );
+	if ( '' === $redirect_url ) {
+		return;
+	}
+
+	$order->update_meta_data( MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED, 1 );
+	$order->save();
+
+	nocache_headers();
+	wp_safe_redirect( $redirect_url );
+	exit;
+}
+
+/**
  * Load classic payment gateway class after WooCommerce is available.
  *
  * @return bool
@@ -401,6 +491,7 @@ function mtuc_register_checkout_payment_hooks(): void {
 	}
 
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_checkout_payment_assets', 100 );
+	add_action( 'template_redirect', 'mtuc_checkout_maybe_redirect_to_bank_on_thankyou', 5 );
 	add_action( 'wp_ajax_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
 	add_action( 'wp_ajax_nopriv_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
 }

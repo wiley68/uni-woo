@@ -413,7 +413,11 @@ function sanitize_key( $key ): string
 }
 
 function sanitize_email($email) {}
-function absint($maybeint) {}
+
+function absint($maybeint): int
+{
+	return 0;
+}
 
 function wp_enqueue_script($handle, $src = '', $deps = array(), $ver = false, $in_footer = false) {}
 function wp_enqueue_style($handle, $src = '', $deps = array(), $ver = false, $media = 'all') {}
