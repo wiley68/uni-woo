@@ -569,42 +569,51 @@ function mtuc_build_cart_calculator_context(): ?array {
 		$button_height = 56;
 	}
 
+	$standard = null !== $standard_offer
+		? array_merge(
+			$standard_offer,
+			array(
+				'visible'    => true,
+				'image_only' => false,
+			)
+		)
+		: ( $has_any_standard
+			? array(
+				'type'       => 'standard',
+				'visible'    => true,
+				'image_only' => true,
+			)
+			: null );
+
+	$promo = null !== $promo_offer
+		? array_merge(
+			$promo_offer,
+			array(
+				'visible'    => true,
+				'image_only' => false,
+			)
+		)
+		: ( $has_any_promo
+			? array(
+				'type'       => 'promo',
+				'visible'    => true,
+				'image_only' => true,
+			)
+			: null );
+
+	// No common cart scheme: one image-only standard button is enough (same alert on both).
+	if ( is_array( $standard ) && ! empty( $standard['image_only'] ) ) {
+		$promo = null;
+	}
+
 	return array(
 		'source'           => 'cart',
 		'cart_total'       => $cart_total,
 		'lines'            => $lines,
 		'common_standard'  => $common_standard,
 		'common_promo'     => $common_promo,
-		'standard'         => null !== $standard_offer
-			? array_merge(
-				$standard_offer,
-				array(
-					'visible'    => true,
-					'image_only' => false,
-				)
-			)
-			: ( $has_any_standard
-				? array(
-					'type'       => 'standard',
-					'visible'    => true,
-					'image_only' => true,
-				)
-				: null ),
-		'promo'            => null !== $promo_offer
-			? array_merge(
-				$promo_offer,
-				array(
-					'visible'    => true,
-					'image_only' => false,
-				)
-			)
-			: ( $has_any_promo
-				? array(
-					'type'       => 'promo',
-					'visible'    => true,
-					'image_only' => true,
-				)
-				: null ),
+		'standard'         => $standard,
+		'promo'            => $promo,
 		'show_installment' => mtuc_is_yes_flag( $shop['uni_vnoska'] ?? 0 ),
 		'buttons_in_row'   => 1 === (int) ( $shop['uni_button_row'] ?? 1 ),
 		'button_width'     => $button_width,
@@ -1152,7 +1161,7 @@ function mtuc_enqueue_cart_assets(): void {
 				'submitNoCalc'      => __( 'Липсват данни за изчисление. Моля, върнете се и изберете схема отново.', 'mtunicredit' ),
 				'submitting'        => __( 'Изпращане...', 'mtunicredit' ),
 				'processing'        => __( 'Обработване на заявката. Моля, изчакайте...', 'mtunicredit' ),
-				'cartSplitRequired' => __( 'Не може да закупите цялата количка на изплащане. Моля, разделете поръчката си на отделни продукти и закупувайте всеки на лизинг поотделно.', 'mtunicredit' ),
+				'cartSplitRequired' => __( 'Не може да закупите цялата количка на изплащане. Моля, разделете поръчката си ако желаете да я закупите на изплащане.', 'mtunicredit' ),
 			),
 		)
 	);

@@ -125,11 +125,12 @@
 			data.standard,
 			showInstallment,
 		);
-		const hasPromo = applyOfferButton(
-			$promoBtn,
-			data.promo,
-			showInstallment,
-		);
+		let hasPromo = applyOfferButton($promoBtn, data.promo, showInstallment);
+
+		if (data.standard && data.standard.image_only) {
+			$promoBtn.hide();
+			hasPromo = false;
+		}
 
 		if ($root.length) {
 			$root.toggleClass(
