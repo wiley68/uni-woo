@@ -1250,26 +1250,16 @@ function mtuc_calculate_cart_popup_credit(
 		return new WP_Error( 'mtuc_cart_invalid_coeff', __( 'Липсва валиден коефициент за изчисление.', 'mtunicredit' ) );
 	}
 
-	$scheme = array(
-		'filter'      => null,
-		'coeff_entry' => $coeff_entry,
-		'kop_code'    => $kop_code,
-		'kop_desc'    => '',
-	);
-
 	$kimb = isset( $coeff_entry['coeff'] ) ? (float) $coeff_entry['coeff'] : 0.0;
 	if ( $kimb <= 0 ) {
 		return new WP_Error( 'mtuc_cart_invalid_coeff', __( 'Липсва валиден коефициент за изчисление.', 'mtunicredit' ) );
 	}
 
-	$show_parva   = mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 );
-	$parva_locked = false;
-
-	if ( ! $show_parva ) {
-		$parva = 0.0;
-	} else {
-		$parva = max( 0.0, min( round( $parva, 2 ), $cart_total ) );
-	}
+	$filter      = $filter_id > 0 ? mtuc_get_shop_schema_filter_by_id( $shop, $filter_id ) : null;
+	$parva_state = mtuc_resolve_parva_calculation_state( $shop, $cart_total, $months, $parva, $filter );
+	$parva       = $parva_state['parva'];
+	$parva_locked = $parva_state['parva_locked'];
+	$show_parva  = $parva_state['show_parva'];
 
 	$loan_amount = round( $cart_total - $parva, 2 );
 	if ( $loan_amount <= 0 ) {

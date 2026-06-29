@@ -1298,17 +1298,10 @@ function mtuc_calculate_popup_credit(
 		return new WP_Error( 'mtuc_popup_invalid_coeff', __( 'Липсва валиден коефициент за изчисление.', 'mtunicredit' ) );
 	}
 
-	$show_parva   = mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 );
-	$parva_locked = false;
-
-	if ( null !== $filter && 1 === (int) ( $filter['uni_parva'] ?? 0 ) ) {
-		$parva        = round( $price / $months, 2 );
-		$parva_locked = true;
-	} elseif ( ! $show_parva ) {
-		$parva = 0.0;
-	} else {
-		$parva = max( 0.0, min( round( $parva, 2 ), $price ) );
-	}
+	$parva_state  = mtuc_resolve_parva_calculation_state( $shop, $price, $months, $parva, $filter );
+	$parva        = $parva_state['parva'];
+	$parva_locked = $parva_state['parva_locked'];
+	$show_parva   = $parva_state['show_parva'];
 
 	$loan_amount = round( $price - $parva, 2 );
 	if ( $loan_amount <= 0 ) {

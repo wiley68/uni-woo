@@ -718,7 +718,7 @@
 				(data.gpr_display || formatPercent(data.gpr)) + "%",
 			);
 
-			if (data.show_parva) {
+			if (data.show_parva || data.parva_locked) {
 				$parvaRow.removeClass("mtuc-popup__row--hidden");
 			} else {
 				$parvaRow.addClass("mtuc-popup__row--hidden");

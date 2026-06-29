@@ -831,6 +831,78 @@ function mtuc_schema_filter_matches_product( array $filter, int $product_id, arr
 }
 
 /**
+ * Lookup a schema filter row by CP filter id.
+ *
+ * @param array<string, mixed> $shop      Shop `data` object from CP.
+ * @param int                  $filter_id Schema filter id.
+ * @return array<string, mixed>|null
+ */
+function mtuc_get_shop_schema_filter_by_id( array $shop, int $filter_id ): ?array {
+	if ( $filter_id <= 0 ) {
+		return null;
+	}
+
+	$by_schema = $shop['kop']['by_schema'] ?? null;
+	if ( ! is_array( $by_schema ) ) {
+		return null;
+	}
+
+	$filters = $by_schema['filters'] ?? null;
+	if ( ! is_array( $filters ) ) {
+		return null;
+	}
+
+	foreach ( $filters as $filter ) {
+		if ( is_array( $filter ) && $filter_id === (int) ( $filter['id'] ?? 0 ) ) {
+			return $filter;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Resolve parva amount and display flags for popup/cart calculators.
+ *
+ * Filter-level `uni_parva` overrides shop `uni_first_vnoska` and locks the value.
+ *
+ * @param array<string, mixed>      $shop       Shop data.
+ * @param float                     $price      Product price or cart total.
+ * @param int                       $months     Installment count.
+ * @param float                     $user_parva User-entered initial payment.
+ * @param array<string, mixed>|null $filter     Matching schema filter row.
+ * @return array{parva:float,parva_locked:bool,show_parva:bool}
+ */
+function mtuc_resolve_parva_calculation_state(
+	array $shop,
+	float $price,
+	int $months,
+	float $user_parva,
+	?array $filter = null
+): array {
+	$show_parva   = mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 );
+	$parva_locked = false;
+	$parva        = 0.0;
+
+	if ( null !== $filter && 1 === (int) ( $filter['uni_parva'] ?? 0 ) && $months > 0 ) {
+		$parva        = round( $price / $months, 2 );
+		$parva_locked = true;
+	} elseif ( $show_parva ) {
+		$parva = max( 0.0, min( round( $user_parva, 2 ), $price ) );
+	}
+
+	if ( $parva_locked ) {
+		$show_parva = true;
+	}
+
+	return array(
+		'parva'        => $parva,
+		'parva_locked' => $parva_locked,
+		'show_parva'   => $show_parva,
+	);
+}
+
+/**
  * Whether a schema filter value is set (non-null, non-empty).
  *
  * @param mixed $value Filter field value.
