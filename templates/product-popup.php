@@ -225,47 +225,10 @@ $consents            = isset( $popup['consents'] ) && is_array( $popup['consents
 							<?php endif; ?>
 						</div>
 
-						<?php if ( ! empty( $consents ) ) : ?>
-						<div class="mtuc-popup__consents" aria-label="<?php esc_attr_e( 'Съгласия', 'mtunicredit' ); ?>">
-							<?php foreach ( $consents as $mtuc_consent ) : ?>
-								<?php
-								$mtuc_consent_id           = (int) ( $mtuc_consent['id'] ?? 0 );
-								$mtuc_consent_name         = (string) ( $mtuc_consent['name'] ?? '' );
-								$mtuc_consent_url          = (string) ( $mtuc_consent['url'] ?? '' );
-								$mtuc_consent_has_checkbox = ! empty( $mtuc_consent['has_checkbox'] );
-								$mtuc_consent_input_id     = 'mtuc-popup-consent-' . $mtuc_consent_id;
-								$mtuc_consent_item_class   = 'mtuc-popup__consent' . ( $mtuc_consent_has_checkbox ? '' : ' mtuc-popup__consent--info' );
-								?>
-								<div class="<?php echo esc_attr( $mtuc_consent_item_class ); ?>">
-									<?php if ( $mtuc_consent_has_checkbox ) : ?>
-										<input
-											type="checkbox"
-											class="mtuc-popup__consent-checkbox"
-											id="<?php echo esc_attr( $mtuc_consent_input_id ); ?>"
-											name="mtuc_consent[]"
-											value="<?php echo esc_attr( (string) $mtuc_consent_id ); ?>"
-											data-mtuc-consent-id="<?php echo esc_attr( (string) $mtuc_consent_id ); ?>"
-										/>
-										<label class="mtuc-popup__consent-label" for="<?php echo esc_attr( $mtuc_consent_input_id ); ?>">
-											<?php if ( '' !== $mtuc_consent_url ) : ?>
-												<a href="<?php echo esc_url( $mtuc_consent_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $mtuc_consent_name ); ?></a>
-											<?php else : ?>
-												<?php echo esc_html( $mtuc_consent_name ); ?>
-											<?php endif; ?>
-										</label>
-									<?php else : ?>
-										<p class="mtuc-popup__consent-text">
-											<?php if ( '' !== $mtuc_consent_url ) : ?>
-												<a href="<?php echo esc_url( $mtuc_consent_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $mtuc_consent_name ); ?></a>
-											<?php else : ?>
-												<?php echo esc_html( $mtuc_consent_name ); ?>
-											<?php endif; ?>
-										</p>
-									<?php endif; ?>
-								</div>
-							<?php endforeach; ?>
-						</div>
-						<?php endif; ?>
+						<?php
+						// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in partial.
+						echo mtuc_render_shop_consents_markup( $consents, 'mtuc-popup-consent' );
+						?>
 
 						<div class="mtuc-popup__actions mtuc-popup__actions--step2">
 							<div class="mtuc-popup__actions-group">

@@ -119,6 +119,15 @@
 	line-height: 1.45;
 }
 
+:is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__consents {
+	margin-top: 16px;
+	margin-bottom: 0;
+}
+
+:is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__consents :where(a) {
+	color: inherit;
+}
+
 :is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__calc-fields {
 	box-sizing: border-box;
 	width: 100%;
@@ -292,4 +301,33 @@
 	:is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__value .mtuc-popup__input {
 		width: 100%;
 	}
+}
+
+/* Classic checkout: tooltip when place order is blocked by unchecked consents. */
+.mtuc-place-order-tooltip {
+	position: fixed;
+	z-index: 999999;
+	width: max-content;
+	max-width: min(300px, 90vw);
+	padding: 8px 12px;
+	border-radius: 6px;
+	background: #1d2327;
+	color: #fff;
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1.45;
+	text-align: center;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+	pointer-events: none;
+	transform: translateX(-50%);
+}
+
+.mtuc-place-order-tooltip::after {
+	content: "";
+	position: absolute;
+	top: 100%;
+	left: 50%;
+	border: 6px solid transparent;
+	border-top-color: #1d2327;
+	transform: translateX(-50%);
 }

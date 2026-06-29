@@ -23,6 +23,7 @@ $data_config         = mtuc_build_checkout_payment_fields_data_config( $popup );
 $parva_row_class     = $show_first_vnoska ? '' : ' mtuc-popup__row--hidden';
 $currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual' : '';
 $process2            = ! empty( $popup['process2'] );
+$consents            = isset( $popup['consents'] ) && is_array( $popup['consents'] ) ? $popup['consents'] : array();
 ?>
 <div
 	class="mtuc-checkout-payment"
@@ -150,5 +151,10 @@ $process2            = ! empty( $popup['process2'] );
 		</div>
 
 		<?php endif; ?>
+
+		<?php
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in partial.
+		echo mtuc_render_shop_consents_markup( $consents, 'mtuc-checkout-consent' );
+		?>
 	</div>
 </div>

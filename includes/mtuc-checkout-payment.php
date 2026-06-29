@@ -386,6 +386,8 @@ function mtuc_get_calculator_i18n_strings(): array {
 		'monthsLabel'    => __( '%d месеца', 'mtunicredit' ),
 		'noMonths'       => __( 'Няма налични срокове за тази поръчка.', 'mtunicredit' ),
 		'schemeRequired' => __( 'Моля, изберете схема за погасяване.', 'mtunicredit' ),
+		'consentsRequired' => __( 'Моля, приемете всички задължителни съгласия.', 'mtunicredit' ),
+		'consentsTooltip'  => __( 'Моля, първо приемете общите условия, за да продължите с поръчката.', 'mtunicredit' ),
 		'offerStandard'  => __( 'Стандарт', 'mtunicredit' ),
 		'offerPromo'     => __( 'Промо', 'mtunicredit' ),
 	);

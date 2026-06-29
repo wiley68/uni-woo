@@ -196,6 +196,12 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			}
 		}
 
+		$consents_valid = mtuc_validate_mandatory_consents_from_post( $_POST, $shop );
+		if ( is_wp_error( $consents_valid ) ) {
+			wc_add_notice( $consents_valid->get_error_message(), 'error' );
+			return false;
+		}
+
 		return true;
 	}
 

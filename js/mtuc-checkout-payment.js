@@ -3,6 +3,8 @@
 
 	const PARVA_CALCULATE_DELAY = 900;
 	const NS = ".mtucCheckout";
+	const GATEWAY_ID = "mtunicredit";
+	const PLACE_ORDER_LOCK = "mtucPlaceOrderLock";
 
 	let calculateTimer = null;
 	let lastCalculation = null;
@@ -125,7 +127,158 @@
 		$parvaHidden.val(parva.toFixed(2));
 	};
 
-	const applyCalculation = (data, $parva, $parvaRow, syncFn) => {
+	const isOurPaymentSelected = () => {
+		const $checked = $('input[name="payment_method"]:checked');
+		return $checked.length && $checked.val() === GATEWAY_ID;
+	};
+
+	const getConsentCheckboxes = ($scope) => {
+		return $scope.find(
+			"#mtuc-checkout-payment .mtuc-popup__consent-checkbox",
+		);
+	};
+
+	const areMandatoryConsentsChecked = ($scope) => {
+		const $boxes = getConsentCheckboxes($scope);
+		if (!$boxes.length) {
+			return true;
+		}
+
+		let allChecked = true;
+		$boxes.each(function () {
+			if (!this.checked) {
+				allChecked = false;
+				return false;
+			}
+		});
+
+		return allChecked;
+	};
+
+	const getCheckedConsentIds = ($scope) => {
+		const ids = [];
+		getConsentCheckboxes($scope)
+			.filter(":checked")
+			.each(function () {
+				const value = String($(this).val() || "").trim();
+				if (value) {
+					ids.push(value);
+				}
+			});
+		return ids;
+	};
+
+	const releasePlaceOrderButton = () => {
+		const $btn = $("form.checkout #place_order");
+		if (!$btn.length || !$btn.data(PLACE_ORDER_LOCK)) {
+			return;
+		}
+
+		$btn.prop("disabled", false)
+			.removeClass("disabled")
+			.removeData(PLACE_ORDER_LOCK);
+	};
+
+	const hidePlaceOrderConsentsTooltip = () => {
+		$(".mtuc-place-order-tooltip").remove();
+	};
+
+	const unwrapPlaceOrderButton = () => {
+		const $btn = $("form.checkout #place_order");
+		if (!$btn.length) {
+			return;
+		}
+
+		const $wrap = $btn.parent(".mtuc-place-order-wrap");
+		if ($wrap.length) {
+			$wrap.replaceWith($btn);
+		}
+	};
+
+	const releasePlaceOrderConsentsTooltip = () => {
+		hidePlaceOrderConsentsTooltip();
+		$("form.checkout").off(
+			"mousemove" + NS + "ConsentHint mouseleave" + NS + "ConsentHint",
+		);
+		unwrapPlaceOrderButton();
+	};
+
+	const isPointerOverPlaceOrder = (event) => {
+		const button = document.getElementById("place_order");
+		if (!button || typeof event.clientX !== "number") {
+			return false;
+		}
+
+		const rect = button.getBoundingClientRect();
+		return (
+			event.clientX >= rect.left &&
+			event.clientX <= rect.right &&
+			event.clientY >= rect.top &&
+			event.clientY <= rect.bottom
+		);
+	};
+
+	const showPlaceOrderConsentsTooltip = (message) => {
+		const button = document.getElementById("place_order");
+		if (!button) {
+			return;
+		}
+
+		let $tooltip = $("body > .mtuc-place-order-tooltip");
+		if (!$tooltip.length) {
+			$tooltip = $("<div>", {
+				class: "mtuc-place-order-tooltip",
+				role: "tooltip",
+			}).appendTo(document.body);
+		}
+
+		$tooltip.text(message);
+		$tooltip.css({ visibility: "hidden", display: "block" });
+
+		const rect = button.getBoundingClientRect();
+		const tooltipHeight = $tooltip.outerHeight() || 0;
+		const viewportPadding = 8;
+		let top = rect.top - tooltipHeight - 10;
+		top = Math.max(viewportPadding, top);
+
+		$tooltip.css({
+			position: "fixed",
+			top: top + "px",
+			left: rect.left + rect.width / 2 + "px",
+			transform: "translateX(-50%)",
+			visibility: "visible",
+		});
+	};
+
+	const bindPlaceOrderConsentsTooltipListeners = (message) => {
+		const $form = $("form.checkout");
+		if (!$form.length) {
+			return;
+		}
+
+		$form.off(
+			"mousemove" + NS + "ConsentHint mouseleave" + NS + "ConsentHint",
+		);
+		$form.on("mousemove" + NS + "ConsentHint", function (event) {
+			if (isPointerOverPlaceOrder(event)) {
+				showPlaceOrderConsentsTooltip(message);
+				return;
+			}
+
+			hidePlaceOrderConsentsTooltip();
+		});
+		$form.on("mouseleave" + NS + "ConsentHint", function () {
+			hidePlaceOrderConsentsTooltip();
+		});
+	};
+
+	const applyCalculation = (
+		data,
+		$parva,
+		$parvaRow,
+		syncFn,
+		onReadyChange,
+	) => {
 		lastCalculation = data;
 		setDualAmount("price", data.price_display);
 		setDualAmount("loan", data.loan_display);
@@ -147,6 +300,9 @@
 		$parva.val(data.parva);
 		$parva.prop("readonly", !!data.parva_locked);
 		syncFn();
+		if (typeof onReadyChange === "function") {
+			onReadyChange();
+		}
 	};
 
 	const rebuildMonthsSelect = (
@@ -246,9 +402,77 @@
 		const $months = $scope.find("#mtuc-checkout-months");
 		const $parva = $scope.find("#mtuc-checkout-parva");
 		const $parvaRow = $scope.find("#mtuc-checkout-parva-row");
+		const $consentCheckboxes = getConsentCheckboxes($scope);
 
 		const syncFn = () =>
 			syncHiddenFields($schemeKey, $parva, $parvaHidden, $months);
+
+		const isCheckoutPaymentReady = () => {
+			if (!String($schemeKey.val() || "")) {
+				return false;
+			}
+			if (!lastCalculation) {
+				return false;
+			}
+			return areMandatoryConsentsChecked($scope);
+		};
+
+		const isBlockedByConsentsOnly = () => {
+			return (
+				isOurPaymentSelected() &&
+				!!String($schemeKey.val() || "") &&
+				!!lastCalculation &&
+				!areMandatoryConsentsChecked($scope)
+			);
+		};
+
+		const syncPlaceOrderConsentsTooltip = () => {
+			releasePlaceOrderConsentsTooltip();
+
+			if (mode !== "classic" || !isBlockedByConsentsOnly()) {
+				return;
+			}
+
+			const message =
+				config.i18n.consentsTooltip ||
+				config.i18n.consentsRequired ||
+				"Моля, първо приемете общите условия, за да продължите с поръчката.";
+
+			bindPlaceOrderConsentsTooltipListeners(message);
+		};
+
+		const updatePlaceOrderButtonState = () => {
+			const $btn = $("form.checkout #place_order");
+			if (!$btn.length) {
+				releasePlaceOrderConsentsTooltip();
+				return;
+			}
+
+			if (!isOurPaymentSelected()) {
+				releasePlaceOrderButton();
+				releasePlaceOrderConsentsTooltip();
+				return;
+			}
+
+			if (isCheckoutPaymentReady()) {
+				$btn.prop("disabled", false)
+					.removeClass("disabled")
+					.removeData(PLACE_ORDER_LOCK);
+				releasePlaceOrderConsentsTooltip();
+				return;
+			}
+
+			$btn.prop("disabled", true)
+				.addClass("disabled")
+				.data(PLACE_ORDER_LOCK, 1);
+			syncPlaceOrderConsentsTooltip();
+		};
+
+		const onCheckoutReadyChange = () => {
+			if (mode === "classic") {
+				updatePlaceOrderButtonState();
+			}
+		};
 
 		const calculateNow = () => {
 			const schemeKey = String($months.val() || "");
@@ -256,6 +480,7 @@
 			if (!scheme.months) {
 				lastCalculation = null;
 				syncFn();
+				onCheckoutReadyChange();
 				return;
 			}
 
@@ -280,10 +505,12 @@
 							$parva,
 							$parvaRow,
 							syncFn,
+							onCheckoutReadyChange,
 						);
 						return;
 					}
 					lastCalculation = null;
+					onCheckoutReadyChange();
 					window.alert(
 						(response && response.data && response.data.message) ||
 							config.i18n.calcError,
@@ -291,6 +518,7 @@
 				})
 				.fail((xhr) => {
 					lastCalculation = null;
+					onCheckoutReadyChange();
 					let message = config.i18n.calcError;
 					if (
 						xhr.responseJSON &&
@@ -322,6 +550,7 @@
 			syncFn();
 			if ($months.prop("disabled")) {
 				lastCalculation = null;
+				onCheckoutReadyChange();
 				return;
 			}
 			calculateNow();
@@ -329,6 +558,15 @@
 
 		$months.off(NS).on("change" + NS, calculateNow);
 		$parva.off(NS).on("input" + NS + " change" + NS, scheduleCalculate);
+		$consentCheckboxes.off(NS).on("change" + NS, onCheckoutReadyChange);
+		$scope.off("mousedown" + NS, ".mtuc-popup__consent-label a");
+		$scope.on(
+			"mousedown" + NS,
+			".mtuc-popup__consent-label a",
+			function (event) {
+				event.stopPropagation();
+			},
+		);
 
 		if (mode === "classic") {
 			$("form.checkout")
@@ -346,42 +584,64 @@
 						window.alert(config.i18n.calcError);
 						return false;
 					}
+					if (!areMandatoryConsentsChecked($scope)) {
+						window.alert(
+							config.i18n.consentsRequired ||
+								"Моля, приемете всички задължителни съгласия.",
+						);
+						return false;
+					}
 					return true;
 				});
 		}
 
 		refreshSchemes();
 
-		const controller = {
-			validate: () => {
-				syncFn();
-				if (!String($schemeKey.val() || "")) {
-					return {
-						valid: false,
-						message:
-							config.i18n.schemeRequired ||
-							"Моля, изберете схема за погасяване.",
-					};
-				}
-				if (!lastCalculation) {
-					return {
-						valid: false,
-						message: config.i18n.calcError,
-					};
-				}
+		const buildValidationResult = () => {
+			syncFn();
+			if (!String($schemeKey.val() || "")) {
 				return {
-					valid: true,
-					paymentMethodData: {
-						mtuc_scheme_key: String($schemeKey.val() || ""),
-						mtuc_offer_type: "standard",
-						mtuc_parva: String($parvaHidden.val() || "0"),
-					},
+					valid: false,
+					message:
+						config.i18n.schemeRequired ||
+						"Моля, изберете схема за погасяване.",
 				};
-			},
+			}
+			if (!lastCalculation) {
+				return {
+					valid: false,
+					message: config.i18n.calcError,
+				};
+			}
+			if (!areMandatoryConsentsChecked($scope)) {
+				return {
+					valid: false,
+					message:
+						config.i18n.consentsRequired ||
+						"Моля, приемете всички задължителни съгласия.",
+				};
+			}
+			return {
+				valid: true,
+				paymentMethodData: {
+					mtuc_scheme_key: String($schemeKey.val() || ""),
+					mtuc_offer_type: "standard",
+					mtuc_parva: String($parvaHidden.val() || "0"),
+					mtuc_consent: getCheckedConsentIds($scope),
+				},
+			};
+		};
+
+		const controller = {
+			validate: () => buildValidationResult(),
 			destroy: () => {
 				$months.off(NS);
 				$parva.off(NS);
+				$consentCheckboxes.off(NS);
+				$scope.off("mousedown" + NS, ".mtuc-popup__consent-label a");
 				$("form.checkout").off("checkout_place_order_mtunicredit" + NS);
+				releasePlaceOrderButton();
+				releasePlaceOrderConsentsTooltip();
 			},
 		};
 
@@ -432,7 +692,13 @@
 		});
 
 		$(document.body).on("payment_method_selected" + NS, function () {
-			window.setTimeout(bootClassicCheckoutPayment, 0);
+			window.setTimeout(function () {
+				bootClassicCheckoutPayment();
+				if (!isOurPaymentSelected()) {
+					releasePlaceOrderButton();
+					releasePlaceOrderConsentsTooltip();
+				}
+			}, 0);
 		});
 	});
 })(jQuery);

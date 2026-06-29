@@ -223,6 +223,87 @@ function mtuc_get_shop_consents( array $shop ): array {
 }
 
 /**
+ * Render shop consents markup for popup or checkout.
+ *
+ * @param array<int, array<string, mixed>> $consents   Normalized consents.
+ * @param string                           $id_prefix  Checkbox id prefix.
+ * @param string                           $input_name Checkbox name attribute.
+ * @return string
+ */
+function mtuc_render_shop_consents_markup( array $consents, string $id_prefix = 'mtuc-consent', string $input_name = 'mtuc_consent[]' ): string {
+	if ( empty( $consents ) ) {
+		return '';
+	}
+
+	$template = MTUC_PLUGIN_DIR . '/templates/partials/shop-consents.php';
+	if ( ! is_readable( $template ) ) {
+		return '';
+	}
+
+	ob_start();
+	include $template;
+
+	return (string) ob_get_clean();
+}
+
+/**
+ * Mandatory consent ids (checkbox rows) from shop settings.
+ *
+ * @param array<string, mixed> $shop Shop `data` object.
+ * @return int[]
+ */
+function mtuc_get_mandatory_consent_ids( array $shop ): array {
+	$ids = array();
+
+	foreach ( mtuc_get_shop_consents( $shop ) as $consent ) {
+		if ( empty( $consent['has_checkbox'] ) ) {
+			continue;
+		}
+
+		$ids[] = (int) ( $consent['id'] ?? 0 );
+	}
+
+	return array_values( array_filter( $ids ) );
+}
+
+/**
+ * Validate mandatory consents from checkout/popup POST.
+ *
+ * @param array<string, mixed> $posted Posted request data.
+ * @param array<string, mixed> $shop   Shop `data` object.
+ * @return true|WP_Error
+ */
+function mtuc_validate_mandatory_consents_from_post( array $posted, array $shop ) {
+	$required = mtuc_get_mandatory_consent_ids( $shop );
+	if ( empty( $required ) ) {
+		return true;
+	}
+
+	$accepted = array();
+	if ( isset( $posted['mtuc_consent'] ) ) {
+		$raw = $posted['mtuc_consent'];
+		if ( ! is_array( $raw ) ) {
+			$raw = array( $raw );
+		}
+
+		foreach ( $raw as $consent_id ) {
+			$accepted[] = absint( $consent_id );
+		}
+	}
+
+	foreach ( $required as $consent_id ) {
+		if ( ! in_array( $consent_id, $accepted, true ) ) {
+			return new WP_Error(
+				'mtuc_consents_required',
+				__( 'Моля, приемете всички задължителни съгласия.', 'mtunicredit' )
+			);
+		}
+	}
+
+	return true;
+}
+
+/**
  * Build reklama context when the floating button should be shown.
  *
  * @param bool $settings_only Skip shop cache lookup (for asset enqueue).
