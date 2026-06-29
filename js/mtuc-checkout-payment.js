@@ -172,6 +172,33 @@
 		return getCheckedConsentIds($scope).join(",");
 	};
 
+	const PHONE_VALID_PATTERN = /^[-0-9+() ]+$/;
+
+	const isValidCheckoutEgn = (value) => {
+		const egn = String(value || "").replace(/\D/g, "");
+		if (!/^\d{10}$/.test(egn)) {
+			return false;
+		}
+
+		const year = parseInt(egn.slice(0, 4), 10);
+		const month = parseInt(egn.slice(4, 6), 10);
+		const day = parseInt(egn.slice(6, 8), 10);
+		const date = new Date(year, month - 1, day);
+
+		return (
+			date.getFullYear() === year &&
+			date.getMonth() === month - 1 &&
+			date.getDate() === day
+		);
+	};
+
+	const isValidCheckoutPhone = (value) => {
+		const phone = String(value || "").trim();
+		return (
+			phone !== "" && PHONE_VALID_PATTERN.test(phone) && /\d/.test(phone)
+		);
+	};
+
 	const releasePlaceOrderButton = () => {
 		const $btn = $("form.checkout #place_order");
 		if (!$btn.length || !$btn.data(PLACE_ORDER_LOCK)) {
@@ -407,6 +434,54 @@
 		const $parva = $scope.find("#mtuc-checkout-parva");
 		const $parvaRow = $scope.find("#mtuc-checkout-parva-row");
 		const $consentCheckboxes = getConsentCheckboxes($scope);
+		const $egn = $scope.find("#mtuc-checkout-egn");
+		const $phone2 = $scope.find("#mtuc-checkout-phone2");
+		const isProcess2 = () => !!(config && config.process2);
+
+		const getProcess2ValidationMessage = () => {
+			if (!isProcess2()) {
+				return "";
+			}
+
+			const egn = String($egn.val() || "").replace(/\D/g, "");
+			if (egn === "") {
+				return (
+					config.i18n.egnRequired ||
+					config.i18n.fieldRequired ||
+					"Полето „ЕГН“ е задължително."
+				);
+			}
+			if (!isValidCheckoutEgn(egn)) {
+				return (
+					config.i18n.egnInvalid ||
+					"Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD)."
+				);
+			}
+
+			const phone2 = String($phone2.val() || "").trim();
+			if (phone2 === "") {
+				return config.i18n.fieldRequired || "Полето е задължително.";
+			}
+			if (!isValidCheckoutPhone(phone2)) {
+				return (
+					config.i18n.phoneInvalid ||
+					"Въведете валиден втори телефонен номер."
+				);
+			}
+
+			return "";
+		};
+
+		const getProcess2PaymentFields = () => {
+			if (!isProcess2()) {
+				return {};
+			}
+
+			return {
+				mtuc_egn: String($egn.val() || "").replace(/\D/g, ""),
+				mtuc_phone2: String($phone2.val() || "").trim(),
+			};
+		};
 
 		const syncFn = () =>
 			syncHiddenFields($schemeKey, $parva, $parvaHidden, $months);
@@ -416,6 +491,9 @@
 				return false;
 			}
 			if (!lastCalculation) {
+				return false;
+			}
+			if (getProcess2ValidationMessage()) {
 				return false;
 			}
 			return areMandatoryConsentsChecked($scope);
@@ -563,6 +641,9 @@
 		$months.off(NS).on("change" + NS, calculateNow);
 		$parva.off(NS).on("input" + NS + " change" + NS, scheduleCalculate);
 		$consentCheckboxes.off(NS).on("change" + NS, onCheckoutReadyChange);
+		$egn.add($phone2)
+			.off(NS)
+			.on("input" + NS + " change" + NS, onCheckoutReadyChange);
 		$scope.off("mousedown" + NS, ".mtuc-popup__consent-label a");
 		$scope.on(
 			"mousedown" + NS,
@@ -595,6 +676,11 @@
 						);
 						return false;
 					}
+					const process2Message = getProcess2ValidationMessage();
+					if (process2Message) {
+						window.alert(process2Message);
+						return false;
+					}
 					return true;
 				});
 		}
@@ -625,14 +711,24 @@
 						"Моля, приемете всички задължителни съгласия.",
 				};
 			}
+			const process2Message = getProcess2ValidationMessage();
+			if (process2Message) {
+				return {
+					valid: false,
+					message: process2Message,
+				};
+			}
 			return {
 				valid: true,
-				paymentMethodData: {
-					mtuc_scheme_key: String($schemeKey.val() || ""),
-					mtuc_offer_type: "standard",
-					mtuc_parva: String($parvaHidden.val() || "0"),
-					mtuc_consent: formatConsentsForPaymentData($scope),
-				},
+				paymentMethodData: Object.assign(
+					{
+						mtuc_scheme_key: String($schemeKey.val() || ""),
+						mtuc_offer_type: "standard",
+						mtuc_parva: String($parvaHidden.val() || "0"),
+						mtuc_consent: formatConsentsForPaymentData($scope),
+					},
+					getProcess2PaymentFields(),
+				),
 			};
 		};
 
@@ -641,6 +737,7 @@
 			destroy: () => {
 				$months.off(NS);
 				$parva.off(NS);
+				$egn.add($phone2).off(NS);
 				$consentCheckboxes.off(NS);
 				$scope.off("mousedown" + NS, ".mtuc-popup__consent-label a");
 				$("form.checkout").off("checkout_place_order_mtunicredit" + NS);

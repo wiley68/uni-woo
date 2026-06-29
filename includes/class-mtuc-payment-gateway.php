@@ -222,6 +222,15 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			);
 		}
 
+		$shop = mtuc_get_shop_data();
+		if ( ! is_wp_error( $shop ) && is_array( $shop ) && mtuc_is_shop_process_2( $shop ) ) {
+			$validated = mtuc_validate_process2_fields_from_post( $_POST );
+			if ( ! is_wp_error( $validated ) ) {
+				mtuc_save_order_process2_customer_meta( $order, $validated );
+				$order->save();
+			}
+		}
+
 		$posted = array(
 			'scheme_key' => isset( $_POST['mtuc_scheme_key'] ) ? wp_unslash( $_POST['mtuc_scheme_key'] ) : '',
 			'offer_type' => isset( $_POST['mtuc_offer_type'] ) ? wp_unslash( $_POST['mtuc_offer_type'] ) : 'standard',

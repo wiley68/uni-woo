@@ -382,14 +382,18 @@ function mtuc_get_checkout_payment_context(): ?array {
  */
 function mtuc_get_calculator_i18n_strings(): array {
 	return array(
-		'calcError'      => __( 'Неуспешно изчисление. Моля, опитайте отново.', 'mtunicredit' ),
-		'monthsLabel'    => __( '%d месеца', 'mtunicredit' ),
-		'noMonths'       => __( 'Няма налични срокове за тази поръчка.', 'mtunicredit' ),
-		'schemeRequired' => __( 'Моля, изберете схема за погасяване.', 'mtunicredit' ),
+		'calcError'        => __( 'Неуспешно изчисление. Моля, опитайте отново.', 'mtunicredit' ),
+		'monthsLabel'      => __( '%d месеца', 'mtunicredit' ),
+		'noMonths'         => __( 'Няма налични срокове за тази поръчка.', 'mtunicredit' ),
+		'schemeRequired'   => __( 'Моля, изберете схема за погасяване.', 'mtunicredit' ),
 		'consentsRequired' => __( 'Моля, приемете всички задължителни съгласия.', 'mtunicredit' ),
 		'consentsTooltip'  => __( 'Моля, първо приемете общите условия, за да продължите с поръчката.', 'mtunicredit' ),
-		'offerStandard'  => __( 'Стандарт', 'mtunicredit' ),
-		'offerPromo'     => __( 'Промо', 'mtunicredit' ),
+		'offerStandard'    => __( 'Стандарт', 'mtunicredit' ),
+		'offerPromo'       => __( 'Промо', 'mtunicredit' ),
+		'fieldRequired'    => __( 'Полето е задължително.', 'mtunicredit' ),
+		'egnRequired'      => __( 'Полето „ЕГН“ е задължително.', 'mtunicredit' ),
+		'egnInvalid'       => __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ),
+		'phoneInvalid'     => __( 'Въведете валиден втори телефонен номер.', 'mtunicredit' ),
 	);
 }
 
