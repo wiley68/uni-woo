@@ -148,13 +148,13 @@ $consents            = isset( $popup['consents'] ) && is_array( $popup['consents
 							<?php if ( ! $hide_add_to_cart ) : ?>
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--secondary" id="mtuc-popup-add-to-cart">
 								<span class="mtuc-popup__btn-inner">
-									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Добавете в количката', 'mtunicredit' ); ?></span>
+									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Добави в количката', 'mtunicredit' ); ?></span>
 								</span>
 							</button>
 							<?php endif; ?>
 							<button type="button" class="mtuc-popup__btn mtuc-popup__btn--primary" id="mtuc-popup-buy">
 								<span class="mtuc-popup__btn-inner">
-									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Купете на изплащане', 'mtunicredit' ); ?></span>
+									<span class="mtuc-popup__btn-label"><?php esc_html_e( 'Кандидатствай', 'mtunicredit' ); ?></span>
 								</span>
 								<span class="mtuc-popup__btn-badge" style="background-image:url('<?php echo esc_url( $badge_logo_url ); ?>')"></span>
 							</button>
