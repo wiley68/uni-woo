@@ -25,6 +25,55 @@
 		).first();
 	};
 
+	const findCartMountPoint = () => {
+		return (
+			document.querySelector(
+				".wc-block-cart__submit-container .wc-block-cart__submit",
+			) ||
+			document.querySelector(".wc-block-cart__submit") ||
+			document.querySelector(".wc-block-cart__submit-button") ||
+			document.querySelector(".woocommerce-cart .wc-proceed-to-checkout")
+		);
+	};
+
+	const mountCartCalculatorFragment = (html) => {
+		if (!html) {
+			return false;
+		}
+
+		const mountPoint = findCartMountPoint();
+		if (!mountPoint) {
+			return false;
+		}
+
+		const existing = document.querySelector(
+			".mtuc-cart-calculator-fragment",
+		);
+		if (existing) {
+			existing.outerHTML = html;
+			return true;
+		}
+
+		const host = document.createElement("div");
+		host.innerHTML = html;
+		const fragment = host.firstElementChild;
+		if (!fragment) {
+			return false;
+		}
+
+		if (mountPoint.classList.contains("wc-proceed-to-checkout")) {
+			mountPoint.insertBefore(fragment, mountPoint.firstChild);
+			return true;
+		}
+
+		if (!mountPoint.parentNode) {
+			return false;
+		}
+
+		mountPoint.parentNode.insertBefore(fragment, mountPoint);
+		return true;
+	};
+
 	const syncCartTotalGlobals = (value) => {
 		const total = parseFloat(value) || 0;
 		cartTotal = total;
@@ -70,13 +119,17 @@
 	};
 
 	const applyOfferButton = ($btn, offer, showInstallment) => {
+		if (!$btn.length) {
+			return false;
+		}
+
 		if (!offer || !offer.visible) {
 			$btn.hide();
 			return false;
 		}
 
 		const imageOnly = !!offer.image_only;
-		$btn.show();
+		$btn.show().css("display", "");
 		$btn.attr("data-mtuc-image-only", imageOnly ? "1" : "0");
 		$btn.toggleClass("mtuc-product-calculator__btn--image-only", imageOnly);
 		setButtonContent($btn, offer, showInstallment);
@@ -84,18 +137,29 @@
 		return true;
 	};
 
-	const applyRefreshPayload = (data) => {
-		const $root = getRoot();
-		const $fragment = $(".mtuc-cart-calculator-fragment").first();
+	const hasVisibleOffersInPayload = (data) => {
+		return (
+			(data.standard && data.standard.visible) ||
+			(data.promo && data.promo.visible)
+		);
+	};
 
+	const applyRefreshPayload = (data) => {
 		if (!data || !data.visible) {
+			const $fragment = $(".mtuc-cart-calculator-fragment").first();
+			const $root = getRoot();
+
 			if ($fragment.length) {
 				$fragment.hide();
 			} else if ($root.length) {
 				$root.hide();
 			}
 
-			syncCartTotalGlobals(0);
+			syncCartTotalGlobals(
+				data && typeof data.cart_total !== "undefined"
+					? data.cart_total
+					: 0,
+			);
 			document.dispatchEvent(
 				new CustomEvent("mtuc-calculator-refreshed", {
 					detail: data || { visible: false },
@@ -104,11 +168,16 @@
 			return;
 		}
 
-		if ($fragment.length) {
-			$fragment.show();
+		if (data.fragmentHtml) {
+			mountCartCalculatorFragment(data.fragmentHtml);
 		}
+
+		const $fragment = $(".mtuc-cart-calculator-fragment").first();
+		const $root = getRoot();
+
+		$fragment.show().css("display", "");
 		if ($root.length) {
-			$root.show();
+			$root.show().css("display", "");
 		}
 
 		syncCartTotalGlobals(data.cart_total);
@@ -140,7 +209,7 @@
 			);
 		}
 
-		if (!hasStandard && !hasPromo) {
+		if (!hasStandard && !hasPromo && !hasVisibleOffersInPayload(data)) {
 			if ($fragment.length) {
 				$fragment.hide();
 			} else if ($root.length) {
@@ -153,6 +222,8 @@
 		);
 	};
 
+	window.mtucMountCartCalculatorFragment = mountCartCalculatorFragment;
+
 	$(function () {
 		if (typeof mtucCartCalculator === "undefined") {
 			return;
@@ -160,6 +231,7 @@
 
 		let refreshTimer = null;
 		let refreshRequest = null;
+		let mountObserver = null;
 
 		const refreshCartCalculator = () => {
 			window.clearTimeout(refreshTimer);
@@ -179,7 +251,35 @@
 			}, 120);
 		};
 
+		const bindMountObserver = () => {
+			if (
+				mountObserver ||
+				!window.MutationObserver ||
+				!(window.mtucCartBlocks && window.mtucCartBlocks.blocks)
+			) {
+				return;
+			}
+
+			mountObserver = new window.MutationObserver(function () {
+				if (document.querySelector(".mtuc-cart-calculator-fragment")) {
+					return;
+				}
+
+				if (!findCartMountPoint()) {
+					return;
+				}
+
+				refreshCartCalculator();
+			});
+
+			mountObserver.observe(document.body, {
+				childList: true,
+				subtree: true,
+			});
+		};
+
 		window.mtucRefreshCartCalculator = refreshCartCalculator;
+		window.mtucApplyCartCalculatorRefresh = applyRefreshPayload;
 
 		$(document.body).on(
 			"updated_wc_div updated_cart_totals wc_fragments_refreshed removed_from_cart item_removed_from_classic_cart",
@@ -212,6 +312,11 @@
 			},
 		);
 
+		if (window.mtucCartBlocks && window.mtucCartBlocks.fragmentHtml) {
+			mountCartCalculatorFragment(window.mtucCartBlocks.fragmentHtml);
+		}
+
+		bindMountObserver();
 		refreshCartCalculator();
 	});
 })(jQuery);

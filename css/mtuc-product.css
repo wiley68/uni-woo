@@ -164,6 +164,15 @@
 	margin-bottom: 12px;
 }
 
+.wc-block-cart .mtuc-cart-calculator-fragment {
+	width: 100%;
+	margin-bottom: 16px;
+}
+
+.wc-block-cart .mtuc-cart-calculator-fragment .mtuc-cart-calculator {
+	width: 100%;
+}
+
 .mtuc-product-calculator--stacked .mtuc-product-calculator__wrap {
 	flex-direction: column;
 	align-items: flex-start;

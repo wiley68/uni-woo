@@ -657,13 +657,15 @@ function mtuc_build_cart_calculator_refresh_payload(): array {
 	$context = mtuc_build_cart_calculator_context();
 	if ( null === $context ) {
 		return array(
-			'visible' => false,
+			'visible'       => false,
+			'fragmentHtml'  => '',
 		);
 	}
 
-	$popup    = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
-	$standard = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
-	$promo    = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
+	$fragment_html = mtuc_get_cart_calculator_fragment_html();
+	$popup         = isset( $context['popup'] ) && is_array( $context['popup'] ) ? $context['popup'] : array();
+	$standard      = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
+	$promo         = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
 
 	$standard_payload = null;
 	$promo_payload    = null;
@@ -687,14 +689,16 @@ function mtuc_build_cart_calculator_refresh_payload(): array {
 	$has_visible_buttons = null !== $standard_payload || null !== $promo_payload;
 	if ( ! $has_visible_buttons ) {
 		return array(
-			'visible'    => false,
-			'cart_total' => (float) ( $context['cart_total'] ?? 0 ),
+			'visible'      => false,
+			'cart_total'   => (float) ( $context['cart_total'] ?? 0 ),
+			'fragmentHtml' => $fragment_html,
 		);
 	}
 
 	return array(
 		'visible'              => true,
 		'cart_total'           => (float) ( $context['cart_total'] ?? 0 ),
+		'fragmentHtml'         => $fragment_html,
 		'show_installment'     => ! empty( $context['show_installment'] ),
 		'standard'             => $standard_payload,
 		'promo'                => $promo_payload,
@@ -1316,27 +1320,139 @@ function mtuc_register_cart_hooks(): void {
 	add_action( 'wp_ajax_nopriv_mtuc_cart_calculator_refresh', 'mtuc_ajax_cart_calculator_refresh' );
 	add_action( 'wp_ajax_mtuc_cart_split_notify', 'mtuc_ajax_cart_split_notify' );
 	add_action( 'wp_ajax_nopriv_mtuc_cart_split_notify', 'mtuc_ajax_cart_split_notify' );
+	add_action( 'wp_ajax_mtuc_cart_blocks_refresh', 'mtuc_ajax_cart_blocks_refresh' );
+	add_action( 'wp_ajax_nopriv_mtuc_cart_blocks_refresh', 'mtuc_ajax_cart_blocks_refresh' );
 
 	if ( is_admin() ) {
 		return;
 	}
 
-	add_action( 'woocommerce_proceed_to_checkout', 'mtuc_render_cart_calculator', 5 );
+	add_action(
+		'woocommerce_proceed_to_checkout',
+		static function (): void {
+			if ( mtuc_is_blocks_cart() ) {
+				return;
+			}
+
+			mtuc_render_cart_calculator();
+		},
+		5
+	);
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_cart_assets' );
-	add_filter( 'woocommerce_add_to_cart_fragments', 'mtuc_append_cart_calculator_fragment' );
+	add_filter(
+		'woocommerce_add_to_cart_fragments',
+		static function ( array $fragments ): array {
+			if ( mtuc_is_blocks_cart() ) {
+				return $fragments;
+			}
+
+			return mtuc_append_cart_calculator_fragment( $fragments );
+		}
+	);
 }
 
 /**
- * Enqueue cart calculator assets.
+ * Whether the cart page uses the WooCommerce Cart block.
+ *
+ * @return bool
+ */
+function mtuc_is_blocks_cart(): bool {
+	if ( ! function_exists( 'is_cart' ) || ! is_cart() ) {
+		return false;
+	}
+
+	if ( class_exists( '\Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils' ) ) {
+		return \Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils::is_cart_block_default();
+	}
+
+	if ( ! function_exists( 'has_block' ) || ! function_exists( 'wc_get_page_id' ) ) {
+		return false;
+	}
+
+	$cart_page_id = (int) wc_get_page_id( 'cart' );
+	if ( $cart_page_id <= 0 ) {
+		return false;
+	}
+
+	$post = get_post( $cart_page_id );
+	if ( ! $post instanceof WP_Post ) {
+		return false;
+	}
+
+	return has_block( 'woocommerce/cart', $post );
+}
+
+/**
+ * AJAX: refresh cart calculator markup for Cart block pages.
  *
  * @return void
  */
-function mtuc_enqueue_cart_assets(): void {
-	$context = mtuc_get_cart_calculator_context();
+function mtuc_ajax_cart_blocks_refresh(): void {
+	check_ajax_referer( 'mtuc_popup', 'security' );
+
+	$payload                  = mtuc_build_cart_calculator_refresh_payload();
+	$payload['fragmentHtml'] = mtuc_get_cart_calculator_fragment_html();
+
+	wp_send_json_success( $payload );
+}
+
+/**
+ * Client config for Cart block injection script.
+ *
+ * @param array<string, mixed>|null $context Cart calculator context.
+ * @return array<string, mixed>
+ */
+function mtuc_get_cart_blocks_script_config( ?array $context = null ): array {
 	if ( null === $context ) {
-		return;
+		$context = mtuc_build_cart_calculator_context();
 	}
 
+	return array(
+		'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
+		'nonce'        => wp_create_nonce( 'mtuc_popup' ),
+		'blocks'       => true,
+		'fragmentHtml' => mtuc_get_cart_calculator_fragment_html(),
+		'cartTotal'    => is_array( $context ) ? (float) ( $context['cart_total'] ?? 0 ) : 0.0,
+	);
+}
+
+/**
+ * Enqueue Cart block injection script.
+ *
+ * @param array<string, mixed> $context Cart calculator context.
+ * @return void
+ */
+function mtuc_enqueue_cart_blocks_script( array $context ): void {
+	$blocks_js = MTUC_PLUGIN_DIR . '/js/mtuc-cart-blocks.js';
+
+	wp_enqueue_script(
+		'mtuc-cart-blocks',
+		MTUC_JS_URI . '/mtuc-cart-blocks.js',
+		array(
+			'jquery',
+			'mtuc-cart-calculator',
+			'mtuc-product-popup',
+			'wc-blocks-data',
+			'wp-data',
+		),
+		file_exists( $blocks_js ) ? (string) filemtime( $blocks_js ) : MTUC_VERSION,
+		true
+	);
+
+	wp_localize_script(
+		'mtuc-cart-blocks',
+		'mtucCartBlocks',
+		mtuc_get_cart_blocks_script_config( $context )
+	);
+}
+
+/**
+ * Shared cart calculator + popup assets (classic and blocks cart).
+ *
+ * @param array<string, mixed> $context Cart calculator context.
+ * @return void
+ */
+function mtuc_enqueue_cart_calculator_assets( array $context ): void {
 	$css_file      = MTUC_PLUGIN_DIR . '/css/mtuc-product.css';
 	$popup_css     = MTUC_PLUGIN_DIR . '/css/mtuc-popup.css';
 	$cart_js       = MTUC_PLUGIN_DIR . '/js/mtuc-cart-calculator.js';
@@ -1426,6 +1542,24 @@ function mtuc_enqueue_cart_assets(): void {
 			),
 		)
 	);
+}
+
+/**
+ * Enqueue cart calculator assets.
+ *
+ * @return void
+ */
+function mtuc_enqueue_cart_assets(): void {
+	$context = mtuc_get_cart_calculator_context();
+	if ( null === $context ) {
+		return;
+	}
+
+	mtuc_enqueue_cart_calculator_assets( $context );
+
+	if ( mtuc_is_blocks_cart() ) {
+		mtuc_enqueue_cart_blocks_script( $context );
+	}
 }
 
 /**
