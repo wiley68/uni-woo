@@ -39,12 +39,27 @@
 
 	const mergeCheckoutConfig = (baseConfig, $root) => {
 		const rootConfig = readConfigFromRoot($root);
-		return Object.assign({}, baseConfig || {}, rootConfig, {
+		const merged = Object.assign({}, baseConfig || {}, rootConfig, {
 			enabledSchemes: normalizeSchemeList(
 				rootConfig.enabledSchemes ||
 					(baseConfig && baseConfig.enabledSchemes),
 			),
 		});
+
+		if (baseConfig && baseConfig.prefillActive) {
+			merged.prefillActive = true;
+			if (baseConfig.defaultSchemeKey) {
+				merged.defaultSchemeKey = String(baseConfig.defaultSchemeKey);
+			}
+			if (baseConfig.offerType) {
+				merged.offerType = String(baseConfig.offerType);
+			}
+			if (baseConfig.prefillParva) {
+				merged.prefillParva = String(baseConfig.prefillParva);
+			}
+		}
+
+		return merged;
 	};
 
 	const formatPercent = (value) => {
@@ -346,6 +361,7 @@
 		const enabled = getEnabledSchemes(config);
 		const preferred = getDefaultSchemeKey(config);
 		const currentValue = String($months.val() || "");
+		const preferPrefill = !!(config && config.prefillActive && preferred);
 
 		if (!enabled.length) {
 			if (!$months.find("option").length) {
@@ -391,10 +407,28 @@
 			}
 		} else {
 			$months.prop("disabled", false);
-			if (currentValue) {
+			const schemeKeys = [];
+			$months.find("option").each(function () {
+				const value = String($(this).val() || "");
+				if (value) {
+					schemeKeys.push(value);
+				}
+			});
+
+			if (preferPrefill && schemeKeys.indexOf(String(preferred)) !== -1) {
+				$months.val(String(preferred));
+			} else if (
+				currentValue &&
+				schemeKeys.indexOf(currentValue) !== -1
+			) {
 				$months.val(currentValue);
-			} else if (preferred) {
-				$months.val(preferred);
+			} else if (
+				preferred &&
+				schemeKeys.indexOf(String(preferred)) !== -1
+			) {
+				$months.val(String(preferred));
+			} else if (schemeKeys.length) {
+				$months.val(schemeKeys[0]);
 			}
 		}
 
@@ -685,7 +719,21 @@
 				});
 		}
 
+		if (config.prefillParva) {
+			const prefillParva = String(config.prefillParva);
+			$parva.val(prefillParva);
+			$parvaHidden.val(prefillParva);
+		}
+
+		if (config.prefillActive && config.offerType) {
+			$offerType.val(String(config.offerType));
+		}
+
 		refreshSchemes();
+
+		if (config.prefillActive) {
+			window.mtucApplyCheckoutPrefillPaymentMethod();
+		}
 
 		const buildValidationResult = () => {
 			syncFn();
@@ -780,10 +828,52 @@
 			return;
 		}
 		window.mtucInitCheckoutPayment(null, window.mtucCheckout);
+		if (window.mtucCheckout.prefillActive) {
+			window.mtucApplyCheckoutPrefillPaymentMethod();
+		}
+	};
+
+	window.mtucApplyCheckoutPrefillPaymentMethod = function () {
+		const config = window.mtucCheckout || null;
+		if (!config || !config.prefillActive) {
+			return;
+		}
+
+		if (!config.blocks) {
+			const $radio = $(
+				'input[name="payment_method"][value="' + GATEWAY_ID + '"]',
+			);
+			if ($radio.length && !$radio.is(":checked")) {
+				$radio.prop("checked", true).trigger("change");
+			}
+			return;
+		}
+
+		if (!window.wp || !window.wp.data || !window.wp.data.dispatch) {
+			return;
+		}
+
+		try {
+			window.wp.data
+				.dispatch("wc/store/payment")
+				.__internalSetActivePaymentMethod(GATEWAY_ID, {});
+		} catch (error) {
+			// Unsupported WooCommerce Blocks payment store.
+		}
 	};
 
 	$(function () {
 		bootClassicCheckoutPayment();
+
+		if (
+			window.mtucCheckout &&
+			window.mtucCheckout.blocks &&
+			window.mtucCheckout.prefillActive
+		) {
+			window.setTimeout(function () {
+				window.mtucApplyCheckoutPrefillPaymentMethod();
+			}, 300);
+		}
 
 		$(document.body).on("updated_checkout" + NS, function () {
 			if (!$("#mtuc-checkout-payment").length) {

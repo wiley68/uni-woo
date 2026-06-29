@@ -1721,6 +1721,8 @@ function mtuc_enqueue_product_assets(): void {
 			'currencyDual'         => ! empty( $popup_context['currency']['dual'] ),
 			'hideAddToCart'        => ! empty( $popup_context['hide_add_to_cart'] ),
 			'process2'             => ! empty( $popup_context['process2'] ),
+			'payBtn'               => Mtuc_Settings::get_paybtn_mode(),
+			'checkoutUrl'          => function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : '',
 			'customer'             => isset( $popup_context['customer'] ) && is_array( $popup_context['customer'] )
 				? array(
 					'first_name' => (string) ( $popup_context['customer']['first_name'] ?? '' ),
@@ -1733,6 +1735,8 @@ function mtuc_enqueue_product_assets(): void {
 			'i18n'                 => array(
 				'calcError'      => __( 'Неуспешно изчисление. Моля, опитайте отново.', 'mtunicredit' ),
 				'addToCartError' => __( 'Не може да се добави в количката. Проверете опциите на продукта.', 'mtunicredit' ),
+				'buyLabel'       => __( 'Купи', 'mtunicredit' ),
+				'schemeRequired' => __( 'Моля, изберете схема за погасяване.', 'mtunicredit' ),
 				'submitPending'  => __( 'Изпращането на заявката ще бъде добавено на следващ етап.', 'mtunicredit' ),
 				'monthsLabel'    => __( '%d месеца', 'mtunicredit' ),
 				'noMonths'       => __( 'Няма налични срокове за този продукт.', 'mtunicredit' ),

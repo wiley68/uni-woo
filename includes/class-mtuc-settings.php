@@ -35,6 +35,15 @@ class Mtuc_Settings {
 	/** Option key: margin above button in px (0–200). */
 	public const OPTION_GAP = 'mtuc_gap';
 
+	/** Option key: product popup secondary button mode. */
+	public const OPTION_PAYBTN = 'mtuc_paybtn';
+
+	/** Secondary popup button adds the product to the cart only. */
+	public const PAYBTN_ADD_TO_CART = 'add_to_cart';
+
+	/** Secondary popup button adds to cart and redirects to checkout. */
+	public const PAYBTN_BUY = 'buy';
+
 	/** Default WooCommerce hook for the product button. */
 	public const DEFAULT_HOOK = 'woocommerce_after_add_to_cart_button';
 
@@ -52,6 +61,7 @@ class Mtuc_Settings {
 			self::OPTION_REKLAMA,
 			self::OPTION_DEBUG,
 			self::OPTION_GAP,
+			self::OPTION_PAYBTN,
 		);
 	}
 
@@ -67,6 +77,7 @@ class Mtuc_Settings {
 			self::OPTION_REKLAMA => 0,
 			self::OPTION_DEBUG   => 0,
 			self::OPTION_GAP     => 0,
+			self::OPTION_PAYBTN  => self::PAYBTN_ADD_TO_CART,
 		);
 	}
 
@@ -135,6 +146,39 @@ class Mtuc_Settings {
 	 */
 	public static function is_enabled(): bool {
 		return 1 === (int) self::get( self::OPTION_STATUS );
+	}
+
+	/**
+	 * Allowed modes for the product popup secondary button.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function get_paybtn_choices(): array {
+		return array(
+			self::PAYBTN_ADD_TO_CART => __( 'Добави в количката', 'mtunicredit' ),
+			self::PAYBTN_BUY         => __( 'Купи', 'mtunicredit' ),
+		);
+	}
+
+	/**
+	 * Current product popup secondary button mode.
+	 *
+	 * @return string add_to_cart|buy
+	 */
+	public static function get_paybtn_mode(): string {
+		$mode     = (string) self::get( self::OPTION_PAYBTN );
+		$choices  = self::get_paybtn_choices();
+
+		return array_key_exists( $mode, $choices ) ? $mode : self::PAYBTN_ADD_TO_CART;
+	}
+
+	/**
+	 * Whether the product popup secondary button should buy via checkout.
+	 *
+	 * @return bool
+	 */
+	public static function is_paybtn_buy_mode(): bool {
+		return self::PAYBTN_BUY === self::get_paybtn_mode();
 	}
 
 	/**
@@ -241,6 +285,15 @@ class Mtuc_Settings {
 		update_option( self::OPTION_REKLAMA, self::post_flag_to_int( $post, self::OPTION_REKLAMA ) );
 		update_option( self::OPTION_DEBUG, self::post_flag_to_int( $post, self::OPTION_DEBUG ) );
 		update_option( self::OPTION_GAP, $gap );
+
+		$paybtn = isset( $post[ self::OPTION_PAYBTN ] )
+			? sanitize_key( wp_unslash( $post[ self::OPTION_PAYBTN ] ) )
+			: self::PAYBTN_ADD_TO_CART;
+		$paybtn_choices = self::get_paybtn_choices();
+		if ( ! array_key_exists( $paybtn, $paybtn_choices ) ) {
+			$paybtn = self::PAYBTN_ADD_TO_CART;
+		}
+		update_option( self::OPTION_PAYBTN, $paybtn );
 
 		if ( $credentials_changed ) {
 			Mtuc_Shop_Cache::purge_all();

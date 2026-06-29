@@ -77,6 +77,16 @@
 				checkoutConfig,
 			);
 			window.mtucCheckoutBlocksController = controllerRef.current;
+
+			if (
+				checkoutConfig.prefillActive &&
+				typeof window.mtucApplyCheckoutPrefillPaymentMethod ===
+					"function"
+			) {
+				window.setTimeout(function () {
+					window.mtucApplyCheckoutPrefillPaymentMethod();
+				}, 0);
+			}
 		};
 
 		const refreshFields = () => {

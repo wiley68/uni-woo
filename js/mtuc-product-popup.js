@@ -118,6 +118,11 @@
 			return String(mtucPopup.source || "product");
 		};
 
+		const isProductPopup = () => getPopupSource() === "product";
+
+		const isPayBtnBuyMode = () =>
+			isProductPopup() && String(mtucPopup.payBtn || "") === "buy";
+
 		const isCartPopup = () => getPopupSource() === "cart";
 
 		const isProcess2 = () => !!mtucPopup.process2;
@@ -845,9 +850,126 @@
 
 		if (mtucPopup.hideAddToCart) {
 			$("#mtuc-popup-add-to-cart").remove();
+		} else if (isPayBtnBuyMode()) {
+			$("#mtuc-popup-add-to-cart .mtuc-popup__btn-label").text(
+				(mtucPopup.i18n && mtucPopup.i18n.buyLabel) || "Купи",
+			);
 		}
 
 		$popup.on("click", "[data-mtuc-popup-close]", closePopup);
+
+		const ensureCheckoutRedirectFields = () => {
+			const form = document.querySelector("form.cart");
+			if (!form) {
+				return;
+			}
+
+			let hidden = form.querySelector('input[name="mtuc_checkout"]');
+			if (!hidden) {
+				hidden = document.createElement("input");
+				hidden.type = "hidden";
+				hidden.name = "mtuc_checkout";
+				hidden.value = "1";
+				form.appendChild(hidden);
+			} else {
+				hidden.value = "1";
+			}
+		};
+
+		const redirectToCheckoutAfterAdd = () => {
+			const baseUrl =
+				(mtucPopup && mtucPopup.checkoutUrl) ||
+				window.location.origin + "/checkout/";
+			window.location.href =
+				baseUrl +
+				(baseUrl.indexOf("?") >= 0 ? "&" : "?") +
+				"payment_method=" +
+				encodeURIComponent("mtunicredit");
+		};
+
+		const handleBuyAndCheckout = () => {
+			if (!lastCalculation || !lastCalculation.scheme_key) {
+				window.alert(
+					(mtucPopup.i18n && mtucPopup.i18n.schemeRequired) ||
+						"Моля, изберете схема за погасяване.",
+				);
+				return;
+			}
+
+			const parva = parseFloat($parva.val()) || 0;
+			redirectPending = true;
+			setPopupProcessingState(true);
+
+			$.post(mtucPopup.ajaxUrl, {
+				action: "mtuc_checkout_prefill",
+				security: mtucPopup.nonce,
+				scheme_key: String(lastCalculation.scheme_key || ""),
+				offer_type: String(
+					lastCalculation.popup_offer_type ||
+						lastCalculation.offer_type ||
+						$offerType.val() ||
+						"standard",
+				),
+				scheme_type: String(lastCalculation.scheme_type || "standard"),
+				months: parseInt(lastCalculation.months, 10) || 0,
+				filter_id: parseInt(lastCalculation.filter_id, 10) || 0,
+				parva: parva.toFixed(2),
+			})
+				.done((response) => {
+					if (!response || !response.success) {
+						redirectPending = false;
+						setPopupProcessingState(false);
+						window.alert(
+							(response &&
+								response.data &&
+								response.data.message) ||
+								mtucPopup.i18n.addToCartError,
+						);
+						return;
+					}
+
+					ensureCheckoutRedirectFields();
+					window._mtuc_go_checkout = true;
+
+					const $addToCart = $(
+						'button[type="submit"].single_add_to_cart_button',
+					).eq(0);
+					if ($addToCart.length && !$addToCart.hasClass("disabled")) {
+						$addToCart.trigger("click");
+						return;
+					}
+
+					redirectPending = false;
+					setPopupProcessingState(false);
+					window._mtuc_go_checkout = false;
+					window.alert(mtucPopup.i18n.addToCartError);
+				})
+				.fail((xhr) => {
+					redirectPending = false;
+					setPopupProcessingState(false);
+					let message = mtucPopup.i18n.addToCartError;
+					if (
+						xhr.responseJSON &&
+						xhr.responseJSON.data &&
+						xhr.responseJSON.data.message
+					) {
+						message = xhr.responseJSON.data.message;
+					}
+					window.alert(message);
+				});
+		};
+
+		$(document.body).on(
+			"added_to_cart wc_cart_button_updated",
+			function () {
+				if (!window._mtuc_go_checkout) {
+					return;
+				}
+
+				window._mtuc_go_checkout = false;
+				redirectToCheckoutAfterAdd();
+			},
+		);
 
 		$months.on("change", function () {
 			resetParvaInput();
@@ -916,6 +1038,11 @@
 		});
 
 		$("#mtuc-popup-add-to-cart").on("click", function () {
+			if (isPayBtnBuyMode()) {
+				handleBuyAndCheckout();
+				return;
+			}
+
 			const $addToCart = $(
 				'button[type="submit"].single_add_to_cart_button',
 			).eq(0);

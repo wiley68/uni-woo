@@ -46,6 +46,7 @@ if (
 
 $mtuc_settings = Mtuc_Settings::get_all();
 $mtuc_hooks    = Mtuc_Settings::get_hook_choices();
+$mtuc_paybtns  = Mtuc_Settings::get_paybtn_choices();
 $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_Settings::OPTION_UNICID ] );
 
 ?>
@@ -168,6 +169,21 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 							<?php esc_html_e( 'Моля изберете тази опция ако искате да включите режима за отстраняване на грешки.', 'mtunicredit' ); ?>
 						</label>
 						<p class="description"><?php esc_html_e( 'При активен режим заявката и отговорът към SmartUCF при създаване на поръчка се записват в журнал в базата данни (съхранение 3 месеца).', 'mtunicredit' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row">
+						<label for="mtuc_paybtn"><?php esc_html_e( 'Бутон купи', 'mtunicredit' ); ?></label>
+					</th>
+					<td>
+						<select name="<?php echo esc_attr( Mtuc_Settings::OPTION_PAYBTN ); ?>" id="mtuc_paybtn">
+							<?php foreach ( $mtuc_paybtns as $paybtn_value => $paybtn_label ) : ?>
+								<option value="<?php echo esc_attr( $paybtn_value ); ?>" <?php selected( $mtuc_settings[ Mtuc_Settings::OPTION_PAYBTN ], $paybtn_value ); ?>>
+									<?php echo esc_html( $paybtn_label ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+						<p class="description"><?php esc_html_e( 'Начин на работа на допълнителния бутон в прозореца на модула в продуктова страница. „Добави в количката“ — допълнителния бутон в прозореца добавя продукта в количката. „Купи“ — допълнителния бутон в прозореца прехвърля към чекаут/покупка с предварително избран платежен метод УниКредит на изплащане.', 'mtunicredit' ); ?></p>
 					</td>
 				</tr>
 				<tr>

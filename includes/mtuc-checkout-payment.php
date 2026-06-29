@@ -369,10 +369,193 @@ function mtuc_get_checkout_payment_context(): ?array {
 		'checkout'
 	);
 
+	$popup        = mtuc_apply_checkout_prefill_to_popup( $popup );
 	$base['popup']  = $popup;
 	$base['source'] = 'checkout';
 
 	return $base;
+}
+
+/** WooCommerce session key for checkout scheme prefill from product popup. */
+const MTUC_SESSION_CHECKOUT_PREFILL = 'mtuc_checkout_prefill';
+
+/**
+ * Read checkout prefill payload from the WooCommerce session.
+ *
+ * @return array<string, mixed>|null
+ */
+function mtuc_get_checkout_prefill_session(): ?array {
+	if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+		return null;
+	}
+
+	$data = WC()->session->get( MTUC_SESSION_CHECKOUT_PREFILL );
+	if ( ! is_array( $data ) || empty( $data['scheme_key'] ) ) {
+		return null;
+	}
+
+	return $data;
+}
+
+/**
+ * Apply session checkout prefill to popup context when the scheme is available.
+ *
+ * @param array<string, mixed> $popup Checkout popup context.
+ * @return array<string, mixed>
+ */
+function mtuc_apply_checkout_prefill_to_popup( array $popup ): array {
+	$prefill = mtuc_get_checkout_prefill_session();
+	if ( ! is_array( $prefill ) || empty( $prefill['scheme_key'] ) ) {
+		return $popup;
+	}
+
+	$scheme_key = (string) $prefill['scheme_key'];
+	$enabled    = isset( $popup['enabled_schemes'] ) && is_array( $popup['enabled_schemes'] )
+		? $popup['enabled_schemes']
+		: array();
+
+	$parsed = mtuc_parse_popup_scheme_option_key( $scheme_key );
+	if ( ! mtuc_is_popup_scheme_option_enabled(
+		$enabled,
+		(int) $parsed['months'],
+		(int) $parsed['filter_id'],
+		(string) $parsed['scheme_type']
+	) ) {
+		return $popup;
+	}
+
+	$popup['default_scheme_key'] = $scheme_key;
+
+	if ( ! empty( $prefill['offer_type'] ) ) {
+		$offer_type = sanitize_key( (string) $prefill['offer_type'] );
+		if ( in_array( $offer_type, array( 'standard', 'promo' ), true ) ) {
+			$popup['prefill_offer_type'] = $offer_type;
+		}
+	}
+
+	return $popup;
+}
+
+/**
+ * Persist checkout prefill payload in the WooCommerce session.
+ *
+ * @param array<string, mixed> $data Prefill payload.
+ * @return void
+ */
+function mtuc_set_checkout_prefill_session( array $data ): void {
+	if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+		return;
+	}
+
+	WC()->session->set( MTUC_SESSION_CHECKOUT_PREFILL, $data );
+	WC()->session->set( 'chosen_payment_method', MTUC_PAYMENT_GATEWAY_ID );
+}
+
+/**
+ * Remove checkout prefill payload from the WooCommerce session.
+ *
+ * @return void
+ */
+function mtuc_clear_checkout_prefill_session(): void {
+	if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+		return;
+	}
+
+	WC()->session->set( MTUC_SESSION_CHECKOUT_PREFILL, null );
+}
+
+/**
+ * Apply checkout payment method from the query string on checkout load.
+ *
+ * @return void
+ */
+function mtuc_checkout_apply_payment_method_from_query(): void {
+	if ( ! function_exists( 'is_checkout' ) || ! is_checkout() || is_order_received_page() ) {
+		return;
+	}
+
+	if ( ! function_exists( 'WC' ) || ! WC()->session ) {
+		return;
+	}
+
+	if ( ! isset( $_GET['payment_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		return;
+	}
+
+	$gateway = sanitize_key( wp_unslash( (string) $_GET['payment_method'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	if ( MTUC_PAYMENT_GATEWAY_ID !== $gateway ) {
+		return;
+	}
+
+	$available = WC()->payment_gateways()->get_available_payment_gateways();
+	if ( ! isset( $available[ $gateway ] ) ) {
+		return;
+	}
+
+	WC()->session->set( 'chosen_payment_method', $gateway );
+}
+
+/**
+ * Redirect to checkout after add-to-cart when product popup buy mode is used.
+ *
+ * @param string $url Default redirect URL.
+ * @return string
+ */
+function mtuc_add_to_cart_checkout_redirect( string $url ): string {
+	if ( ! isset( $_REQUEST['mtuc_checkout'] ) || '1' !== (string) wp_unslash( $_REQUEST['mtuc_checkout'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		return $url;
+	}
+
+	if ( ! function_exists( 'wc_get_checkout_url' ) ) {
+		return $url;
+	}
+
+	return wc_get_checkout_url() . '?payment_method=' . rawurlencode( MTUC_PAYMENT_GATEWAY_ID );
+}
+
+/**
+ * AJAX: store selected scheme and payment method before add-to-cart redirect.
+ *
+ * @return void
+ */
+function mtuc_ajax_checkout_prefill(): void {
+	check_ajax_referer( 'mtuc_popup', 'security' );
+
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		wp_send_json_error(
+			array( 'message' => __( 'Модулът не е активен.', 'mtunicredit' ) ),
+			403
+		);
+	}
+
+	$scheme_key = isset( $_POST['scheme_key'] ) ? sanitize_text_field( wp_unslash( $_POST['scheme_key'] ) ) : '';
+	if ( '' === $scheme_key ) {
+		wp_send_json_error(
+			array( 'message' => __( 'Моля, изберете схема за погасяване.', 'mtunicredit' ) ),
+			400
+		);
+	}
+
+	$parsed = mtuc_parse_popup_scheme_option_key( $scheme_key );
+
+	mtuc_set_checkout_prefill_session(
+		array(
+			'scheme_key'  => $scheme_key,
+			'offer_type'  => isset( $_POST['offer_type'] ) ? sanitize_key( wp_unslash( $_POST['offer_type'] ) ) : 'standard',
+			'scheme_type' => isset( $_POST['scheme_type'] ) ? sanitize_key( wp_unslash( $_POST['scheme_type'] ) ) : (string) $parsed['scheme_type'],
+			'months'      => isset( $_POST['months'] ) ? absint( wp_unslash( $_POST['months'] ) ) : (int) $parsed['months'],
+			'filter_id'   => isset( $_POST['filter_id'] ) ? absint( wp_unslash( $_POST['filter_id'] ) ) : (int) $parsed['filter_id'],
+			'parva'       => isset( $_POST['parva'] ) && is_numeric( wp_unslash( $_POST['parva'] ) )
+				? (float) wp_unslash( $_POST['parva'] )
+				: 0.0,
+		)
+	);
+
+	wp_send_json_success(
+		array(
+			'checkout_url' => wc_get_checkout_url() . '?payment_method=' . rawurlencode( MTUC_PAYMENT_GATEWAY_ID ),
+		)
+	);
 }
 
 /**
@@ -469,7 +652,7 @@ function mtuc_get_checkout_payment_script_config( ?array $context = null ): arra
 		? $popup_context['enabled_schemes']
 		: array();
 
-	return array(
+	$config = array(
 		'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
 		'nonce'            => wp_create_nonce( 'mtuc_popup' ),
 		'source'           => 'checkout',
@@ -481,7 +664,25 @@ function mtuc_get_checkout_payment_script_config( ?array $context = null ): arra
 		'currencyDual'     => ! empty( $popup_context['currency']['dual'] ),
 		'showFirstVnoska'  => ! empty( $popup_context['show_first_vnoska'] ),
 		'i18n'             => mtuc_get_calculator_i18n_strings(),
+		'prefillActive'    => false,
+		'prefillParva'     => '',
 	);
+
+	$prefill = mtuc_get_checkout_prefill_session();
+	if ( is_array( $prefill ) ) {
+		if ( ! empty( $prefill['scheme_key'] ) ) {
+			$config['defaultSchemeKey'] = (string) $prefill['scheme_key'];
+		}
+		if ( ! empty( $prefill['offer_type'] ) ) {
+			$config['offerType'] = (string) $prefill['offer_type'];
+		}
+		if ( isset( $prefill['parva'] ) ) {
+			$config['prefillParva'] = number_format( (float) $prefill['parva'], 2, '.', '' );
+		}
+		$config['prefillActive'] = true;
+	}
+
+	return $config;
 }
 
 /**
@@ -520,7 +721,7 @@ function mtuc_build_checkout_payment_fields_data_config( array $popup ): string 
 	$config = array(
 		'enabledSchemes'   => $enabled_schemes,
 		'defaultSchemeKey' => isset( $popup['default_scheme_key'] ) ? (string) $popup['default_scheme_key'] : '',
-		'offerType'        => 'standard',
+		'offerType'        => isset( $popup['prefill_offer_type'] ) ? (string) $popup['prefill_offer_type'] : 'standard',
 	);
 
 	return (string) wp_json_encode( $config );
@@ -587,15 +788,21 @@ function mtuc_register_checkout_payment_hooks(): void {
 	add_action( 'woocommerce_blocks_loaded', 'mtuc_register_blocks_payment_method' );
 	add_action( 'wp_ajax_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
 	add_action( 'wp_ajax_nopriv_mtuc_checkout_blocks_refresh', 'mtuc_ajax_checkout_blocks_refresh' );
+	add_action( 'wp_ajax_mtuc_checkout_prefill', 'mtuc_ajax_checkout_prefill' );
+	add_action( 'wp_ajax_nopriv_mtuc_checkout_prefill', 'mtuc_ajax_checkout_prefill' );
+	add_filter( 'woocommerce_add_to_cart_redirect', 'mtuc_add_to_cart_checkout_redirect', 9999 );
 
 	if ( is_admin() ) {
 		return;
 	}
 
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_checkout_payment_assets', 100 );
+	add_action( 'template_redirect', 'mtuc_checkout_apply_payment_method_from_query', 4 );
 	add_action( 'template_redirect', 'mtuc_checkout_maybe_redirect_to_bank_on_thankyou', 5 );
 	add_action( 'woocommerce_checkout_process', 'mtuc_checkout_validate_process2_fields' );
 	add_action( 'woocommerce_checkout_create_order', 'mtuc_checkout_save_process2_order_meta', 10, 2 );
+	add_action( 'woocommerce_thankyou', 'mtuc_clear_checkout_prefill_session', 20 );
+	add_action( 'woocommerce_checkout_order_processed', 'mtuc_clear_checkout_prefill_session', 20 );
 }
 
 /**
@@ -687,6 +894,32 @@ function mtuc_enqueue_checkout_payment_assets(): void {
 	}
 
 	if ( mtuc_is_blocks_checkout() ) {
+		mtuc_enqueue_checkout_payment_styles();
+
+		$context = mtuc_get_checkout_payment_context();
+		if ( null === $context ) {
+			return;
+		}
+
+		$checkout_js = MTUC_PLUGIN_DIR . '/js/mtuc-checkout-payment.js';
+
+		wp_enqueue_script(
+			'mtuc-checkout-payment',
+			MTUC_JS_URI . '/mtuc-checkout-payment.js',
+			array( 'jquery' ),
+			file_exists( $checkout_js ) ? (string) filemtime( $checkout_js ) : MTUC_VERSION,
+			true
+		);
+
+		wp_localize_script(
+			'mtuc-checkout-payment',
+			'mtucCheckout',
+			array_merge(
+				mtuc_get_checkout_payment_script_config( $context ),
+				array( 'blocks' => true )
+			)
+		);
+
 		return;
 	}
 
