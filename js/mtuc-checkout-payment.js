@@ -168,6 +168,10 @@
 		return ids;
 	};
 
+	const formatConsentsForPaymentData = ($scope) => {
+		return getCheckedConsentIds($scope).join(",");
+	};
+
 	const releasePlaceOrderButton = () => {
 		const $btn = $("form.checkout #place_order");
 		if (!$btn.length || !$btn.data(PLACE_ORDER_LOCK)) {
@@ -627,7 +631,7 @@
 					mtuc_scheme_key: String($schemeKey.val() || ""),
 					mtuc_offer_type: "standard",
 					mtuc_parva: String($parvaHidden.val() || "0"),
-					mtuc_consent: getCheckedConsentIds($scope),
+					mtuc_consent: formatConsentsForPaymentData($scope),
 				},
 			};
 		};

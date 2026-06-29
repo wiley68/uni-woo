@@ -267,6 +267,37 @@ function mtuc_get_mandatory_consent_ids( array $shop ): array {
 }
 
 /**
+ * Parse accepted consent ids from POST / blocks payment_data.
+ *
+ * @param array<string, mixed> $posted Posted request data.
+ * @return int[]
+ */
+function mtuc_parse_accepted_consent_ids_from_post( array $posted ): array {
+	if ( ! isset( $posted['mtuc_consent'] ) ) {
+		return array();
+	}
+
+	$raw = $posted['mtuc_consent'];
+	if ( is_string( $raw ) ) {
+		$parts = '' === trim( $raw ) ? array() : explode( ',', $raw );
+	} elseif ( is_array( $raw ) ) {
+		$parts = $raw;
+	} else {
+		$parts = array( $raw );
+	}
+
+	$accepted = array();
+	foreach ( $parts as $consent_id ) {
+		$consent_id = absint( $consent_id );
+		if ( $consent_id > 0 ) {
+			$accepted[] = $consent_id;
+		}
+	}
+
+	return array_values( array_unique( $accepted ) );
+}
+
+/**
  * Validate mandatory consents from checkout/popup POST.
  *
  * @param array<string, mixed> $posted Posted request data.
@@ -279,17 +310,7 @@ function mtuc_validate_mandatory_consents_from_post( array $posted, array $shop 
 		return true;
 	}
 
-	$accepted = array();
-	if ( isset( $posted['mtuc_consent'] ) ) {
-		$raw = $posted['mtuc_consent'];
-		if ( ! is_array( $raw ) ) {
-			$raw = array( $raw );
-		}
-
-		foreach ( $raw as $consent_id ) {
-			$accepted[] = absint( $consent_id );
-		}
-	}
+	$accepted = mtuc_parse_accepted_consent_ids_from_post( $posted );
 
 	foreach ( $required as $consent_id ) {
 		if ( ! in_array( $consent_id, $accepted, true ) ) {
