@@ -435,6 +435,11 @@ function sanitize_text_field(string $str): string
 	return $str;
 }
 
+function wp_strip_all_tags( string $str, bool $remove_breaks = false ): string
+{
+	return $str;
+}
+
 /**
  * @param string $key
  * @return string

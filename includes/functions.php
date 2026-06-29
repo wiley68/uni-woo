@@ -166,6 +166,63 @@ function mtuc_get_uni_mini_logo_url(): string {
 }
 
 /**
+ * Normalized shop consents from CP cache (sorted by id).
+ *
+ * @param array<string, mixed> $shop Shop `data` object.
+ * @return array<int, array{id:int,name:string,url:string,mandatory:bool,has_checkbox:bool}>
+ */
+function mtuc_get_shop_consents( array $shop ): array {
+	$raw = $shop['consents'] ?? null;
+
+	if ( is_string( $raw ) ) {
+		$decoded = json_decode( $raw, true );
+		$raw       = is_array( $decoded ) ? $decoded : null;
+	}
+
+	if ( ! is_array( $raw ) || empty( $raw ) ) {
+		return array();
+	}
+
+	$consents = array();
+
+	foreach ( $raw as $index => $item ) {
+		if ( ! is_array( $item ) ) {
+			continue;
+		}
+
+		$name = isset( $item['name'] ) ? wp_strip_all_tags( (string) $item['name'] ) : '';
+		if ( '' === $name ) {
+			continue;
+		}
+
+		$id        = isset( $item['id'] ) ? absint( $item['id'] ) : (int) $index + 1;
+		$url       = isset( $item['url'] ) ? esc_url_raw( (string) $item['url'] ) : '';
+		$mandatory = mtuc_is_yes_flag( $item['mandatory'] ?? 0 );
+
+		$consents[] = array(
+			'id'           => $id,
+			'name'         => $name,
+			'url'          => $url,
+			'mandatory'    => $mandatory,
+			'has_checkbox' => $mandatory,
+		);
+	}
+
+	if ( empty( $consents ) ) {
+		return array();
+	}
+
+	usort(
+		$consents,
+		static function ( array $a, array $b ): int {
+			return $a['id'] <=> $b['id'];
+		}
+	);
+
+	return $consents;
+}
+
+/**
  * Build reklama context when the floating button should be shown.
  *
  * @param bool $settings_only Skip shop cache lookup (for asset enqueue).

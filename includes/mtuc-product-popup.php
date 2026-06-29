@@ -833,6 +833,7 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
 		'source'                  => 'product',
 		'hide_add_to_cart'        => false,
 		'process2'                => mtuc_is_shop_process_2( $shop ),
+		'consents'                => mtuc_get_shop_consents( $shop ),
 	);
 }
 

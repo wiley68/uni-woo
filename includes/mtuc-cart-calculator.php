@@ -1099,6 +1099,7 @@ function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_t
 		'has_promo'               => ! empty( $common_promo ),
 		'hide_add_to_cart'        => true,
 		'process2'                => mtuc_is_shop_process_2( $shop ),
+		'consents'                => mtuc_get_shop_consents( $shop ),
 	);
 
 	if ( 'checkout' === $source ) {

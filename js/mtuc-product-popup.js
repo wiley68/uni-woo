@@ -45,6 +45,7 @@
 		const $emailError = $("#mtuc-popup-email-error");
 		const $egnError = $("#mtuc-popup-egn-error");
 		const $phone2Error = $("#mtuc-popup-phone2-error");
+		const $consentCheckboxes = $popup.find(".mtuc-popup__consent-checkbox");
 		let calculateTimer = null;
 		const PARVA_CALCULATE_DELAY = 900;
 		let lastCalculation = null;
@@ -309,6 +310,22 @@
 			return email !== "" && EMAIL_VALID_PATTERN.test(email);
 		};
 
+		const areMandatoryConsentsChecked = () => {
+			if (!$consentCheckboxes.length) {
+				return true;
+			}
+
+			let allChecked = true;
+			$consentCheckboxes.each(function () {
+				if (!this.checked) {
+					allChecked = false;
+					return false;
+				}
+			});
+
+			return allChecked;
+		};
+
 		const isStep2FormValid = () => {
 			const baseValid =
 				isNonEmpty($firstName.val()) &&
@@ -321,11 +338,13 @@
 				return false;
 			}
 
-			if (!isProcess2()) {
-				return true;
+			if (isProcess2()) {
+				if (!isValidEgn($egn.val()) || !isValidPhone($phone2.val())) {
+					return false;
+				}
 			}
 
-			return isValidEgn($egn.val()) && isValidPhone($phone2.val());
+			return areMandatoryConsentsChecked();
 		};
 
 		const getRequiredFieldError = () => {
@@ -450,6 +469,7 @@
 				$egn.val("");
 				$phone2.val("");
 			}
+			$consentCheckboxes.prop("checked", false);
 			clearStep2FieldErrors();
 			updateSubmitState();
 		};
@@ -873,13 +893,23 @@
 		});
 		$phone.on("change blur", onStep2FieldInput);
 
+		$consentCheckboxes.on("change", updateSubmitState);
+		$popup.on(
+			"mousedown",
+			".mtuc-popup__consent-label a",
+			function (event) {
+				event.stopPropagation();
+			},
+		);
+
 		updateSubmitState();
 
 		$("#mtuc-popup-submit").on("click", function () {
 			if (submitInFlight) {
 				return;
 			}
-			if (!validateStep2Form(true)) {
+			if (!validateStep2Form(true) || !areMandatoryConsentsChecked()) {
+				updateSubmitState();
 				return;
 			}
 			submitPopupOrder();
