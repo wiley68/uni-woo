@@ -1456,6 +1456,7 @@ function mtuc_build_cp_cart_order_payload(
 		'products_q'    => $cp_products['products_q'],
 		'type_client'   => mtuc_get_cp_type_client(),
 		'currency'      => mtuc_get_cp_order_currency( $shop ),
+		'version'       => mtuc_get_cp_order_version(),
 	);
 }
 
@@ -1709,6 +1710,21 @@ function mtuc_get_cp_type_client(): int {
 }
 
 /**
+ * Plugin version for CP orders API (vc[11]).
+ *
+ * @return string|null
+ */
+function mtuc_get_cp_order_version(): ?string {
+	if ( ! defined( 'MTUC_VERSION' ) ) {
+		return null;
+	}
+
+	$version = trim( (string) MTUC_VERSION );
+
+	return '' !== $version ? $version : null;
+}
+
+/**
  * Build CP StoreOrderRequest payload from popup order data.
  *
  * @param WC_Order              $order       WooCommerce order.
@@ -1777,6 +1793,7 @@ function mtuc_build_cp_order_payload(
 		'products_q'    => $cp_products['products_q'],
 		'type_client'   => mtuc_get_cp_type_client(),
 		'currency'      => mtuc_get_cp_order_currency( $shop ),
+		'version'       => mtuc_get_cp_order_version(),
 	);
 }
 
