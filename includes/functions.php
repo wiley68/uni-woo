@@ -157,6 +157,16 @@ function mtuc_get_uni_logo_url( bool $for_dark_button = false ): string {
 }
 
 /**
+ * Optional heading above calculator buttons from CP shop settings.
+ *
+ * @param array<string, mixed> $shop Shop `data` object from CP.
+ * @return string Empty when uni_zaglavie is not set.
+ */
+function mtuc_get_shop_calculator_heading( array $shop ): string {
+	return isset( $shop['uni_zaglavie'] ) ? trim( (string) $shop['uni_zaglavie'] ) : '';
+}
+
+/**
  * Mini UniCredit logo URL for popup buy button badge.
  *
  * @return string
@@ -1596,6 +1606,7 @@ function mtuc_get_product_calculator_context(): ?array {
 		'is_dark_button'   => $is_dark_button,
 		'logo_url'         => mtuc_get_uni_logo_url( $is_dark_button ),
 		'gap'              => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
+		'heading'          => mtuc_get_shop_calculator_heading( $shop ),
 		'popup'            => mtuc_get_product_popup_context(
 			$shop,
 			array(

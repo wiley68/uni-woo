@@ -635,6 +635,7 @@ function mtuc_build_cart_calculator_context(): ?array {
 		'is_dark_button'   => $is_dark_button,
 		'logo_url'         => mtuc_get_uni_logo_url( $is_dark_button ),
 		'gap'              => (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_GAP ),
+		'heading'          => mtuc_get_shop_calculator_heading( $shop ),
 		'popup'            => mtuc_get_cart_popup_context(
 			$shop,
 			array(

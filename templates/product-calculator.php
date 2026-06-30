@@ -20,6 +20,7 @@ $mtuc_button_width     = (int) ( $context['button_width'] ?? 290 );
 $mtuc_button_height    = (int) ( $context['button_height'] ?? 56 );
 $mtuc_standard         = isset( $context['standard'] ) && is_array( $context['standard'] ) ? $context['standard'] : null;
 $mtuc_promo            = isset( $context['promo'] ) && is_array( $context['promo'] ) ? $context['promo'] : null;
+$mtuc_heading          = isset( $context['heading'] ) ? trim( (string) $context['heading'] ) : '';
 $mtuc_root_classes     = 'mtuc-product-calculator';
 $mtuc_root_style       = sprintf(
 	'--mtuc-btn-width:%1$dpx;--mtuc-btn-height:%2$dpx;',
@@ -57,6 +58,9 @@ if ( ! $mtuc_standard_visible && ! $mtuc_promo_visible ) {
 	style="<?php echo esc_attr( $mtuc_root_style ); ?>"
 	data-mtuc-product-id="<?php echo esc_attr( (string) (int) ( $context['product_id'] ?? 0 ) ); ?>"
 >
+	<?php if ( '' !== $mtuc_heading ) : ?>
+		<p class="mtuc-product-calculator__heading"><?php echo esc_html( $mtuc_heading ); ?></p>
+	<?php endif; ?>
 	<div class="mtuc-product-calculator__wrap">
 		<button
 			type="button"
