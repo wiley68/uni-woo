@@ -33,3 +33,13 @@ if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
 if ( ! defined( 'MTUC_SSL_PASSWD' ) ) {
 	define( 'MTUC_SSL_PASSWD', '1234' );
 }
+
+/** Minimum installment count for leasing schemes (inclusive). */
+if ( ! defined( 'MTUC_SCHEME_MONTH_MIN' ) ) {
+	define( 'MTUC_SCHEME_MONTH_MIN', 3 );
+}
+
+/** Maximum installment count for leasing schemes (inclusive). */
+if ( ! defined( 'MTUC_SCHEME_MONTH_MAX' ) ) {
+	define( 'MTUC_SCHEME_MONTH_MAX', 36 );
+}

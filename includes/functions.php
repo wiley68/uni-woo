@@ -943,6 +943,16 @@ function mtuc_schema_filter_dates_match( array $filter ): bool {
 }
 
 /**
+ * Whether an installment count is within the supported scheme range.
+ *
+ * @param int $months Installment count.
+ * @return bool
+ */
+function mtuc_is_valid_scheme_month( int $months ): bool {
+	return $months >= MTUC_SCHEME_MONTH_MIN && $months <= MTUC_SCHEME_MONTH_MAX;
+}
+
+/**
  * Parse underscore-separated positive integers (e.g. schema uni_meseci).
  *
  * @param string $raw Raw value from CP.
@@ -953,25 +963,26 @@ function mtuc_parse_underscore_ints( string $raw ): array {
 
 	foreach ( explode( '_', $raw ) as $part ) {
 		$value = (int) trim( $part );
-		if ( $value > 0 ) {
+		if ( mtuc_is_valid_scheme_month( $value ) ) {
 			$values[] = $value;
 		}
 	}
 
-	return $values;
+	return array_values( array_unique( $values ) );
 }
 
 /**
  * Enabled installment counts from shop settings.
  *
+ * Shop flags: uni_meseci_{N} for each N in [MTUC_SCHEME_MONTH_MIN, MTUC_SCHEME_MONTH_MAX].
+ *
  * @param array<string, mixed> $shop Shop `data` object from CP.
  * @return array<int, int>
  */
 function mtuc_get_shop_enabled_months( array $shop ): array {
-	$choices = array( 3, 4, 5, 6, 9, 10, 12, 15, 18, 24, 30, 36 );
 	$enabled = array();
 
-	foreach ( $choices as $months ) {
+	for ( $months = MTUC_SCHEME_MONTH_MIN; $months <= MTUC_SCHEME_MONTH_MAX; $months++ ) {
 		if ( mtuc_is_yes_flag( $shop[ 'uni_meseci_' . $months ] ?? 0 ) ) {
 			$enabled[] = $months;
 		}
@@ -1120,7 +1131,7 @@ function mtuc_find_best_coeff_for_months( array $coeff_list, string $kop_code, a
 		$entry_code  = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
 		$entry_month = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
 
-		if ( $entry_code !== $kop_code || ! in_array( $entry_month, $allowed_months, true ) ) {
+		if ( $entry_code !== $kop_code || ! mtuc_is_valid_scheme_month( $entry_month ) || ! in_array( $entry_month, $allowed_months, true ) ) {
 			continue;
 		}
 
@@ -1238,14 +1249,7 @@ function mtuc_find_best_promo_coeff_entry(
 	$best_months = 0;
 
 	if ( 'eq' === $meseci_znak ) {
-		$allowed_months = array();
-
-		foreach ( explode( '_', $meseci_raw ) as $part ) {
-			$month = (int) trim( $part );
-			if ( $month > 0 ) {
-				$allowed_months[] = $month;
-			}
-		}
+		$allowed_months = mtuc_parse_underscore_ints( str_replace( ',', '_', $meseci_raw ) );
 
 		if ( empty( $allowed_months ) ) {
 			return null;
@@ -1266,7 +1270,7 @@ function mtuc_find_best_promo_coeff_entry(
 			$entry_code  = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
 			$entry_month = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
 
-			if ( $entry_code !== $kop_code || ! in_array( $entry_month, $allowed_months, true ) ) {
+			if ( $entry_code !== $kop_code || ! mtuc_is_valid_scheme_month( $entry_month ) || ! in_array( $entry_month, $allowed_months, true ) ) {
 				continue;
 			}
 
@@ -1286,11 +1290,11 @@ function mtuc_find_best_promo_coeff_entry(
 			$min_months = isset( $parts[0] ) ? (int) trim( $parts[0] ) : 0;
 		}
 
-		if ( $min_months <= 0 ) {
+		if ( ! mtuc_is_valid_scheme_month( $min_months ) ) {
 			return null;
 		}
 
-		if ( $preferred_month >= $min_months ) {
+		if ( $preferred_month >= $min_months && mtuc_is_valid_scheme_month( $preferred_month ) ) {
 			$preferred_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $preferred_month );
 			if ( null !== $preferred_entry ) {
 				return $preferred_entry;
@@ -1305,7 +1309,7 @@ function mtuc_find_best_promo_coeff_entry(
 			$entry_code  = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
 			$entry_month = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
 
-			if ( $entry_code !== $kop_code || $entry_month < $min_months ) {
+			if ( $entry_code !== $kop_code || $entry_month < $min_months || ! mtuc_is_valid_scheme_month( $entry_month ) ) {
 				continue;
 			}
 

@@ -372,7 +372,7 @@ function mtuc_get_popup_standard_default_options(
 }
 
 /**
- * Popup month choices: shop uni_meseci_* intersect valid KOP/coeff matches.
+ * Popup month choices: shop uni_meseci_{3..36} intersect valid KOP/coeff matches.
  *
  * Standard popup includes all standard schemes plus eligible promo 0% schemes.
  * Promo popup keeps one best option per month.
@@ -846,6 +846,10 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
  * @return bool
  */
 function mtuc_is_default_promo_month_allowed( array $by_default, int $months, float $price ): bool {
+	if ( ! mtuc_is_valid_scheme_month( $months ) ) {
+		return false;
+	}
+
 	$promo_price = isset( $by_default['uni_promo_price'] ) ? (float) $by_default['uni_promo_price'] : 0.0;
 	if ( $promo_price > 0 && $price < $promo_price ) {
 		return false;
@@ -869,7 +873,7 @@ function mtuc_is_default_promo_month_allowed( array $by_default, int $months, fl
 			$min_months = isset( $parts[0] ) ? (int) trim( $parts[0] ) : 0;
 		}
 
-		return $min_months > 0 && $months >= $min_months;
+		return mtuc_is_valid_scheme_month( $min_months ) && $months >= $min_months;
 	}
 
 	return false;
