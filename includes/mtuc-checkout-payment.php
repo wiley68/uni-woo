@@ -159,6 +159,10 @@ function mtuc_send_leasing_order_notifications_once( WC_Order $order ): void {
  * @return void
  */
 function mtuc_apply_payment_gateway_to_order( WC_Order $order, string $status_note = '' ): void {
+	if ( $order->has_status( array( 'failed', 'cancelled', 'trash' ) ) ) {
+		return;
+	}
+
 	$order->set_payment_method( MTUC_PAYMENT_GATEWAY_ID );
 	$order->set_payment_method_title( mtuc_get_payment_gateway_title() );
 

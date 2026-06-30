@@ -52,7 +52,7 @@ const MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT = '_mtuc_process2_uni_email_sent';
  */
 function mtuc_get_bank_status_labels(): array {
 	return array(
-		MTUC_BANK_STATUS_WC_CREATED       => __( 'Създаден в магазина', 'mtunicredit' ),
+		MTUC_BANK_STATUS_WC_CREATED       => __( 'Неуспешно изпратена към Банката', 'mtunicredit' ),
 		MTUC_BANK_STATUS_CP_SENT          => __( 'Създаден в КП Банка', 'mtunicredit' ),
 		MTUC_BANK_STATUS_SMARTUCF_SENT    => __( 'Създаден в SmartUCF', 'mtunicredit' ),
 		MTUC_BANK_STATUS_PROCESS2_CP_SENT => __( 'Създаден от Процес 2', 'mtunicredit' ),
@@ -793,6 +793,33 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
 }
 
 /**
+ * Mark a shop order as failed when CP order creation did not succeed.
+ *
+ * @param WC_Order $order  Order instance.
+ * @param string   $reason Optional failure details for the order note.
+ * @return void
+ */
+function mtuc_fail_order_on_cp_create_error( WC_Order $order, string $reason = '' ): void {
+	$note = __( 'Поръчката не беше създадена в Контролния панел.', 'mtunicredit' );
+
+	$reason = trim( $reason );
+	if ( '' !== $reason && defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug only.
+		error_log( 'MTUC CP create order failed (order #' . $order->get_id() . '): ' . $reason );
+	}
+
+	$order->update_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE, 1 );
+
+	if ( $order->has_status( array( 'failed', 'cancelled', 'trash' ) ) ) {
+		$order->add_order_note( $note );
+		$order->save();
+		return;
+	}
+
+	$order->update_status( 'failed', $note );
+}
+
+/**
  * Mark popup order after bank step failure; redirect customer to thank-you page.
  *
  * @param WC_Order $order Order instance.
@@ -900,8 +927,6 @@ function mtuc_complete_order_bank_submission(
 ) {
 	$cp_result = mtuc_send_cart_popup_order_to_cp( $order, $customer, $calculation, $shop );
 	if ( is_wp_error( $cp_result ) ) {
-		mtuc_handle_popup_order_bank_unavailable( $order );
-
 		return array(
 			'bank_unavailable' => true,
 			'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
@@ -1070,7 +1095,9 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $result;
 	}
 
-	mtuc_apply_payment_gateway_to_order( $order );
+	if ( empty( $result['bank_unavailable'] ) ) {
+		mtuc_apply_payment_gateway_to_order( $order );
+	}
 
 	return $result;
 }
@@ -1479,6 +1506,7 @@ function mtuc_send_cart_popup_order_to_cp(
 	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
 
 	if ( is_wp_error( $response ) ) {
+		mtuc_fail_order_on_cp_create_error( $order, $response->get_error_message() );
 		return $response;
 	}
 
@@ -1487,9 +1515,14 @@ function mtuc_send_cart_popup_order_to_cp(
 		$cp_order_id = (int) $response['data']['id'];
 	}
 
-	if ( $cp_order_id > 0 ) {
-		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
+	if ( $cp_order_id <= 0 ) {
+		$message = __( 'КП не върна идентификатор на поръчката.', 'mtunicredit' );
+		mtuc_fail_order_on_cp_create_error( $order, $message );
+
+		return new WP_Error( 'mtuc_cp_no_order_id', $message );
 	}
+
+	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
 
 	mtuc_update_order_bank_status( $order, mtuc_get_cp_create_bank_status_key( $shop ) );
 	$order->save();
@@ -1656,7 +1689,9 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		wp_send_json_error( array( 'message' => $submission->get_error_message() ), 500 );
 	}
 
-	mtuc_apply_payment_gateway_to_order( $order );
+	if ( empty( $submission['bank_unavailable'] ) ) {
+		mtuc_apply_payment_gateway_to_order( $order );
+	}
 
 	mtuc_release_popup_submit_lock( $lock_key );
 
@@ -1833,6 +1868,7 @@ function mtuc_send_popup_order_to_cp(
 	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
 
 	if ( is_wp_error( $response ) ) {
+		mtuc_fail_order_on_cp_create_error( $order, $response->get_error_message() );
 		return $response;
 	}
 
@@ -1841,9 +1877,14 @@ function mtuc_send_popup_order_to_cp(
 		$cp_order_id = (int) $response['data']['id'];
 	}
 
-	if ( $cp_order_id > 0 ) {
-		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
+	if ( $cp_order_id <= 0 ) {
+		$message = __( 'КП не върна идентификатор на поръчката.', 'mtunicredit' );
+		mtuc_fail_order_on_cp_create_error( $order, $message );
+
+		return new WP_Error( 'mtuc_cp_no_order_id', $message );
 	}
+
+	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
 
 	mtuc_update_order_bank_status( $order, mtuc_get_cp_create_bank_status_key( $shop ) );
 
@@ -2137,8 +2178,6 @@ function mtuc_ajax_popup_submit(): void {
 
 	if ( is_wp_error( $cp_result ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		mtuc_handle_popup_order_bank_unavailable( $order );
-		mtuc_apply_payment_gateway_to_order( $order );
 		mtuc_send_popup_bank_unavailable_response( $order );
 	}
 
