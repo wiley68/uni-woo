@@ -1111,7 +1111,7 @@ function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_t
 		$unified_schemes = mtuc_build_checkout_unified_scheme_options( $common_standard, $common_promo );
 
 		$popup['enabled_schemes']    = $unified_schemes;
-		$popup['default_scheme_key'] = mtuc_pick_default_popup_scheme_key(
+		$popup['default_scheme_key'] = mtuc_pick_default_checkout_scheme_key(
 			$shop,
 			$unified_schemes,
 			$context['standard'] ?? null

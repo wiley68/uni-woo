@@ -514,6 +514,74 @@ function mtuc_pick_default_popup_scheme_key( array $shop, array $enabled_options
 }
 
 /**
+ * Whether a coeff row is a zero-interest (0%) scheme.
+ *
+ * @param array<string, mixed>|null $coeff_entry Coefficient row.
+ * @return bool
+ */
+function mtuc_is_zero_interest_coeff_entry( ?array $coeff_entry ): bool {
+	if ( null === $coeff_entry ) {
+		return false;
+	}
+
+	$glp = isset( $coeff_entry['interestPercent'] ) ? (float) $coeff_entry['interestPercent'] : -1.0;
+
+	return abs( $glp ) <= 0.00001;
+}
+
+/**
+ * Default scheme key for checkout: prefer longest 0% promo, else existing popup fallback.
+ *
+ * Prefill from product popup („Купи“) overrides this later via mtuc_apply_checkout_prefill_to_popup().
+ *
+ * @param array<string, mixed>                                                               $shop            Shop `data` object from CP.
+ * @param array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int,scheme_type?:string}> $enabled_options Unified checkout schemes.
+ * @param array<string, mixed>|null                                                          $button_offer    Optional button offer for fallback.
+ * @return string
+ */
+function mtuc_pick_default_checkout_scheme_key( array $shop, array $enabled_options, ?array $button_offer = null ): string {
+	if ( empty( $enabled_options ) ) {
+		return '';
+	}
+
+	$coeff_list  = mtuc_get_shop_coeff_list( $shop );
+	$best_key    = '';
+	$best_months = -1;
+
+	foreach ( $enabled_options as $option ) {
+		if ( ! is_array( $option ) ) {
+			continue;
+		}
+
+		if ( 'promo' !== (string) ( $option['scheme_type'] ?? '' ) ) {
+			continue;
+		}
+
+		$months   = (int) ( $option['months'] ?? 0 );
+		$kop_code = trim( (string) ( $option['kop_code'] ?? '' ) );
+		if ( $months <= 0 || '' === $kop_code ) {
+			continue;
+		}
+
+		$coeff_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $months );
+		if ( ! mtuc_is_zero_interest_coeff_entry( $coeff_entry ) ) {
+			continue;
+		}
+
+		if ( $months > $best_months ) {
+			$best_months = $months;
+			$best_key    = (string) ( $option['key'] ?? mtuc_build_popup_scheme_option_key( $months, (int) ( $option['filter_id'] ?? 0 ), 'promo' ) );
+		}
+	}
+
+	if ( '' !== $best_key ) {
+		return $best_key;
+	}
+
+	return mtuc_pick_default_popup_scheme_key( $shop, $enabled_options, $button_offer );
+}
+
+/**
  * Currency labels for popup display.
  *
  * @param array<string, mixed> $shop Shop `data` object from CP.
