@@ -437,7 +437,37 @@ function mtuc_get_current_wc_product(): ?WC_Product {
 }
 
 /**
+ * Catalog/filter product ID for CP schema matching (parity with PrestaShop unipayment).
+ *
+ * Variations always resolve to their parent. Price stays on the variation instance.
+ *
+ * @param WC_Product $product Product or variation instance.
+ * @return int Parent ID for variations, otherwise product ID.
+ */
+function mtuc_get_catalog_product_id( WC_Product $product ): int {
+	if ( $product->is_type( 'variation' ) ) {
+		$parent_id = (int) $product->get_parent_id();
+
+		return $parent_id > 0 ? $parent_id : (int) $product->get_id();
+	}
+
+	return (int) $product->get_id();
+}
+
+/**
+ * Variation ID when the product is a variation; otherwise 0.
+ *
+ * @param WC_Product $product Product or variation instance.
+ * @return int
+ */
+function mtuc_get_product_variation_id( WC_Product $product ): int {
+	return $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
+}
+
+/**
  * Category term IDs for a product (includes parent categories in WC).
+ *
+ * For variations, categories are read from the parent (variations usually have none).
  *
  * @param WC_Product|null $product Product instance (defaults to current product).
  * @return array<int, int>
@@ -449,6 +479,16 @@ function mtuc_get_product_category_ids( ?WC_Product $product = null ): array {
 
 	if ( ! $product instanceof WC_Product ) {
 		return array();
+	}
+
+	if ( $product->is_type( 'variation' ) ) {
+		$parent_id = (int) $product->get_parent_id();
+		if ( $parent_id > 0 ) {
+			$parent = mtuc_get_wc_product_by_id( $parent_id );
+			if ( $parent instanceof WC_Product ) {
+				$product = $parent;
+			}
+		}
 	}
 
 	$ids = $product->get_category_ids();
@@ -717,7 +757,7 @@ function mtuc_resolve_schema_button_offer(
 		return null;
 	}
 
-	$product_id   = $product->get_id();
+	$product_id   = mtuc_get_catalog_product_id( $product );
 	$category_ids = mtuc_get_product_category_ids( $product );
 	$candidates   = array();
 	$preferred    = (int) ( $shop['uni_shema_current'] ?? 0 );
@@ -792,9 +832,9 @@ function mtuc_resolve_schema_button_offer(
  * Whether a schema filter row matches the current product and price.
  *
  * @param array<string, mixed> $filter       Schema filter row from CP.
- * @param int                  $product_id   Current product ID.
- * @param array<int, int>      $category_ids Product category term IDs.
- * @param float                $price        Product price including tax.
+ * @param int                  $product_id   Catalog product ID (parent for variations).
+ * @param array<int, int>      $category_ids Product category term IDs (from parent for variations).
+ * @param float                $price        Product/variation price including tax.
  * @return bool
  */
 function mtuc_schema_filter_matches_product( array $filter, int $product_id, array $category_ids, float $price ): bool {
@@ -1595,7 +1635,7 @@ function mtuc_get_product_calculator_context(): ?array {
 	$line_price      = mtuc_get_product_price( $current_product );
 
 	$context = array(
-		'product_id'       => $current_product instanceof WC_Product ? $current_product->get_id() : 0,
+		'product_id'       => $current_product instanceof WC_Product ? mtuc_get_catalog_product_id( $current_product ) : 0,
 		'offer'            => $offer,
 		'standard'         => $standard,
 		'promo'            => $promo,
@@ -1673,7 +1713,9 @@ function mtuc_enqueue_product_assets(): void {
 	$calculator_js   = MTUC_PLUGIN_DIR . '/js/mtuc-product-calculator.js';
 	$popup_js        = MTUC_PLUGIN_DIR . '/js/mtuc-product-popup.js';
 	$current_product = mtuc_get_current_wc_product();
-	$product_id      = $current_product instanceof WC_Product ? $current_product->get_id() : (int) ( $context['product_id'] ?? 0 );
+	$product_id      = $current_product instanceof WC_Product
+		? mtuc_get_catalog_product_id( $current_product )
+		: (int) ( $context['product_id'] ?? 0 );
 
 	mtuc_enqueue_fonts();
 

@@ -56,8 +56,8 @@ function mtuc_get_cart_line_entries(): array {
 			? round( (float) $cart_item['line_total'] + (float) $cart_item['line_tax'], 2 )
 			: round( (float) wc_get_price_including_tax( $product, array( 'qty' => $quantity ) ), 2 );
 
-		$variation_id = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
-		$parent_id    = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
+		$variation_id = mtuc_get_product_variation_id( $product );
+		$parent_id    = mtuc_get_catalog_product_id( $product );
 
 		$entries[] = array(
 			'product'      => $product,

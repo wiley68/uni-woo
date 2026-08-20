@@ -268,22 +268,50 @@
 			}
 		};
 
-		const showStep = (step) => {
+		const prefersReducedMotion = () => {
+			return !!(
+				window.matchMedia &&
+				window.matchMedia("(prefers-reduced-motion: reduce)").matches
+			);
+		};
+
+		const showStep = (step, options) => {
+			const animate =
+				!!(options && options.animate) && !prefersReducedMotion();
+			const $from = step === 2 ? $step1 : $step2;
+			const $to = step === 2 ? $step2 : $step1;
+
+			$step1.stop(true, true);
+			$step2.stop(true, true);
+
 			if (step === 2) {
-				$step1
-					.prop("hidden", true)
-					.removeClass("mtuc-popup__step--active");
-				$step2
-					.prop("hidden", false)
-					.addClass("mtuc-popup__step--active");
 				clearStep2FieldErrors();
 				updateSubmitState();
+			} else {
+				clearStep2FieldErrors();
+			}
+
+			if (!animate) {
+				$from
+					.hide()
+					.prop("hidden", true)
+					.removeClass("mtuc-popup__step--active");
+				$to.prop("hidden", false)
+					.show()
+					.addClass("mtuc-popup__step--active");
 				return;
 			}
 
-			$step2.prop("hidden", true).removeClass("mtuc-popup__step--active");
-			$step1.prop("hidden", false).addClass("mtuc-popup__step--active");
-			clearStep2FieldErrors();
+			$from
+				.prop("hidden", false)
+				.removeClass("mtuc-popup__step--active");
+			$to.prop("hidden", false).addClass("mtuc-popup__step--active");
+			$to.hide();
+			$from.hide("slow");
+			$to.show("slow", function () {
+				$from.prop("hidden", true).hide();
+				$to.prop("hidden", false).show();
+			});
 		};
 
 		const PHONE_ALLOWED_PATTERN = /[-0-9+() ]/;
@@ -987,7 +1015,7 @@
 			if (submitInFlight || redirectPending) {
 				return;
 			}
-			showStep(1);
+			showStep(1, { animate: true });
 		});
 
 		$("#mtuc-popup-buy").on("click", function () {
@@ -995,7 +1023,7 @@
 				return;
 			}
 			prefillStep2CustomerFields();
-			showStep(2);
+			showStep(2, { animate: true });
 			updateSubmitState();
 		});
 

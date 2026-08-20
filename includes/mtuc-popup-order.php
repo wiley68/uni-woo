@@ -1418,18 +1418,10 @@ function mtuc_build_smartucf_items_from_order( WC_Order $order ): array {
 		$quantity   = max( 1, (int) $item->get_quantity() );
 		$unit_price = mtuc_get_order_item_unit_price_inc_tax( $item );
 
-		$variation_id = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
-		$parent_id    = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
+		$variation_id = mtuc_get_product_variation_id( $product );
+		$parent_id    = mtuc_get_catalog_product_id( $product );
 
-		$category_product = $product;
-		if ( $variation_id > 0 ) {
-			$parent = mtuc_get_wc_product_by_id( $parent_id );
-			if ( $parent instanceof WC_Product ) {
-				$category_product = $parent;
-			}
-		}
-
-		$category_ids     = mtuc_get_product_category_ids( $category_product );
+		$category_ids     = mtuc_get_product_category_ids( $product );
 		$product_category = ! empty( $category_ids ) ? (int) $category_ids[0] : 0;
 		$item_code        = $variation_id > 0 ? $variation_id : $parent_id;
 
@@ -1525,8 +1517,8 @@ function mtuc_build_cp_cart_order_payload(
 			continue;
 		}
 
-		$variation_id         = $product->is_type( 'variation' ) ? (int) $product->get_id() : 0;
-		$parent_id            = $variation_id > 0 ? (int) $product->get_parent_id() : (int) $product->get_id();
+		$variation_id         = mtuc_get_product_variation_id( $product );
+		$parent_id            = mtuc_get_catalog_product_id( $product );
 		$product_ids[]        = $variation_id > 0 ? $variation_id : $parent_id;
 		$product_names[]      = $product->get_name();
 		$product_quantities[] = max( 1, (int) $item->get_quantity() );

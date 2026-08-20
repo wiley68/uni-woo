@@ -172,7 +172,7 @@ function mtuc_get_popup_schema_options_for_promo_flag(
 	}
 
 	$scheme_type  = 1 === $uni_promo_filter ? 'promo' : 'standard';
-	$product_id   = $product->get_id();
+	$product_id   = mtuc_get_catalog_product_id( $product );
 	$category_ids = mtuc_get_product_category_ids( $product );
 	$options      = array();
 
@@ -818,7 +818,7 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
 	}
 
 	return array(
-		'product_id'              => $product instanceof WC_Product ? $product->get_id() : 0,
+		'product_id'              => $product instanceof WC_Product ? mtuc_get_catalog_product_id( $product ) : 0,
 		'banner_url'              => mtuc_get_shop_picture_url( $shop, false ),
 		'banner_url_mobile'       => mtuc_get_shop_picture_url( $shop, true ),
 		'reklama_url'             => $reklama_url,
@@ -917,7 +917,7 @@ function mtuc_find_all_schema_filters_for_month(
 		return array();
 	}
 
-	$product_id   = $product->get_id();
+	$product_id   = mtuc_get_catalog_product_id( $product );
 	$category_ids = mtuc_get_product_category_ids( $product );
 	$matches      = array();
 
@@ -1196,14 +1196,13 @@ function mtuc_build_product_calculator_refresh_payload( WC_Product $product, flo
 		$line_price
 	);
 
-	$parent_id    = (int) $product->get_parent_id();
-	$payload_id   = $parent_id > 0 ? $parent_id : $product->get_id();
-	$variation_id = $parent_id > 0 ? $product->get_id() : 0;
+	$parent_id    = mtuc_get_catalog_product_id( $product );
+	$variation_id = mtuc_get_product_variation_id( $product );
 
 	return array(
 		'visible'              => true,
 		'line_price'           => $line_price,
-		'product_id'           => $payload_id,
+		'product_id'           => $parent_id,
 		'variation_id'         => $variation_id,
 		'standard'             => is_array( $standard ) && ! empty( $standard['visible'] )
 			? array(
