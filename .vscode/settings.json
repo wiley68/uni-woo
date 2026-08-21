@@ -32,6 +32,7 @@
     "date",
     "json",
     "openssl",
+    "curl",
     "filter",
     "mbstring",
     "pcre",

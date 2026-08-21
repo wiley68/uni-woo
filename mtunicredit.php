@@ -72,6 +72,7 @@ $mtuc_files = array(
 	'/class-mtuc-certificate-local-store.php',
 	'/class-mtuc-certificate-synchronizer.php',
 	'/class-mtuc-cp-api-client.php',
+	'/class-mtuc-smartucf-endpoint-policy.php',
 	'/class-mtuc-smartucf-api-client.php',
 	'/class-mtuc-shop-cache.php',
 	'/class-mtuc-rest-api.php',

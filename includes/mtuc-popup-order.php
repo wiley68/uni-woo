@@ -942,7 +942,9 @@ function mtuc_fail_order_on_smartucf_error( WC_Order $order, string $reason = ''
 }
 
 /**
- * Whether a start_session error code is certificate sync PRE-SEND (no bank HTTP).
+ * Whether a start_session error code is PRE-SEND (no bank HTTP).
+ *
+ * Includes certificate synchronization failures and untrusted endpoint policy rejects.
  *
  * @param string $error_code WP_Error code.
  * @return bool
@@ -952,7 +954,7 @@ function mtuc_is_ssl_presend_error_code( string $error_code ): bool {
 		return false;
 	}
 
-	$ssl_codes = array(
+	$presend_codes = array(
 		'mtuc_ssl_certificate_unavailable',
 		'mtuc_ssl_sync_failed',
 		'mtuc_ssl_metadata_invalid',
@@ -974,9 +976,13 @@ function mtuc_is_ssl_presend_error_code( string $error_code ): bool {
 		'mtuc_ssl_cert_not_yet_valid',
 		'mtuc_ssl_payload_invalid',
 		'mtuc_smartucf_missing_ssl',
+		'mtuc_smartucf_untrusted_service',
+		'mtuc_smartucf_untrusted_application',
+		'mtuc_smartucf_untrusted_url',
+		'mtuc_smartucf_invalid_session_id',
 	);
 
-	return in_array( $error_code, $ssl_codes, true );
+	return in_array( $error_code, $presend_codes, true );
 }
 
 /**

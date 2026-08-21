@@ -18,57 +18,66 @@ class Mtuc_Smartucf_Api_Client {
 	private const TIMEOUT = 10;
 
 	/**
+	 * Optional test double replacing certificate synchronization.
+	 *
+	 * @var callable|null
+	 */
+	public static $certificate_synchronizer = null;
+
+	/**
+	 * Optional test double replacing the outbound HTTP transport.
+	 *
+	 * Callable signature: function( array $curl_options ): array{body:string,curl_error:string,http_code:int}
+	 *
+	 * @var callable|null
+	 */
+	public static $http_transport = null;
+
+	/**
 	 * Whether shop runs against SmartUCF test environment.
 	 *
 	 * @param array<string, mixed> $shop Shop `data` object from CP.
 	 * @return bool
 	 */
 	public static function is_test_environment( array $shop ): bool {
-		return 0 === (int) ( $shop['uni_env'] ?? 1 );
+		return Mtuc_Smartucf_Endpoint_Policy::is_test_environment( $shop );
 	}
 
 	/**
-	 * SmartUCF API endpoint for session start.
+	 * SmartUCF API endpoint for session start (module trust policy).
+	 *
+	 * Returns empty string when the CP-configured URL is not trusted.
 	 *
 	 * @param array<string, mixed> $shop Shop `data` object from CP.
 	 * @return string
 	 */
 	public static function get_service_url( array $shop ): string {
-		$base = self::is_test_environment( $shop )
-			? (string) ( $shop['uni_test_service'] ?? '' )
-			: (string) ( $shop['uni_production_service'] ?? '' );
-
-		return trailingslashit( $base ) . 'sucfOnlineSessionStart';
+		$resolved = Mtuc_Smartucf_Endpoint_Policy::resolve_session_start_url( $shop );
+		return is_wp_error( $resolved ) ? '' : $resolved;
 	}
 
 	/**
-	 * Browser redirect URL after successful session start.
+	 * Browser redirect URL after successful session start (module trust policy).
+	 *
+	 * Returns empty string when application base or session ID is not trusted.
 	 *
 	 * @param array<string, mixed> $shop       Shop `data` object from CP.
 	 * @param string               $session_id sucfOnlineSessionID value.
 	 * @return string
 	 */
 	public static function get_application_redirect_url( array $shop, string $session_id ): string {
-		$base = self::is_test_environment( $shop )
-			? (string) ( $shop['uni_test_application'] ?? '' )
-			: (string) ( $shop['uni_production_application'] ?? '' );
-
-		return untrailingslashit( $base ) . '/' . ltrim( $session_id, '/' );
+		$resolved = Mtuc_Smartucf_Endpoint_Policy::resolve_application_redirect_url( $shop, $session_id );
+		return is_wp_error( $resolved ) ? '' : $resolved;
 	}
 
 	/**
-	 * SmartUCF application base URLs allowed for browser redirect.
+	 * Module-owned SmartUCF application base URLs allowed for browser redirect.
 	 *
 	 * @param array<string, mixed> $shop Shop `data` object from CP.
 	 * @return array<int, string>
 	 */
 	public static function get_application_redirect_bases( array $shop ): array {
-		$bases = array(
-			untrailingslashit( (string) ( $shop['uni_test_application'] ?? '' ) ),
-			untrailingslashit( (string) ( $shop['uni_production_application'] ?? '' ) ),
-		);
-
-		return array_values( array_filter( $bases ) );
+		return array( Mtuc_Smartucf_Endpoint_Policy::expected_application_base( $shop ) );
 	}
 
 	/**
@@ -79,19 +88,7 @@ class Mtuc_Smartucf_Api_Client {
 	 * @return bool
 	 */
 	public static function is_trusted_redirect_url( string $redirect_url, array $shop ): bool {
-		$redirect_url = esc_url_raw( $redirect_url );
-		if ( '' === $redirect_url || false === filter_var( $redirect_url, FILTER_VALIDATE_URL ) ) {
-			return false;
-		}
-
-		$normalized = untrailingslashit( $redirect_url );
-		foreach ( self::get_application_redirect_bases( $shop ) as $base ) {
-			if ( 0 === stripos( $normalized, $base ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return Mtuc_Smartucf_Endpoint_Policy::is_trusted_redirect_url( $redirect_url, $shop );
 	}
 
 	/**
@@ -133,29 +130,64 @@ class Mtuc_Smartucf_Api_Client {
 	}
 
 	/**
+	 * Build cURL options for SmartUCF session start (FOLLOWLOCATION disabled).
+	 *
+	 * @param string                               $url   Trusted service URL.
+	 * @param string                               $body  JSON body.
+	 * @param Mtuc_Certificate_Consumer_Lease|null $lease Optional mTLS lease.
+	 * @return array<int, mixed>
+	 */
+	public static function build_session_curl_options( string $url, string $body, $lease = null ): array {
+		$curl_options = array(
+			CURLOPT_URL            => $url,
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_ENCODING       => '',
+			CURLOPT_FOLLOWLOCATION => false,
+			CURLOPT_MAXREDIRS      => 0,
+			CURLOPT_TIMEOUT        => self::TIMEOUT,
+			CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+			CURLOPT_CUSTOMREQUEST  => 'POST',
+			CURLOPT_POSTFIELDS     => $body,
+			CURLOPT_HTTPHEADER     => array(
+				'Content-Type: application/json',
+				'cache-control: no-cache',
+			),
+		);
+
+		if ( $lease instanceof Mtuc_Certificate_Consumer_Lease ) {
+			$curl_options[ CURLOPT_SSLKEY ]        = $lease->get_key_path();
+			$curl_options[ CURLOPT_SSLKEYPASSWD ]  = MTUC_SSL_PASSWD;
+			$curl_options[ CURLOPT_SSLCERT ]       = $lease->get_cert_path();
+			$curl_options[ CURLOPT_SSLCERTPASSWD ] = MTUC_SSL_PASSWD;
+			$curl_options[ CURLOPT_SSLVERSION ]    = CURL_SSLVERSION_TLSv1_2;
+		}
+
+		return $curl_options;
+	}
+
+	/**
 	 * Start SmartUCF online session.
 	 *
-	 * When uni_sertificat is enabled, synchronizes the client certificate with CP
-	 * and uses an immutable consumer lease for the cURL request. Sync failures are PRE-SEND.
+	 * Order: trusted endpoint resolution → certificate sync/lease (if enabled) → cURL → trusted redirect.
+	 * Untrusted endpoints are PRE-SEND (no sync, no lease, no HTTP).
 	 *
 	 * @param array<string, mixed> $payload Session request body.
 	 * @param array<string, mixed> $shop    Shop `data` object from CP.
 	 * @return array{session_id: string, redirect_url: string}|WP_Error
 	 */
 	public static function start_session( array $payload, array $shop ) {
-		$url = self::get_service_url( $shop );
-		if ( '' === $url || 'sucfOnlineSessionStart' === $url ) {
-			return new WP_Error(
-				'mtuc_smartucf_missing_service',
-				__( 'Липсва URL на SmartUCF услугата в настройките на магазина.', 'mtunicredit' )
-			);
+		$url = Mtuc_Smartucf_Endpoint_Policy::resolve_session_start_url( $shop );
+		if ( is_wp_error( $url ) ) {
+			return $url;
 		}
 
 		$use_certificate = mtuc_is_yes_flag( $shop['uni_sertificat'] ?? 0 );
 		$lease           = null;
 
 		if ( $use_certificate ) {
-			$lease = Mtuc_Certificate_Synchronizer::ensure_current( $shop );
+			$lease = is_callable( self::$certificate_synchronizer )
+				? call_user_func( self::$certificate_synchronizer, $shop )
+				: Mtuc_Certificate_Synchronizer::ensure_current( $shop );
 			if ( is_wp_error( $lease ) ) {
 				return $lease;
 			}
@@ -176,49 +208,35 @@ class Mtuc_Smartucf_Api_Client {
 				);
 			}
 
-			if ( ! function_exists( 'curl_init' ) ) {
+			if ( ! function_exists( 'curl_init' ) && ! is_callable( self::$http_transport ) ) {
 				return new WP_Error(
 					'mtuc_smartucf_curl_missing',
 					__( 'PHP разширението cURL не е налично на сървъра.', 'mtunicredit' )
 				);
 			}
 
-			$curl_options = array(
-				CURLOPT_URL            => $url,
-				CURLOPT_RETURNTRANSFER => true,
-				CURLOPT_ENCODING       => '',
-				CURLOPT_MAXREDIRS      => 2,
-				CURLOPT_TIMEOUT        => self::TIMEOUT,
-				CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
-				CURLOPT_CUSTOMREQUEST  => 'POST',
-				CURLOPT_POSTFIELDS     => $body,
-				CURLOPT_HTTPHEADER     => array(
-					'Content-Type: application/json',
-					'cache-control: no-cache',
-				),
-			);
+			$curl_options = self::build_session_curl_options( $url, $body, $lease );
 
-			if ( $lease instanceof Mtuc_Certificate_Consumer_Lease ) {
-				$curl_options[ CURLOPT_SSLKEY ]        = $lease->get_key_path();
-				$curl_options[ CURLOPT_SSLKEYPASSWD ]  = MTUC_SSL_PASSWD;
-				$curl_options[ CURLOPT_SSLCERT ]       = $lease->get_cert_path();
-				$curl_options[ CURLOPT_SSLCERTPASSWD ] = MTUC_SSL_PASSWD;
-				$curl_options[ CURLOPT_SSLVERSION ]    = CURL_SSLVERSION_TLSv1_2;
+			if ( is_callable( self::$http_transport ) ) {
+				$transport = call_user_func( self::$http_transport, $curl_options );
+				$response_body = isset( $transport['body'] ) ? (string) $transport['body'] : '';
+				$curl_error    = isset( $transport['curl_error'] ) ? (string) $transport['curl_error'] : '';
+				$http_code     = isset( $transport['http_code'] ) ? (int) $transport['http_code'] : 0;
+			} else {
+				$handle = curl_init();
+				if ( false === $handle ) {
+					return new WP_Error(
+						'mtuc_smartucf_curl_init',
+						__( 'Неуспешна инициализация на връзката към SmartUCF.', 'mtunicredit' )
+					);
+				}
+
+				curl_setopt_array( $handle, $curl_options );
+				$response_body = curl_exec( $handle );
+				$curl_error    = curl_error( $handle );
+				$http_code     = (int) curl_getinfo( $handle, CURLINFO_HTTP_CODE );
+				curl_close( $handle );
 			}
-
-			$handle = curl_init();
-			if ( false === $handle ) {
-				return new WP_Error(
-					'mtuc_smartucf_curl_init',
-					__( 'Неуспешна инициализация на връзката към SmartUCF.', 'mtunicredit' )
-				);
-			}
-
-			curl_setopt_array( $handle, $curl_options );
-			$response_body = curl_exec( $handle );
-			$curl_error    = curl_error( $handle );
-			$http_code     = (int) curl_getinfo( $handle, CURLINFO_HTTP_CODE );
-			curl_close( $handle );
 
 			$wc_order_id = isset( $payload['orderNo'] ) ? (int) $payload['orderNo'] : 0;
 			$log_body    = is_string( $response_body ) && '' !== $response_body
@@ -270,12 +288,9 @@ class Mtuc_Smartucf_Api_Client {
 				);
 			}
 
-			$redirect_url = self::get_application_redirect_url( $shop, $session_id );
-			if ( '' === $redirect_url || '/' === $redirect_url ) {
-				return new WP_Error(
-					'mtuc_smartucf_missing_application',
-					__( 'Липсва URL на SmartUCF приложението в настройките на магазина.', 'mtunicredit' )
-				);
+			$redirect_url = Mtuc_Smartucf_Endpoint_Policy::resolve_application_redirect_url( $shop, $session_id );
+			if ( is_wp_error( $redirect_url ) ) {
+				return $redirect_url;
 			}
 
 			return array(

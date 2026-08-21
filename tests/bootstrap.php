@@ -74,6 +74,27 @@ if ( ! function_exists( 'trailingslashit' ) ) {
 	}
 }
 
+if ( ! function_exists( 'untrailingslashit' ) ) {
+	/**
+	 * @param string $value Path.
+	 * @return string
+	 */
+	function untrailingslashit( $value ) {
+		return rtrim( (string) $value, '/\\' );
+	}
+}
+
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	/**
+	 * @param string $url       URL.
+	 * @param int    $component Component.
+	 * @return mixed
+	 */
+	function wp_parse_url( $url, $component = -1 ) {
+		return parse_url( $url, $component );
+	}
+}
+
 if ( ! function_exists( 'wp_mkdir_p' ) ) {
 	/**
 	 * @param string $target Directory.
@@ -120,3 +141,22 @@ require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-pair-validator.
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-consumer-lease.php';
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-local-store.php';
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-synchronizer.php';
+require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-smartucf-endpoint-policy.php';
+require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-smartucf-api-client.php';
+
+if ( ! class_exists( 'Mtuc_Debug_Log', false ) ) {
+	/**
+	 * No-op debug journal stub for unit tests.
+	 */
+	class Mtuc_Debug_Log {
+		/**
+		 * @param string $request_body Request.
+		 * @param string $response_body Response.
+		 * @param int    $http_code HTTP code.
+		 * @param int    $wc_order_id Order ID.
+		 * @return void
+		 */
+		public static function log_smartucf_session( string $request_body, string $response_body, int $http_code = 0, int $wc_order_id = 0 ): void {
+		}
+	}
+}
