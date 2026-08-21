@@ -115,25 +115,28 @@ class Mtuc_Smartucf_Api_Client {
 	}
 
 	/**
-	 * Absolute path to plugin SSL key file.
+	 * Absolute path to plugin SSL key file (authoritative store).
 	 *
 	 * @return string
 	 */
 	public static function get_ssl_key_path(): string {
-		return MTUC_PLUGIN_DIR . '/keys/avalon_private_key.pem';
+		return Mtuc_Certificate_Local_Store::get_key_path();
 	}
 
 	/**
-	 * Absolute path to plugin SSL certificate file.
+	 * Absolute path to plugin SSL certificate file (authoritative store).
 	 *
 	 * @return string
 	 */
 	public static function get_ssl_cert_path(): string {
-		return MTUC_PLUGIN_DIR . '/keys/avalon_cert.pem';
+		return Mtuc_Certificate_Local_Store::get_cert_path();
 	}
 
 	/**
 	 * Start SmartUCF online session.
+	 *
+	 * When uni_sertificat is enabled, synchronizes the client certificate with CP
+	 * and uses an immutable consumer lease for the cURL request. Sync failures are PRE-SEND.
 	 *
 	 * @param array<string, mixed> $payload Session request body.
 	 * @param array<string, mixed> $shop    Shop `data` object from CP.
@@ -149,10 +152,14 @@ class Mtuc_Smartucf_Api_Client {
 		}
 
 		$use_certificate = mtuc_is_yes_flag( $shop['uni_sertificat'] ?? 0 );
+		$lease           = null;
+
 		if ( $use_certificate ) {
-			$key_path  = self::get_ssl_key_path();
-			$cert_path = self::get_ssl_cert_path();
-			if ( ! is_readable( $key_path ) || ! is_readable( $cert_path ) ) {
+			$lease = Mtuc_Certificate_Synchronizer::ensure_current( $shop );
+			if ( is_wp_error( $lease ) ) {
+				return $lease;
+			}
+			if ( ! $lease instanceof Mtuc_Certificate_Consumer_Lease ) {
 				return new WP_Error(
 					'mtuc_smartucf_missing_ssl',
 					__( 'Липсват SSL ключ или сертификат за SmartUCF.', 'mtunicredit' )
@@ -160,119 +167,125 @@ class Mtuc_Smartucf_Api_Client {
 			}
 		}
 
-		$body = wp_json_encode( $payload );
-		if ( ! is_string( $body ) ) {
-			return new WP_Error(
-				'mtuc_smartucf_encode_failed',
-				__( 'Неуспешно кодиране на заявката към SmartUCF.', 'mtunicredit' )
+		try {
+			$body = wp_json_encode( $payload );
+			if ( ! is_string( $body ) ) {
+				return new WP_Error(
+					'mtuc_smartucf_encode_failed',
+					__( 'Неуспешно кодиране на заявката към SmartUCF.', 'mtunicredit' )
+				);
+			}
+
+			if ( ! function_exists( 'curl_init' ) ) {
+				return new WP_Error(
+					'mtuc_smartucf_curl_missing',
+					__( 'PHP разширението cURL не е налично на сървъра.', 'mtunicredit' )
+				);
+			}
+
+			$curl_options = array(
+				CURLOPT_URL            => $url,
+				CURLOPT_RETURNTRANSFER => true,
+				CURLOPT_ENCODING       => '',
+				CURLOPT_MAXREDIRS      => 2,
+				CURLOPT_TIMEOUT        => self::TIMEOUT,
+				CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+				CURLOPT_CUSTOMREQUEST  => 'POST',
+				CURLOPT_POSTFIELDS     => $body,
+				CURLOPT_HTTPHEADER     => array(
+					'Content-Type: application/json',
+					'cache-control: no-cache',
+				),
 			);
-		}
 
-		if ( ! function_exists( 'curl_init' ) ) {
-			return new WP_Error(
-				'mtuc_smartucf_curl_missing',
-				__( 'PHP разширението cURL не е налично на сървъра.', 'mtunicredit' )
+			if ( $lease instanceof Mtuc_Certificate_Consumer_Lease ) {
+				$curl_options[ CURLOPT_SSLKEY ]        = $lease->get_key_path();
+				$curl_options[ CURLOPT_SSLKEYPASSWD ]  = MTUC_SSL_PASSWD;
+				$curl_options[ CURLOPT_SSLCERT ]       = $lease->get_cert_path();
+				$curl_options[ CURLOPT_SSLCERTPASSWD ] = MTUC_SSL_PASSWD;
+				$curl_options[ CURLOPT_SSLVERSION ]    = CURL_SSLVERSION_TLSv1_2;
+			}
+
+			$handle = curl_init();
+			if ( false === $handle ) {
+				return new WP_Error(
+					'mtuc_smartucf_curl_init',
+					__( 'Неуспешна инициализация на връзката към SmartUCF.', 'mtunicredit' )
+				);
+			}
+
+			curl_setopt_array( $handle, $curl_options );
+			$response_body = curl_exec( $handle );
+			$curl_error    = curl_error( $handle );
+			$http_code     = (int) curl_getinfo( $handle, CURLINFO_HTTP_CODE );
+			curl_close( $handle );
+
+			$wc_order_id = isset( $payload['orderNo'] ) ? (int) $payload['orderNo'] : 0;
+			$log_body    = is_string( $response_body ) && '' !== $response_body
+				? $response_body
+				: wp_json_encode(
+					array(
+						'curl_error' => $curl_error,
+						'http_code'  => $http_code,
+					)
+				);
+			Mtuc_Debug_Log::log_smartucf_session(
+				$body,
+				is_string( $log_body ) ? $log_body : '{}',
+				$http_code,
+				$wc_order_id
 			);
-		}
 
-		$curl_options = array(
-			CURLOPT_URL            => $url,
-			CURLOPT_RETURNTRANSFER => true,
-			CURLOPT_ENCODING       => '',
-			CURLOPT_MAXREDIRS      => 2,
-			CURLOPT_TIMEOUT        => self::TIMEOUT,
-			CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
-			CURLOPT_CUSTOMREQUEST  => 'POST',
-			CURLOPT_POSTFIELDS     => $body,
-			CURLOPT_HTTPHEADER     => array(
-				'Content-Type: application/json',
-				'cache-control: no-cache',
-			),
-		);
+			if ( '' !== $curl_error ) {
+				return new WP_Error(
+					'mtuc_smartucf_http_error',
+					sprintf(
+						/* translators: %s: curl error message */
+						__( 'Грешка при връзка със SmartUCF: %s', 'mtunicredit' ),
+						$curl_error
+					)
+				);
+			}
 
-		if ( $use_certificate ) {
-			$curl_options[ CURLOPT_SSLKEY ]        = self::get_ssl_key_path();
-			$curl_options[ CURLOPT_SSLKEYPASSWD ]  = MTUC_SSL_PASSWD;
-			$curl_options[ CURLOPT_SSLCERT ]       = self::get_ssl_cert_path();
-			$curl_options[ CURLOPT_SSLCERTPASSWD ] = MTUC_SSL_PASSWD;
-			$curl_options[ CURLOPT_SSLVERSION ]    = CURL_SSLVERSION_TLSv1_2;
-		}
+			if ( ! is_string( $response_body ) || '' === $response_body ) {
+				return new WP_Error(
+					'mtuc_smartucf_empty_response',
+					__( 'SmartUCF върна празен отговор.', 'mtunicredit' )
+				);
+			}
 
-		$handle = curl_init();
-		if ( false === $handle ) {
-			return new WP_Error(
-				'mtuc_smartucf_curl_init',
-				__( 'Неуспешна инициализация на връзката към SmartUCF.', 'mtunicredit' )
+			$decoded = json_decode( $response_body );
+			if ( ! is_object( $decoded ) ) {
+				return new WP_Error(
+					'mtuc_smartucf_invalid_json',
+					__( 'Невалиден отговор от SmartUCF.', 'mtunicredit' )
+				);
+			}
+
+			$session_id = isset( $decoded->sucfOnlineSessionID ) ? trim( (string) $decoded->sucfOnlineSessionID ) : '';
+			if ( '' === $session_id ) {
+				return new WP_Error(
+					'mtuc_smartucf_no_session',
+					__( 'SmartUCF не върна идентификатор на сесия.', 'mtunicredit' )
+				);
+			}
+
+			$redirect_url = self::get_application_redirect_url( $shop, $session_id );
+			if ( '' === $redirect_url || '/' === $redirect_url ) {
+				return new WP_Error(
+					'mtuc_smartucf_missing_application',
+					__( 'Липсва URL на SmartUCF приложението в настройките на магазина.', 'mtunicredit' )
+				);
+			}
+
+			return array(
+				'session_id'   => $session_id,
+				'redirect_url' => $redirect_url,
 			);
+		} finally {
+			if ( $lease instanceof Mtuc_Certificate_Consumer_Lease ) {
+				$lease->release();
+			}
 		}
-
-		curl_setopt_array( $handle, $curl_options );
-		$response_body = curl_exec( $handle );
-		$curl_error    = curl_error( $handle );
-		$http_code     = (int) curl_getinfo( $handle, CURLINFO_HTTP_CODE );
-		curl_close( $handle );
-
-		$wc_order_id = isset( $payload['orderNo'] ) ? (int) $payload['orderNo'] : 0;
-		$log_body    = is_string( $response_body ) && '' !== $response_body
-			? $response_body
-			: wp_json_encode(
-				array(
-					'curl_error' => $curl_error,
-					'http_code'  => $http_code,
-				)
-			);
-		Mtuc_Debug_Log::log_smartucf_session(
-			$body,
-			is_string( $log_body ) ? $log_body : '{}',
-			$http_code,
-			$wc_order_id
-		);
-
-		if ( '' !== $curl_error ) {
-			return new WP_Error(
-				'mtuc_smartucf_http_error',
-				sprintf(
-					/* translators: %s: curl error message */
-					__( 'Грешка при връзка със SmartUCF: %s', 'mtunicredit' ),
-					$curl_error
-				)
-			);
-		}
-
-		if ( ! is_string( $response_body ) || '' === $response_body ) {
-			return new WP_Error(
-				'mtuc_smartucf_empty_response',
-				__( 'SmartUCF върна празен отговор.', 'mtunicredit' )
-			);
-		}
-
-		$decoded = json_decode( $response_body );
-		if ( ! is_object( $decoded ) ) {
-			return new WP_Error(
-				'mtuc_smartucf_invalid_json',
-				__( 'Невалиден отговор от SmartUCF.', 'mtunicredit' )
-			);
-		}
-
-		$session_id = isset( $decoded->sucfOnlineSessionID ) ? trim( (string) $decoded->sucfOnlineSessionID ) : '';
-		if ( '' === $session_id ) {
-			return new WP_Error(
-				'mtuc_smartucf_no_session',
-				__( 'SmartUCF не върна идентификатор на сесия.', 'mtunicredit' )
-			);
-		}
-
-		$redirect_url = self::get_application_redirect_url( $shop, $session_id );
-		if ( '' === $redirect_url || '/' === $redirect_url ) {
-			return new WP_Error(
-				'mtuc_smartucf_missing_application',
-				__( 'Липсва URL на SmartUCF приложението в настройките на магазина.', 'mtunicredit' )
-			);
-		}
-
-		return array(
-			'session_id'   => $session_id,
-			'redirect_url' => $redirect_url,
-		);
 	}
 }

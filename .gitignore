@@ -30,6 +30,20 @@ coverage/
 .env.*
 !.env.example
 
+# Keys / certificates (never distribute private keys)
+# Ignore contents but keep defense-in-depth files trackable.
+/keys/*
+!/keys/index.php
+!/keys/.htaccess
+!/keys/leases/
+/keys/leases/*
+!/keys/leases/index.php
+!/keys/leases/.htaccess
+
+# Certificate test temp
+/tests/tmp/
+
+
 # Archive / temp files
 *.zip
 *.tar

@@ -140,6 +140,176 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
+	 * Fetch SSL certificate metadata (GET /ssl/certificate).
+	 *
+	 * @return array<string, mixed>|WP_Error Metadata `data` object on success.
+	 */
+	public static function get_ssl_certificate_metadata() {
+		return self::request_ssl_endpoint( 'ssl/certificate' );
+	}
+
+	/**
+	 * Download SSL certificate bundle (GET /ssl/certificate/bundle).
+	 *
+	 * Never log the returned PEM fields.
+	 *
+	 * @return array<string, mixed>|WP_Error Bundle `data` object on success.
+	 */
+	public static function download_ssl_certificate_bundle() {
+		return self::request_ssl_endpoint( 'ssl/certificate/bundle', true );
+	}
+
+	/**
+	 * Authenticated GET against an SSL certificate endpoint with 401 retry.
+	 *
+	 * @param string $path           Relative API path.
+	 * @param bool   $expect_bundle  Whether PEM fields are required.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	private static function request_ssl_endpoint( string $path, bool $expect_bundle = false ) {
+		$token = self::ensure_access_token();
+		if ( is_wp_error( $token ) ) {
+			return $token;
+		}
+
+		$response = self::request( 'GET', $path, null, $token, true );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		if ( 401 === (int) wp_remote_retrieve_response_code( $response ) ) {
+			self::clear_token();
+			$token = self::ensure_access_token();
+			if ( is_wp_error( $token ) ) {
+				return $token;
+			}
+			$response = self::request( 'GET', $path, null, $token, true );
+		}
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$decoded = self::decode_ssl_response( $response );
+		if ( is_wp_error( $decoded ) ) {
+			return $decoded;
+		}
+
+		return self::normalize_ssl_payload( $decoded, $expect_bundle );
+	}
+
+	/**
+	 * Decode SSL endpoint JSON and map explicit unavailable errors.
+	 *
+	 * @param array<string, mixed> $response wp_remote_request response.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	private static function decode_ssl_response( array $response ) {
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$raw  = wp_remote_retrieve_body( $response );
+		$data = json_decode( $raw, true );
+
+		if ( ! is_array( $data ) ) {
+			return new WP_Error(
+				'mtuc_api_invalid_json',
+				__( 'Невалиден JSON отговор от Контролния панел.', 'mtunicredit' )
+			);
+		}
+
+		$error_code = '';
+		if ( isset( $data['error'] ) && is_string( $data['error'] ) ) {
+			$error_code = $data['error'];
+		} elseif ( isset( $data['code'] ) && is_string( $data['code'] ) ) {
+			$error_code = $data['code'];
+		}
+
+		if ( 'ssl_certificate_unavailable' === $error_code ) {
+			return new WP_Error(
+				'mtuc_ssl_certificate_unavailable',
+				isset( $data['message'] ) && is_string( $data['message'] )
+					? $data['message']
+					: __( 'Контролният панел няма наличен SSL сертификат за магазина.', 'mtunicredit' )
+			);
+		}
+
+		if ( $code < 200 || $code >= 300 ) {
+			$message = '';
+			if ( isset( $data['message'] ) && is_string( $data['message'] ) ) {
+				$message = $data['message'];
+			} else {
+				$message = sprintf(
+					/* translators: %d: HTTP status code */
+					__( 'КП върна HTTP грешка %d.', 'mtunicredit' ),
+					$code
+				);
+			}
+
+			return new WP_Error(
+				'mtuc_api_http_error',
+				$message,
+				array(
+					'status' => $code,
+				)
+			);
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Extract and validate SSL `data` payload shape.
+	 *
+	 * @param array<string, mixed> $payload       Decoded JSON body.
+	 * @param bool                 $expect_bundle Require PEM fields.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	private static function normalize_ssl_payload( array $payload, bool $expect_bundle ) {
+		$data = isset( $payload['data'] ) && is_array( $payload['data'] )
+			? $payload['data']
+			: $payload;
+
+		if ( array_key_exists( 'available', $data ) && empty( $data['available'] ) ) {
+			return new WP_Error(
+				'mtuc_ssl_certificate_unavailable',
+				__( 'Контролният панел няма наличен SSL сертификат за магазина.', 'mtunicredit' )
+			);
+		}
+
+		$required = array(
+			'ssl_revision',
+			'certificate_sha256',
+			'private_key_sha256',
+		);
+
+		if ( $expect_bundle ) {
+			$required[] = 'certificate_pem';
+			$required[] = 'private_key_pem';
+		} else {
+			$required[] = 'available';
+		}
+
+		foreach ( $required as $field ) {
+			if ( ! array_key_exists( $field, $data ) ) {
+				return new WP_Error(
+					'mtuc_ssl_payload_invalid',
+					__( 'КП върна непълен SSL отговор.', 'mtunicredit' )
+				);
+			}
+		}
+
+		if ( ! Mtuc_Certificate_Pair_Validator::is_valid_sha256( (string) $data['certificate_sha256'] )
+			|| ! Mtuc_Certificate_Pair_Validator::is_valid_sha256( (string) $data['private_key_sha256'] )
+		) {
+			return new WP_Error(
+				'mtuc_ssl_payload_invalid',
+				__( 'КП върна невалидни SHA-256 хешове за SSL сертификата.', 'mtunicredit' )
+			);
+		}
+
+		return $data;
+	}
+
+	/**
 	 * Shop identification headers for authenticated CP requests.
 	 *
 	 * @return array<string, string>

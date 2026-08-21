@@ -28,6 +28,7 @@
     "superglobals",
     "Core",
     "standard",
+    "SPL",
     "date",
     "json",
     "openssl",

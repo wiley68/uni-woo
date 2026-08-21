@@ -911,26 +911,72 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, string $reason = '
 /**
  * Mark a shop order as failed when SmartUCF session start did not succeed.
  *
+ * Certificate synchronization failures are PRE-SEND (no bank HTTP) and use the
+ * generic bank_send_failed status rather than SmartUCF-specific failure.
+ *
  * @param WC_Order $order  Order instance.
  * @param string   $reason Optional failure details for debug log only.
+ * @param string   $error_code Optional WP_Error code from start_session.
  * @return void
  */
-function mtuc_fail_order_on_smartucf_error( WC_Order $order, string $reason = '' ): void {
+function mtuc_fail_order_on_smartucf_error( WC_Order $order, string $reason = '', string $error_code = '' ): void {
 	$reason = trim( $reason );
 	if ( '' !== $reason && defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug only.
 		error_log( 'MTUC SmartUCF session failed (order #' . $order->get_id() . '): ' . $reason );
 	}
 
+	$status_key = mtuc_is_ssl_presend_error_code( $error_code )
+		? MTUC_BANK_STATUS_SEND_FAILED
+		: MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF;
+
 	mtuc_record_order_bank_status(
 		$order,
-		MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF,
+		$status_key,
 		array(
 			'mark_failed'      => true,
 			'bank_unavailable' => true,
 			'sync_cp'          => true,
 		)
 	);
+}
+
+/**
+ * Whether a start_session error code is certificate sync PRE-SEND (no bank HTTP).
+ *
+ * @param string $error_code WP_Error code.
+ * @return bool
+ */
+function mtuc_is_ssl_presend_error_code( string $error_code ): bool {
+	if ( '' === $error_code ) {
+		return false;
+	}
+
+	$ssl_codes = array(
+		'mtuc_ssl_certificate_unavailable',
+		'mtuc_ssl_sync_failed',
+		'mtuc_ssl_metadata_invalid',
+		'mtuc_ssl_bundle_invalid',
+		'mtuc_ssl_bundle_hash_mismatch',
+		'mtuc_ssl_bundle_cert_hash_mismatch',
+		'mtuc_ssl_bundle_key_hash_mismatch',
+		'mtuc_ssl_lock_failed',
+		'mtuc_ssl_lock_timeout',
+		'mtuc_ssl_replace_failed',
+		'mtuc_ssl_write_failed',
+		'mtuc_ssl_lease_failed',
+		'mtuc_ssl_files_unreadable',
+		'mtuc_ssl_pair_empty',
+		'mtuc_ssl_cert_malformed',
+		'mtuc_ssl_key_malformed',
+		'mtuc_ssl_pair_mismatch',
+		'mtuc_ssl_cert_expired',
+		'mtuc_ssl_cert_not_yet_valid',
+		'mtuc_ssl_payload_invalid',
+		'mtuc_smartucf_missing_ssl',
+	);
+
+	return in_array( $error_code, $ssl_codes, true );
 }
 
 /**
@@ -1666,7 +1712,7 @@ function mtuc_send_cart_popup_order_to_smartucf(
 	$result  = Mtuc_Smartucf_Api_Client::start_session( $payload, $shop );
 
 	if ( is_wp_error( $result ) ) {
-		mtuc_fail_order_on_smartucf_error( $order, $result->get_error_message() );
+		mtuc_fail_order_on_smartucf_error( $order, $result->get_error_message(), $result->get_error_code() );
 		return $result;
 	}
 
@@ -2096,7 +2142,7 @@ function mtuc_send_popup_order_to_smartucf(
 
 	$result = Mtuc_Smartucf_Api_Client::start_session( $payload, $shop );
 	if ( is_wp_error( $result ) ) {
-		mtuc_fail_order_on_smartucf_error( $order, $result->get_error_message() );
+		mtuc_fail_order_on_smartucf_error( $order, $result->get_error_message(), $result->get_error_code() );
 		return $result;
 	}
 
