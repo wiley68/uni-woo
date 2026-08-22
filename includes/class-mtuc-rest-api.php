@@ -102,38 +102,18 @@ class Mtuc_Rest_Api {
 	/**
 	 * POST /shop-cache — CP pushes fresh shop `data` to update local cache.
 	 *
-	 * Expected JSON body:
-	 * {
-	 *   "unicid": "<store unicid>",
-	 *   "secret": "<store secret>",
-	 *   "data": { ... same object as GET /shop `data` ... }
-	 * }
-	 *
 	 * @param WP_REST_Request $request Incoming request.
 	 * @return WP_REST_Response
 	 */
 	public static function handle_shop_cache_push( WP_REST_Request $request ): WP_REST_Response {
-		if ( ! Mtuc_Settings::is_enabled() ) {
-			return self::error_response(
-				__( 'Модулът е изключен.', 'mtunicredit' ),
-				403
-			);
-		}
-
-		$params = $request->get_json_params();
-		if ( ! is_array( $params ) ) {
-			$params = array();
-		}
-
-		$unicid = isset( $params['unicid'] ) ? sanitize_text_field( (string) $params['unicid'] ) : '';
-		$secret = isset( $params['secret'] ) ? sanitize_text_field( (string) $params['secret'] ) : '';
-
-		$auth = self::verify_credentials( $unicid, $secret );
+		$auth = self::authenticate_request( $request );
 		if ( is_wp_error( $auth ) ) {
-			return self::error_response( $auth->get_error_message(), 401 );
+			return self::error_from_wp_error( $auth );
 		}
 
-		$data = self::extract_shop_data( $params );
+		$unicid = (string) $auth;
+		$params = self::decode_payload( $request );
+		$data   = self::extract_shop_data( $params );
 		if ( is_wp_error( $data ) ) {
 			return self::error_response( $data->get_error_message(), 400 );
 		}
@@ -163,37 +143,17 @@ class Mtuc_Rest_Api {
 	/**
 	 * POST /smartucf-debug-log — CP fetches SmartUCF request/response for an order.
 	 *
-	 * Expected JSON body:
-	 * {
-	 *   "unicid": "<store unicid>",
-	 *   "secret": "<store secret>",
-	 *   "order_id": "<shop order number sent to CP>"
-	 * }
-	 *
 	 * @param WP_REST_Request $request Incoming request.
 	 * @return WP_REST_Response
 	 */
 	public static function handle_smartucf_debug_log_fetch( WP_REST_Request $request ): WP_REST_Response {
-		if ( ! Mtuc_Settings::is_enabled() ) {
-			return self::error_response(
-				__( 'Модулът е изключен.', 'mtunicredit' ),
-				403
-			);
-		}
-
-		$params = $request->get_json_params();
-		if ( ! is_array( $params ) ) {
-			$params = array();
-		}
-
-		$unicid   = isset( $params['unicid'] ) ? sanitize_text_field( (string) $params['unicid'] ) : '';
-		$secret   = isset( $params['secret'] ) ? sanitize_text_field( (string) $params['secret'] ) : '';
-		$order_id = isset( $params['order_id'] ) ? sanitize_text_field( (string) $params['order_id'] ) : '';
-
-		$auth = self::verify_credentials( $unicid, $secret );
+		$auth = self::authenticate_request( $request );
 		if ( is_wp_error( $auth ) ) {
-			return self::error_response( $auth->get_error_message(), 401 );
+			return self::error_from_wp_error( $auth );
 		}
+
+		$params   = self::decode_payload( $request );
+		$order_id = isset( $params['order_id'] ) ? sanitize_text_field( (string) $params['order_id'] ) : '';
 
 		if ( '' === $order_id ) {
 			return self::error_response(
@@ -241,41 +201,19 @@ class Mtuc_Rest_Api {
 	/**
 	 * POST /order-bank-status — CP pushes bank status update for a shop order.
 	 *
-	 * Expected JSON body:
-	 * {
-	 *   "unicid": "<store unicid>",
-	 *   "secret": "<store secret>",
-	 *   "order_id": "<shop order number sent to CP>",
-	 *   "status": "<human-readable status label>",
-	 *   "status_id": "<machine-readable status key>"
-	 * }
-	 *
 	 * @param WP_REST_Request $request Incoming request.
 	 * @return WP_REST_Response
 	 */
 	public static function handle_order_bank_status_push( WP_REST_Request $request ): WP_REST_Response {
-		if ( ! Mtuc_Settings::is_enabled() ) {
-			return self::error_response(
-				__( 'Модулът е изключен.', 'mtunicredit' ),
-				403
-			);
+		$auth = self::authenticate_request( $request );
+		if ( is_wp_error( $auth ) ) {
+			return self::error_from_wp_error( $auth );
 		}
 
-		$params = $request->get_json_params();
-		if ( ! is_array( $params ) ) {
-			$params = array();
-		}
-
-		$unicid    = isset( $params['unicid'] ) ? sanitize_text_field( (string) $params['unicid'] ) : '';
-		$secret    = isset( $params['secret'] ) ? sanitize_text_field( (string) $params['secret'] ) : '';
+		$params    = self::decode_payload( $request );
 		$order_id  = isset( $params['order_id'] ) ? sanitize_text_field( (string) $params['order_id'] ) : '';
 		$status    = isset( $params['status'] ) ? sanitize_text_field( (string) $params['status'] ) : '';
 		$status_id = isset( $params['status_id'] ) ? sanitize_key( (string) $params['status_id'] ) : '';
-
-		$auth = self::verify_credentials( $unicid, $secret );
-		if ( is_wp_error( $auth ) ) {
-			return self::error_response( $auth->get_error_message(), 401 );
-		}
 
 		if ( '' === $order_id ) {
 			return self::error_response(
@@ -327,38 +265,38 @@ class Mtuc_Rest_Api {
 	}
 
 	/**
-	 * Validate unicid + secret against module settings.
+	 * Authenticate signed CP request before endpoint business logic.
 	 *
-	 * @param string $unicid Request unicid.
-	 * @param string $secret Request secret.
-	 * @return true|WP_Error
+	 * @param WP_REST_Request $request Incoming request.
+	 * @return string|WP_Error
 	 */
-	private static function verify_credentials( string $unicid, string $secret ) {
-		$stored_unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
-		$stored_secret = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_SECRET_KEY );
-
-		if ( '' === $stored_unicid || '' === $stored_secret ) {
+	private static function authenticate_request( WP_REST_Request $request ) {
+		$raw_body = (string) $request->get_body();
+		if ( '' === $raw_body ) {
 			return new WP_Error(
-				'mtuc_not_configured',
-				__( 'Модулът не е конфигуриран с unicid и секретен код.', 'mtunicredit' )
+				'mtuc_invalid_body',
+				__( 'Липсва JSON body в заявката.', 'mtunicredit' ),
+				array( 'status' => 400 )
 			);
 		}
 
-		if ( '' === $unicid || '' === $secret ) {
-			return new WP_Error(
-				'mtuc_missing_credentials',
-				__( 'Липсват unicid или secret в заявката.', 'mtunicredit' )
-			);
+		$params = self::decode_payload( $request );
+		$headers = method_exists( $request, 'get_headers' ) ? (array) $request->get_headers() : array();
+
+		return Mtuc_Module_Request_Authenticator::authenticate( $params, $raw_body, $headers );
+	}
+
+	/**
+	 * @param WP_REST_Request $request Incoming request.
+	 * @return array<string, mixed>
+	 */
+	private static function decode_payload( WP_REST_Request $request ): array {
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) ) {
+			$params = json_decode( (string) $request->get_body(), true );
 		}
 
-		if ( ! hash_equals( $stored_unicid, $unicid ) || ! hash_equals( $stored_secret, $secret ) ) {
-			return new WP_Error(
-				'mtuc_invalid_credentials',
-				__( 'Невалидни unicid или secret.', 'mtunicredit' )
-			);
-		}
-
-		return true;
+		return is_array( $params ) ? $params : array();
 	}
 
 	/**
@@ -393,5 +331,19 @@ class Mtuc_Rest_Api {
 			),
 			$status
 		);
+	}
+
+	/**
+	 * @param WP_Error $error Error object.
+	 * @return WP_REST_Response
+	 */
+	private static function error_from_wp_error( WP_Error $error ): WP_REST_Response {
+		$status = 401;
+		$data   = $error->get_error_data();
+		if ( is_array( $data ) && isset( $data['status'] ) ) {
+			$status = (int) $data['status'];
+		}
+
+		return self::error_response( $error->get_error_message(), $status );
 	}
 }

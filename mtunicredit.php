@@ -75,6 +75,9 @@ $mtuc_files = array(
 	'/class-mtuc-smartucf-endpoint-policy.php',
 	'/class-mtuc-smartucf-api-client.php',
 	'/class-mtuc-shop-cache.php',
+	'/class-mtuc-module-request-signature-protocol.php',
+	'/class-mtuc-api-nonce-store.php',
+	'/class-mtuc-module-request-authenticator.php',
 	'/class-mtuc-rest-api.php',
 	'/admin.php',
 	'/functions.php',
@@ -103,6 +106,7 @@ function mtuc_activate_plugin() {
 	Mtuc_Settings::install_defaults();
 	Mtuc_Shop_Cache::create_table();
 	Mtuc_Debug_Log::create_table();
+	Mtuc_Api_Nonce_Store::create_table();
 }
 
 /**

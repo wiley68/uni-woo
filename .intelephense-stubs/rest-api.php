@@ -43,6 +43,24 @@ class WP_REST_Request {
 
 	/** @return mixed */
 	public function get_param( $key ) {}
+
+	/**
+	 * Raw request body.
+	 *
+	 * @return string
+	 */
+	public function get_body(): string {
+		return '';
+	}
+
+	/**
+	 * Request headers.
+	 *
+	 * @return array<string, array<int, string>>
+	 */
+	public function get_headers(): array {
+		return array();
+	}
 }
 
 class WP_REST_Response {
