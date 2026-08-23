@@ -190,6 +190,25 @@ $new_headers = mtuc_aud012_signed_headers(
 $again = mtuc_aud012_authenticate( $payload, $raw_body, $new_headers );
 mtuc_aud012_assert( ! is_wp_error( $again ), 'same body with new nonce rejected' );
 
+$wp_headers = array(
+	'x_unipayment_timestamp' => array( Mtuc_Module_Request_Signature_Protocol::CONTRACT_TIMESTAMP ),
+	'x_unipayment_nonce'     => array( str_repeat( 'c', 64 ) ),
+	'x_unipayment_signature' => array(
+		Mtuc_Module_Request_Signature_Protocol::compute_signature(
+			Mtuc_Module_Request_Signature_Protocol::CONTRACT_SECRET,
+			Mtuc_Module_Request_Signature_Protocol::CONTRACT_TIMESTAMP,
+			str_repeat( 'c', 64 ),
+			$raw_body
+		),
+	),
+);
+$wp_style = Mtuc_Module_Request_Authenticator::verify_signature(
+	Mtuc_Module_Request_Signature_Protocol::CONTRACT_SECRET,
+	$raw_body,
+	$wp_headers
+);
+mtuc_aud012_assert( true === $wp_style, 'WordPress REST canonical header keys rejected' );
+
 $legacy = mtuc_aud012_authenticate(
 	array(
 		'unicid' => 'TEST-UNICID',

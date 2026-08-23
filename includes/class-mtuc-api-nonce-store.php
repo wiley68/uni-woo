@@ -86,23 +86,41 @@ final class Mtuc_Api_Nonce_Store {
 		$used_at    = gmdate( 'Y-m-d H:i:s', $now );
 		$expires_at = gmdate( 'Y-m-d H:i:s', $now + Mtuc_Module_Request_Signature_Protocol::NONCE_RETENTION_SECONDS );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
-		$inserted = $wpdb->insert(
-			$table,
-			array(
-				'unicid'     => $unicid,
-				'nonce_hash' => $nonce_hash,
-				'used_at'    => $used_at,
-				'expires_at' => $expires_at,
-			),
-			array( '%s', '%s', '%s', '%s' )
+		$row = array(
+			'unicid'     => $unicid,
+			'nonce_hash' => $nonce_hash,
+			'used_at'    => $used_at,
+			'expires_at' => $expires_at,
 		);
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$inserted = $wpdb->insert( $table, $row, array( '%s', '%s', '%s', '%s' ) );
+
+		if ( false === $inserted && self::is_missing_table_error() ) {
+			self::create_table();
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$inserted = $wpdb->insert( $table, $row, array( '%s', '%s', '%s', '%s' ) );
+		}
 
 		if ( false === $inserted ) {
 			return false;
 		}
 
 		return (int) $wpdb->insert_id > 0;
+	}
+
+	/**
+	 * Whether the last DB error means the nonce table is missing.
+	 */
+	private static function is_missing_table_error(): bool {
+		global $wpdb;
+
+		$error = (string) $wpdb->last_error;
+
+		return '' !== $error && (
+			false !== stripos( $error, "doesn't exist" )
+			|| false !== stripos( $error, 'Base table or view not found' )
+		);
 	}
 
 	/**

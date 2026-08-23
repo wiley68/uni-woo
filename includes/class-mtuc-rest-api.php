@@ -280,10 +280,31 @@ class Mtuc_Rest_Api {
 			);
 		}
 
-		$params = self::decode_payload( $request );
-		$headers = method_exists( $request, 'get_headers' ) ? (array) $request->get_headers() : array();
+		$params  = self::decode_payload( $request );
+		$headers = self::extract_signature_headers( $request );
 
 		return Mtuc_Module_Request_Authenticator::authenticate( $params, $raw_body, $headers );
+	}
+
+	/**
+	 * Signature headers from a WordPress REST request.
+	 *
+	 * WP_REST_Request::get_headers() stores keys as `x_unipayment_timestamp`.
+	 * Prefer get_header(), which canonicalizes the lookup name.
+	 *
+	 * @param WP_REST_Request $request Incoming request.
+	 * @return array<string, mixed>
+	 */
+	private static function extract_signature_headers( WP_REST_Request $request ): array {
+		if ( method_exists( $request, 'get_header' ) ) {
+			return array(
+				Mtuc_Module_Request_Signature_Protocol::HEADER_TIMESTAMP => (string) $request->get_header( Mtuc_Module_Request_Signature_Protocol::HEADER_TIMESTAMP ),
+				Mtuc_Module_Request_Signature_Protocol::HEADER_NONCE     => (string) $request->get_header( Mtuc_Module_Request_Signature_Protocol::HEADER_NONCE ),
+				Mtuc_Module_Request_Signature_Protocol::HEADER_SIGNATURE => (string) $request->get_header( Mtuc_Module_Request_Signature_Protocol::HEADER_SIGNATURE ),
+			);
+		}
+
+		return method_exists( $request, 'get_headers' ) ? (array) $request->get_headers() : array();
 	}
 
 	/**

@@ -54,12 +54,24 @@ class WP_REST_Request {
 	}
 
 	/**
-	 * Request headers.
+	 * Request headers (WordPress stores keys as `x_unipayment_timestamp`).
 	 *
 	 * @return array<string, array<int, string>>
 	 */
 	public function get_headers(): array {
 		return array();
+	}
+
+	/**
+	 * Single header value. Lookup is canonicalized (`X-UniPayment-Timestamp` works).
+	 *
+	 * @param string $key Header name.
+	 * @return string|null
+	 */
+	public function get_header( $key ) {
+		unset( $key );
+
+		return null;
 	}
 }
 

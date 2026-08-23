@@ -114,13 +114,28 @@ final class Mtuc_Module_Request_Authenticator {
 	 * @param array<string, mixed> $headers Request headers.
 	 */
 	private static function header_value( array $headers, string $name ): ?string {
+		$wanted = self::canonicalize_header_name( $name );
+
 		foreach ( $headers as $header_name => $header_value ) {
-			if ( is_string( $header_name ) && strcasecmp( $header_name, $name ) === 0 ) {
-				return is_array( $header_value ) ? (string) ( $header_value[0] ?? '' ) : (string) $header_value;
+			if ( ! is_string( $header_name ) ) {
+				continue;
 			}
+
+			if ( self::canonicalize_header_name( $header_name ) !== $wanted ) {
+				continue;
+			}
+
+			return is_array( $header_value ) ? (string) ( $header_value[0] ?? '' ) : (string) $header_value;
 		}
 
 		return null;
+	}
+
+	/**
+	 * Match WordPress REST header keys (`X-UniPayment-Timestamp` → `x_unipayment_timestamp`).
+	 */
+	private static function canonicalize_header_name( string $name ): string {
+		return strtolower( str_replace( '-', '_', $name ) );
 	}
 
 	private static function is_valid_timestamp( string $timestamp ): bool {
