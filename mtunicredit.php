@@ -82,6 +82,7 @@ $mtuc_files = array(
 	'/admin.php',
 	'/functions.php',
 	'/mtuc-financial-integrity.php',
+	'/mtuc-bank-lifecycle.php',
 	'/mtuc-product-popup.php',
 	'/mtuc-cart-calculator.php',
 	'/mtuc-popup-order.php',
@@ -148,6 +149,7 @@ function mtuc_plugin_bootstrap() {
 	Mtuc_Rest_Api::init();
 	mtuc_register_product_popup_ajax_hooks();
 	mtuc_register_popup_order_hooks();
+	mtuc_register_bank_lifecycle_hooks();
 	mtuc_register_product_hooks();
 	mtuc_register_cart_hooks();
 	mtuc_register_checkout_payment_hooks();

@@ -101,17 +101,18 @@ function mtuc_get_cp_order_status_payload( string $bank_status_key, ?string $sta
  * Status fields for CP order create (POST /orders).
  *
  * Process 2: final success status on create.
- * Process 1: provisional success in CP (required by API); WC records the outcome after SmartUCF.
+ * Process 1: omit shop-claimed success — CP defaults to cp_sent; Woo patches
+ * bank_sent_process1 only after SmartUCF success (AUD-WOO-008).
  *
  * @param array<string, mixed> $shop Shop `data` object from CP.
- * @return array{status: string, status_id: string}
+ * @return array{status: string, status_id: string}|null Null when Process 1 (omit fields).
  */
-function mtuc_get_cp_order_create_status_payload( array $shop ): array {
+function mtuc_get_cp_order_create_status_payload( array $shop ): ?array {
 	if ( mtuc_is_shop_process_2( $shop ) ) {
 		return mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_SENT_PROCESS2 );
 	}
 
-	return mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_SENT_PROCESS1 );
+	return null;
 }
 
 /**
@@ -188,13 +189,22 @@ function mtuc_find_order_by_cp_order_id( string $cp_order_id ): ?WC_Order {
  */
 function mtuc_sync_cp_order_bank_status( WC_Order $order, string $bank_status_key, ?string $status_label = null ) {
 	$cp_status = mtuc_get_cp_order_status_payload( $bank_status_key, $status_label );
+	$label     = $cp_status['status'];
 
-	return Mtuc_Cp_Api_Client::update_order_status(
+	$result = Mtuc_Cp_Api_Client::update_order_status(
 		mtuc_get_cp_shop_order_id( $order ),
 		$cp_status['status'],
 		$cp_status['status_id'],
 		$order->get_id()
 	);
+
+	if ( is_wp_error( $result ) ) {
+		mtuc_mark_cp_status_sync_pending( $order, $bank_status_key, $label, $result );
+	} else {
+		mtuc_clear_cp_status_sync_pending( $order );
+	}
+
+	return $result;
 }
 
 /**
@@ -851,6 +861,14 @@ function mtuc_update_order_bank_status( WC_Order $order, string $status_key, str
 		? trim( $status_label )
 		: mtuc_get_bank_status_label( $status_key );
 
+	$current_key   = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+	$current_label = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' );
+
+	// Identical duplicate updates are idempotent (no extra order note).
+	if ( $current_key === sanitize_key( $status_key ) && $current_label === $label && '' === trim( $extra_note ) ) {
+		return;
+	}
+
 	$order->update_meta_data( MTUC_ORDER_META_BANK_STATUS, $status_key );
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'bank_status_label', $label );
 
@@ -867,7 +885,11 @@ function mtuc_update_order_bank_status( WC_Order $order, string $status_key, str
 }
 
 /**
- * Record a bank status on the order (meta, order note, optional CP sync and WC failed).
+ * Record a bank status on the order (meta, order note, optional CP sync).
+ *
+ * Native WooCommerce order status is merchant-controlled and is NOT changed here
+ * (AUD-WOO-004). Optional `mark_failed` is accepted for backward compatibility
+ * but ignored.
  *
  * @param WC_Order             $order      Order instance.
  * @param string               $status_key Bank status key.
@@ -875,7 +897,6 @@ function mtuc_update_order_bank_status( WC_Order $order, string $status_key, str
  *     @type string $extra_note       Optional detail appended to the order note.
  *     @type string $status_label     Optional human-readable label override.
  *     @type bool   $sync_cp          Whether to PATCH the status in CP.
- *     @type bool   $mark_failed      Whether to set WooCommerce order status to failed.
  *     @type bool   $bank_unavailable Whether to show bank-unavailable thank-you notice.
  * }
  * @return void
@@ -885,7 +906,6 @@ function mtuc_record_order_bank_status( WC_Order $order, string $status_key, arr
 		'extra_note'       => '',
 		'status_label'     => null,
 		'sync_cp'          => false,
-		'mark_failed'      => false,
 		'bank_unavailable' => false,
 	);
 	$options  = array_merge( $defaults, $options );
@@ -910,15 +930,7 @@ function mtuc_record_order_bank_status( WC_Order $order, string $status_key, arr
 		$order->update_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE, 1 );
 	}
 
-	if ( ! empty( $options['mark_failed'] ) ) {
-		if ( $order->has_status( array( 'failed', 'cancelled', 'trash' ) ) ) {
-			$order->add_order_note( $note );
-		} else {
-			$order->update_status( 'failed', $note );
-		}
-	} else {
-		$order->add_order_note( $note );
-	}
+	$order->add_order_note( $note );
 
 	if ( ! empty( $options['sync_cp'] ) ) {
 		mtuc_sync_cp_order_bank_status( $order, $status_key, $label );
@@ -951,6 +963,7 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
 		);
 	}
 
+	// Unknown authentic SmartUCF/CP statuses are stored as delivered — no invented mapping.
 	$label = '' !== trim( $status_label ) ? trim( $status_label ) : $status_id;
 
 	mtuc_update_order_bank_status( $order, $status_id, '', $label );
@@ -960,11 +973,13 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
 }
 
 /**
- * Mark a shop order as failed when CP order creation did not succeed.
+ * Record confirmed CP create failure (order definitely not created / rejected).
  *
- * @param WC_Order              $order  Order instance.
- * @param string                $reason Optional failure details for debug log only.
- * @param array<string, mixed>  $shop   Shop data (determines Process 1 vs Process 2 failure label).
+ * Does not change native WooCommerce order status (AUD-WOO-004).
+ *
+ * @param WC_Order             $order  Order instance.
+ * @param string               $reason Optional failure details for debug log only.
+ * @param array<string, mixed> $shop   Shop data (determines Process 1 vs Process 2 failure label).
  * @return void
  */
 function mtuc_fail_order_on_cp_create_error( WC_Order $order, string $reason = '', array $shop = array() ): void {
@@ -974,6 +989,8 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, string $reason = '
 		error_log( 'MTUC CP create order failed (order #' . $order->get_id() . '): ' . $reason );
 	}
 
+	mtuc_set_cp_create_outcome( $order, 'missing' );
+
 	$status_key = mtuc_is_shop_process_2( $shop )
 		? MTUC_BANK_STATUS_SEND_FAILED
 		: MTUC_BANK_STATUS_SEND_FAILED_CP;
@@ -982,17 +999,48 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, string $reason = '
 		$order,
 		$status_key,
 		array(
-			'mark_failed'      => true,
 			'bank_unavailable' => true,
 		)
 	);
 }
 
 /**
- * Mark a shop order as failed when SmartUCF session start did not succeed.
+ * Persist ambiguous CP create outcome (timeout / transport) without claiming non-creation.
+ *
+ * @param WC_Order             $order  Order instance.
+ * @param string               $reason Optional debug detail.
+ * @param array<string, mixed> $shop   Shop data.
+ * @return void
+ */
+function mtuc_record_cp_create_outcome_unknown( WC_Order $order, string $reason = '', array $shop = array() ): void {
+	$reason = trim( $reason );
+	if ( '' !== $reason && defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug only.
+		error_log( 'MTUC CP create outcome unknown (order #' . $order->get_id() . '): ' . $reason );
+	}
+
+	mtuc_set_cp_create_outcome( $order, 'unknown' );
+
+	$status_key = mtuc_is_shop_process_2( $shop )
+		? MTUC_BANK_STATUS_SEND_FAILED
+		: MTUC_BANK_STATUS_SEND_FAILED_CP;
+
+	mtuc_record_order_bank_status(
+		$order,
+		$status_key,
+		array(
+			'bank_unavailable' => true,
+			'extra_note'       => __( 'Резултатът от създаването в КП е технически неясен; не се твърди, че поръчката липсва в КП.', 'mtunicredit' ),
+		)
+	);
+}
+
+/**
+ * Mark bank financing failure when SmartUCF session start did not succeed.
  *
  * Certificate synchronization failures are PRE-SEND (no bank HTTP) and use the
  * generic bank_send_failed status rather than SmartUCF-specific failure.
+ * Does not change native WooCommerce order status (AUD-WOO-004).
  *
  * @param WC_Order $order  Order instance.
  * @param string   $reason Optional failure details for debug log only.
@@ -1014,7 +1062,6 @@ function mtuc_fail_order_on_smartucf_error( WC_Order $order, string $reason = ''
 		$order,
 		$status_key,
 		array(
-			'mark_failed'      => true,
 			'bank_unavailable' => true,
 			'sync_cp'          => true,
 		)
@@ -1692,7 +1739,7 @@ function mtuc_build_cp_cart_order_payload(
 	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
 	$cp_status    = mtuc_get_cp_order_create_status_payload( $shop );
 
-	return array(
+	$payload = array(
 		'order_id'      => $order_number,
 		'name'          => $full_name,
 		'phone'         => $phone,
@@ -1704,8 +1751,6 @@ function mtuc_build_cp_cart_order_payload(
 		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),
 		'vnoski'        => (int) ( $calculation['months'] ?? 0 ),
 		'parva'         => round( (float) ( $calculation['parva'] ?? 0 ), 2 ),
-		'status'        => $cp_status['status'],
-		'status_id'     => $cp_status['status_id'],
 		'products_id'   => $cp_products['products_id'],
 		'products_name' => $cp_products['products_name'],
 		'products_q'    => $cp_products['products_q'],
@@ -1713,6 +1758,64 @@ function mtuc_build_cp_cart_order_payload(
 		'currency'      => mtuc_get_cp_order_currency( $shop, $order->get_currency() ),
 		'version'       => mtuc_get_cp_order_version(),
 	);
+
+	// Process 1: omit status until SmartUCF success (AUD-WOO-008). Process 2: include bank_sent_process2.
+	if ( null !== $cp_status ) {
+		$payload['status']    = $cp_status['status'];
+		$payload['status_id'] = $cp_status['status_id'];
+	}
+
+	return $payload;
+}
+
+/**
+ * Create CP order with idempotent retry on ambiguous transport outcomes (AUD-WOO-005).
+ *
+ * @param WC_Order             $order   WooCommerce order.
+ * @param array<string, mixed> $payload CP create payload (stable order_id).
+ * @param array<string, mixed> $shop    Shop data.
+ * @return array<string, mixed>|WP_Error
+ */
+function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, array $shop ) {
+	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
+
+	if ( is_wp_error( $response ) && mtuc_is_cp_transport_ambiguous_error( $response ) ) {
+		// Same shop_id + order_id — CP idempotent replay; do not mint a new identity.
+		$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
+	}
+
+	if ( is_wp_error( $response ) ) {
+		if ( mtuc_is_cp_transport_ambiguous_error( $response ) ) {
+			mtuc_record_cp_create_outcome_unknown( $order, $response->get_error_message(), $shop );
+			return $response;
+		}
+
+		mtuc_fail_order_on_cp_create_error( $order, $response->get_error_message(), $shop );
+		return $response;
+	}
+
+	$cp_order_id = 0;
+	if ( isset( $response['data']['id'] ) ) {
+		$cp_order_id = (int) $response['data']['id'];
+	}
+
+	if ( $cp_order_id <= 0 ) {
+		$message = __( 'КП не върна идентификатор на поръчката.', 'mtunicredit' );
+		mtuc_fail_order_on_cp_create_error( $order, $message, $shop );
+
+		return new WP_Error( 'mtuc_cp_no_order_id', $message );
+	}
+
+	mtuc_clear_cp_create_outcome_unknown( $order );
+	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
+
+	if ( mtuc_is_shop_process_2( $shop ) ) {
+		mtuc_record_order_bank_status( $order, MTUC_BANK_STATUS_SENT_PROCESS2 );
+	}
+
+	$order->save();
+
+	return $response;
 }
 
 /**
@@ -1730,35 +1833,9 @@ function mtuc_send_cart_popup_order_to_cp(
 	array $calculation,
 	array $shop
 ) {
-	$payload  = mtuc_build_cp_cart_order_payload( $order, $customer, $calculation, $shop );
-	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
+	$payload = mtuc_build_cp_cart_order_payload( $order, $customer, $calculation, $shop );
 
-	if ( is_wp_error( $response ) ) {
-		mtuc_fail_order_on_cp_create_error( $order, $response->get_error_message(), $shop );
-		return $response;
-	}
-
-	$cp_order_id = 0;
-	if ( isset( $response['data']['id'] ) ) {
-		$cp_order_id = (int) $response['data']['id'];
-	}
-
-	if ( $cp_order_id <= 0 ) {
-		$message = __( 'КП не върна идентификатор на поръчката.', 'mtunicredit' );
-		mtuc_fail_order_on_cp_create_error( $order, $message, $shop );
-
-		return new WP_Error( 'mtuc_cp_no_order_id', $message );
-	}
-
-	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
-
-	if ( mtuc_is_shop_process_2( $shop ) ) {
-		mtuc_record_order_bank_status( $order, MTUC_BANK_STATUS_SENT_PROCESS2 );
-	}
-
-	$order->save();
-
-	return $response;
+	return mtuc_create_cp_order_with_recovery( $order, $payload, $shop );
 }
 
 /**
@@ -2075,7 +2152,7 @@ function mtuc_build_cp_order_payload(
 		array( max( 1, $quantity ) )
 	);
 
-	return array(
+	$payload = array(
 		'order_id'      => $order_number,
 		'name'          => $full_name,
 		'phone'         => $phone,
@@ -2087,8 +2164,6 @@ function mtuc_build_cp_order_payload(
 		'gpr'           => round( (float) ( $calculation['gpr'] ?? 0 ), 2 ),
 		'vnoski'        => (int) ( $calculation['months'] ?? 0 ),
 		'parva'         => round( (float) ( $calculation['parva'] ?? 0 ), 2 ),
-		'status'        => $cp_status['status'],
-		'status_id'     => $cp_status['status_id'],
 		'products_id'   => $cp_products['products_id'],
 		'products_name' => $cp_products['products_name'],
 		'products_q'    => $cp_products['products_q'],
@@ -2096,6 +2171,13 @@ function mtuc_build_cp_order_payload(
 		'currency'      => mtuc_get_cp_order_currency( $shop, $order->get_currency() ),
 		'version'       => mtuc_get_cp_order_version(),
 	);
+
+	if ( null !== $cp_status ) {
+		$payload['status']    = $cp_status['status'];
+		$payload['status_id'] = $cp_status['status_id'];
+	}
+
+	return $payload;
 }
 
 /**
@@ -2121,7 +2203,7 @@ function mtuc_send_popup_order_to_cp(
 	int $quantity,
 	array $shop
 ) {
-	$payload  = mtuc_build_cp_order_payload(
+	$payload = mtuc_build_cp_order_payload(
 		$order,
 		$customer,
 		$calculation,
@@ -2131,34 +2213,8 @@ function mtuc_send_popup_order_to_cp(
 		$quantity,
 		$shop
 	);
-	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
 
-	if ( is_wp_error( $response ) ) {
-		mtuc_fail_order_on_cp_create_error( $order, $response->get_error_message(), $shop );
-		return $response;
-	}
-
-	$cp_order_id = 0;
-	if ( isset( $response['data']['id'] ) ) {
-		$cp_order_id = (int) $response['data']['id'];
-	}
-
-	if ( $cp_order_id <= 0 ) {
-		$message = __( 'КП не върна идентификатор на поръчката.', 'mtunicredit' );
-		mtuc_fail_order_on_cp_create_error( $order, $message, $shop );
-
-		return new WP_Error( 'mtuc_cp_no_order_id', $message );
-	}
-
-	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
-
-	if ( mtuc_is_shop_process_2( $shop ) ) {
-		mtuc_record_order_bank_status( $order, MTUC_BANK_STATUS_SENT_PROCESS2 );
-	}
-
-	$order->save();
-
-	return $response;
+	return mtuc_create_cp_order_with_recovery( $order, $payload, $shop );
 }
 
 /**
@@ -2628,15 +2684,43 @@ function mtuc_render_orders_list_bank_status_column( string $column, $order_or_p
  */
 function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 	$status_text = mtuc_get_order_bank_status_display( $order );
-	if ( '' === $status_text ) {
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	$months      = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'months' );
+	$outcome     = function_exists( 'mtuc_get_cp_create_outcome_admin_label' )
+		? mtuc_get_cp_create_outcome_admin_label( $order )
+		: '';
+	$sync_label  = function_exists( 'mtuc_get_cp_status_sync_admin_label' )
+		? mtuc_get_cp_status_sync_admin_label( $order )
+		: '';
+
+	if (
+		'' === $status_text
+		&& $cp_order_id <= 0
+		&& $months <= 0
+		&& '' === $outcome
+		&& '' === $sync_label
+	) {
 		return array();
 	}
 
-	$rows = array(
-		__( 'Статус към банката', 'mtunicredit' ) => $status_text,
-	);
+	$rows = array();
 
-	$months = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'months' );
+	if ( '' !== $status_text ) {
+		$rows[ __( 'Статус към банката', 'mtunicredit' ) ] = $status_text;
+	}
+
+	if ( $cp_order_id > 0 ) {
+		$rows[ __( 'КП поръчка (ID)', 'mtunicredit' ) ] = (string) $cp_order_id;
+	}
+
+	if ( '' !== $outcome ) {
+		$rows[ __( 'КП създаване', 'mtunicredit' ) ] = $outcome;
+	}
+
+	if ( '' !== $sync_label ) {
+		$rows[ __( 'Синхронизация към КП', 'mtunicredit' ) ] = $sync_label;
+	}
+
 	if ( $months > 0 ) {
 		$rows[ __( 'Срок (месеци)', 'mtunicredit' ) ] = (string) $months;
 	}
@@ -2653,11 +2737,13 @@ function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 	$glp     = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'glp' );
 	$gpr     = (float) $order->get_meta( MTUC_ORDER_META_PREFIX . 'gpr' );
 
-	$rows[ __( 'Първоначална вноска', 'mtunicredit' ) ] = number_format( $parva, 2, '.', '' );
-	$rows[ __( 'Сума на заема', 'mtunicredit' ) ]       = number_format( $loan, 2, '.', '' );
-	$rows[ __( 'Месечна вноска', 'mtunicredit' ) ]      = number_format( $monthly, 2, '.', '' );
-	$rows[ __( 'Обща дължима сума', 'mtunicredit' ) ]   = number_format( $total, 2, '.', '' );
-	$rows[ __( 'ГЛП / ГПР', 'mtunicredit' ) ]           = number_format( $glp, 2, '.', '' ) . '% / ' . number_format( $gpr, 2, '.', '' ) . '%';
+	if ( $months > 0 || '' !== $status_text ) {
+		$rows[ __( 'Първоначална вноска', 'mtunicredit' ) ] = number_format( $parva, 2, '.', '' );
+		$rows[ __( 'Сума на заема', 'mtunicredit' ) ]       = number_format( $loan, 2, '.', '' );
+		$rows[ __( 'Месечна вноска', 'mtunicredit' ) ]      = number_format( $monthly, 2, '.', '' );
+		$rows[ __( 'Обща дължима сума', 'mtunicredit' ) ]   = number_format( $total, 2, '.', '' );
+		$rows[ __( 'ГЛП / ГПР', 'mtunicredit' ) ]           = number_format( $glp, 2, '.', '' ) . '% / ' . number_format( $gpr, 2, '.', '' ) . '%';
+	}
 
 	if ( mtuc_is_process2_order( $order ) ) {
 		$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
@@ -2706,6 +2792,19 @@ function mtuc_render_admin_order_credit_meta_box( $post_or_order ): void {
 
 	echo '</tbody>';
 	echo '</table>';
+
+	$pending = defined( 'MTUC_ORDER_META_CP_SYNC_PENDING' )
+		? sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_CP_SYNC_PENDING ) )
+		: '';
+	if ( '' !== $pending && current_user_can( 'edit_shop_orders' ) ) {
+		$url = wp_nonce_url(
+			admin_url( 'admin-post.php?action=mtuc_retry_cp_status_sync&order_id=' . $order->get_id() ),
+			'mtuc_retry_cp_status_sync_' . $order->get_id()
+		);
+		echo '<p style="margin-top:8px;"><a class="button button-secondary" href="' . esc_url( $url ) . '">';
+		echo esc_html__( 'Повтори синхронизация към КП', 'mtunicredit' );
+		echo '</a></p>';
+	}
 }
 
 /**

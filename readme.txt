@@ -28,6 +28,10 @@ License URI: https://www.gnu.org/licenses/gpl-3.0.html
 * Authoritative product price and quantity for product-popup financing (AUD-WOO-001).
 * Canonical full payable order amount across cart/checkout → CP → SmartUCF (AUD-WOO-002).
 * WooCommerce/CP transaction currency integrity gate (AUD-WOO-003).
+* Native Woo order status remains merchant-controlled after create; bank callbacks update financing state only (AUD-WOO-004).
+* Ambiguous CP create outcomes are marked for safe idempotent retry instead of claiming non-creation (AUD-WOO-005).
+* Process 1 records `bank_sent_process1` only after SmartUCF success; Process 2 after CP create (AUD-WOO-008).
+* CP status PATCH failures persist pending sync diagnostics with bounded retry (AUD-WOO-009).
 
 = 1.0.0 =
 * Първоначална версия — гръбнак на модула.
