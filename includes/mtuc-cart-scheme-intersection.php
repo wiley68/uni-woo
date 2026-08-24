@@ -1,9 +1,10 @@
 <?php
 /**
- * Pure cart scheme intersection helpers (AUD-WOO-016 Step 3).
+ * Pure cart scheme intersection and checkout unification helpers (AUD-WOO-016 Steps 3, 6).
  *
  * Given normalized financing scheme options per cart line, computes the common
- * set (scheme type + KOP + months). Does not fetch CP data, load Woo cart,
+ * set (scheme type + KOP + months) and the deterministic checkout-unified option
+ * list (common standard + extra promo). Does not fetch CP data, load Woo cart,
  * or perform remote/order side effects.
  *
  * @package MTUC
@@ -249,4 +250,57 @@ function mtuc_intersect_cart_scheme_options( array $line_option_sets ): array {
 	}
 
 	return mtuc_sort_popup_scheme_options( $common );
+}
+
+/**
+ * Unified checkout scheme list (standard-button popup: common standard + extra promo).
+ *
+ * Starts from common standard options, then appends promo options whose cart match key
+ * (scheme_type|kop|months) is not already present. Deduplicates promo against that set;
+ * does not collapse duplicate rows already present in the standard list.
+ *
+ * @param array<int, array<string, mixed>> $common_standard Common standard schemes.
+ * @param array<int, array<string, mixed>> $common_promo    Common promo schemes.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_build_checkout_unified_scheme_options( array $common_standard, array $common_promo ): array {
+	$schemes = $common_standard;
+	$seen    = array();
+
+	foreach ( $schemes as $option ) {
+		if ( ! is_array( $option ) ) {
+			continue;
+		}
+
+		$seen[ mtuc_build_cart_scheme_match_key( $option ) ] = true;
+	}
+
+	foreach ( $common_promo as $option ) {
+		if ( ! is_array( $option ) ) {
+			continue;
+		}
+
+		$key = mtuc_build_cart_scheme_match_key( $option );
+		if ( isset( $seen[ $key ] ) ) {
+			continue;
+		}
+
+		$schemes[]    = $option;
+		$seen[ $key ] = true;
+	}
+
+	return mtuc_sort_popup_scheme_options( $schemes );
+}
+
+/**
+ * Resolve unified checkout schemes from cart state.
+ *
+ * @param array<string, mixed> $cart_state Cart scheme state.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_resolve_checkout_scheme_common( array $cart_state ): array {
+	return mtuc_build_checkout_unified_scheme_options(
+		(array) ( $cart_state['common_standard'] ?? array() ),
+		(array) ( $cart_state['common_promo'] ?? array() )
+	);
 }

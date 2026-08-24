@@ -311,4 +311,157 @@ $lcm_already_present = mtuc_intersect_cart_scheme_options(
 // Exact common is 12; LCM target is also 12 and already in existing_keys → no duplicate add.
 mtuc_csi_assert( 1 === count( $lcm_already_present ), 'LCM skip when target already in exact common' );
 
+// ---------------------------------------------------------------------------
+// Checkout unification (AUD-WOO-016 Step 6)
+// ---------------------------------------------------------------------------
+
+if ( ! function_exists( 'mtuc_get_shop_coeff_list' ) ) {
+	/**
+	 * @param array<string, mixed> $shop Shop.
+	 * @return array<int, array<string, mixed>>
+	 */
+	function mtuc_get_shop_coeff_list( array $shop ): array {
+		return is_array( $shop['coeff_list'] ?? null ) ? $shop['coeff_list'] : array();
+	}
+}
+
+if ( ! function_exists( 'mtuc_find_coeff_entry' ) ) {
+	/**
+	 * @param array<int, array<string, mixed>> $coeff_list Coeff rows.
+	 * @param string                           $kop_code   KOP.
+	 * @param int                              $months     Months.
+	 * @return array<string, mixed>|null
+	 */
+	function mtuc_find_coeff_entry( array $coeff_list, string $kop_code, int $months ): ?array {
+		foreach ( $coeff_list as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+			$code = isset( $entry['onlineProductCode'] ) ? trim( (string) $entry['onlineProductCode'] ) : '';
+			$m    = isset( $entry['installmentCount'] ) ? (int) $entry['installmentCount'] : 0;
+			if ( $code === $kop_code && $m === $months ) {
+				return $entry;
+			}
+		}
+
+		return null;
+	}
+}
+
+$std_only = array(
+	mtuc_build_popup_scheme_option_row( 12, 1, 'CAT', '', 'standard' ),
+	mtuc_build_popup_scheme_option_row( 24, 1, 'CAT', '', 'standard' ),
+);
+$unified_std = mtuc_build_checkout_unified_scheme_options( $std_only, array() );
+mtuc_csi_assert( array( '12:1', '24:1' ) === array_column( $unified_std, 'key' ), 'standard-only unification keeps standard set ordered' );
+
+$promo_only = array(
+	mtuc_build_popup_scheme_option_row( 12, 2, 'PRO', '', 'promo' ),
+	mtuc_build_popup_scheme_option_row( 18, 2, 'PRO', '', 'promo' ),
+);
+$unified_promo = mtuc_build_checkout_unified_scheme_options( array(), $promo_only );
+mtuc_csi_assert( array( 'p:12:2', 'p:18:2' ) === array_column( $unified_promo, 'key' ), 'promo-only unification keeps promo set' );
+
+$mixed = mtuc_build_checkout_unified_scheme_options( $std_only, $promo_only );
+mtuc_csi_assert(
+	array( '12:1', 'p:12:2', 'p:18:2', '24:1' ) === array_column( $mixed, 'key' ),
+	'standard+promo unified and sorted by months/type'
+);
+
+// Same KOP/month across standard vs promo — distinct match keys, both kept.
+$same_kop_month = mtuc_build_checkout_unified_scheme_options(
+	array( mtuc_build_popup_scheme_option_row( 12, 1, 'CAT', 'std', 'standard' ) ),
+	array( mtuc_build_popup_scheme_option_row( 12, 9, 'CAT', 'promo', 'promo' ) )
+);
+mtuc_csi_assert( 2 === count( $same_kop_month ), 'same KOP/month standard+promo both survive (type in match key)' );
+mtuc_csi_assert(
+	array( '12:1', 'p:12:9' ) === array_column( $same_kop_month, 'key' ),
+	'same KOP/month keeps distinct option keys'
+);
+
+// Duplicate promo match key against already-seen standard is skipped.
+$dup_promo_key = mtuc_build_checkout_unified_scheme_options(
+	array( mtuc_build_popup_scheme_option_row( 12, 1, 'CAT', '', 'promo' ) ),
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 99, 'CAT', 'dup', 'promo' ),
+		mtuc_build_popup_scheme_option_row( 24, 2, 'CAT', '', 'promo' ),
+	)
+);
+// First list is treated as "standard common" content but typed promo — match key promo|CAT|12
+// already seen, so duplicate promo|CAT|12 from second list is skipped.
+mtuc_csi_assert( 2 === count( $dup_promo_key ), 'promo duplicate match key skipped during unify' );
+mtuc_csi_assert( array( 'p:12:1', 'p:24:2' ) === array_column( $dup_promo_key, 'key' ), 'first-seen promo key retained' );
+
+// Standard-list duplicates are retained (unification does not collapse them).
+$std_dupes = mtuc_build_checkout_unified_scheme_options(
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 1, 'CAT', 'a', 'standard' ),
+		mtuc_build_popup_scheme_option_row( 12, 1, 'CAT', 'b', 'standard' ),
+	),
+	array()
+);
+mtuc_csi_assert( 2 === count( $std_dupes ), 'standard duplicates retained through unification' );
+
+mtuc_csi_assert(
+	array() === mtuc_build_checkout_unified_scheme_options( array(), array() ),
+	'both empty → empty unified'
+);
+
+mtuc_csi_assert(
+	array() === mtuc_resolve_checkout_scheme_common( array() ),
+	'resolve from empty cart state → empty'
+);
+
+$resolved = mtuc_resolve_checkout_scheme_common(
+	array(
+		'common_standard' => $std_only,
+		'common_promo'    => $promo_only,
+	)
+);
+mtuc_csi_assert( array_column( $mixed, 'key' ) === array_column( $resolved, 'key' ), 'resolve_checkout_scheme_common matches builder' );
+
+// Three-product intersection feeding checkout unification (standard/promo separately).
+$std_sets = array(
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 1, 'CAT', '', 'standard' ),
+		mtuc_build_popup_scheme_option_row( 24, 1, 'CAT', '', 'standard' ),
+	),
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 2, 'CAT', '', 'standard' ),
+		mtuc_build_popup_scheme_option_row( 36, 2, 'CAT', '', 'standard' ),
+	),
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 3, 'CAT', '', 'standard' ),
+	),
+);
+$promo_sets = array(
+	array( mtuc_build_popup_scheme_option_row( 12, 1, 'PRO', '', 'promo' ) ),
+	array( mtuc_build_popup_scheme_option_row( 12, 2, 'PRO', '', 'promo' ) ),
+	array( mtuc_build_popup_scheme_option_row( 12, 3, 'PRO', '', 'promo' ) ),
+);
+$common_std_3   = mtuc_intersect_cart_scheme_options( $std_sets );
+$common_promo_3 = mtuc_intersect_cart_scheme_options( $promo_sets );
+$unified_3      = mtuc_build_checkout_unified_scheme_options( $common_std_3, $common_promo_3 );
+mtuc_csi_assert( 1 === count( $common_std_3 ) && 12 === (int) $common_std_3[0]['months'], '3-product standard common is 12' );
+mtuc_csi_assert( 1 === count( $common_promo_3 ), '3-product promo common is 12' );
+mtuc_csi_assert(
+	array( '12:1', 'p:12:1' ) === array_column( $unified_3, 'key' ),
+	'3-product intersection feeds checkout unify with std+promo'
+);
+
+// Default selection integrates with unified option set (product-offer selection module).
+$default_shop = array(
+	'uni_shema_current' => 12,
+	'coeff_list'        => array(
+		array(
+			'onlineProductCode' => 'PRO',
+			'installmentCount'  => 12,
+			'interestPercent'   => 0.0,
+			'coeff'             => 0.083333,
+		),
+	),
+);
+$default_key = mtuc_pick_default_checkout_scheme_key( $default_shop, $unified_3, null );
+mtuc_csi_assert( 'p:12:1' === $default_key, 'checkout default picker prefers longest 0% promo from unified set' );
+
 fwrite( STDOUT, 'OK cart-scheme-intersection ' . $mtuc_csi_assert_count . " assertions\n" );

@@ -505,7 +505,25 @@ mtuc_aud015_assert( false !== strpos( $blocks_js, 'mtucInitCheckoutPayment' ), '
 
 $gateway_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/class-mtuc-payment-gateway.php' );
 mtuc_aud015_assert( false !== strpos( $gateway_src, 'mtuc_scheme_key' ), 'gateway validate/process reads mtuc_scheme_key' );
+mtuc_aud015_assert(
+	false !== strpos( $gateway_src, 'mtuc_resolve_checkout_scheme_common' ),
+	'gateway validation uses shared checkout unified schemes'
+);
 
+$checkout_payment_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-checkout-payment.php' );
+mtuc_aud015_assert(
+	false !== strpos( $checkout_payment_src, 'enabled_schemes' )
+	&& false !== strpos( $checkout_payment_src, 'enabledSchemes' ),
+	'classic/Blocks checkout payload exposes enabledSchemes from popup context'
+);
+
+$cart_calc_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-cart-calculator.php' );
+$intersect_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-cart-scheme-intersection.php' );
+mtuc_aud015_assert(
+	false !== strpos( $intersect_src, 'function mtuc_build_checkout_unified_scheme_options' )
+	&& false === strpos( $cart_calc_src, 'function mtuc_build_checkout_unified_scheme_options' ),
+	'checkout unification owned by cart-scheme intersection module'
+);
 // ---------------------------------------------------------------------------
 // AUD-WOO-015-PRIVACY-EGN — audience-specific EGN policy
 // ---------------------------------------------------------------------------
