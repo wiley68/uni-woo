@@ -24,9 +24,9 @@ License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
 == Deployment (vendor) ==
 
-Production installation ZIP is prepared manually and uploaded to the Bank/CP portal.
-It contains Git source plus deployment-only files (certificates, `secrets/smartucf-key.php`).
-Merchants install the ZIP normally; they do not edit wp-config or environment variables for the SSL password.
+Before creating the production installation ZIP, add `secrets/smartucf-key.php` containing the SmartUCF private-key password.
+
+The ZIP is prepared manually and uploaded to the Bank/CP portal. It contains Git source plus deployment-only files (certificates, `secrets/smartucf-key.php`). Merchants install the ZIP normally; they do not edit wp-config or environment variables for the SSL password.
 
 == Changelog ==
 

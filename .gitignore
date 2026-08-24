@@ -44,7 +44,6 @@ coverage/
 /secrets/*
 !/secrets/index.php
 !/secrets/.htaccess
-!/secrets/smartucf-key.example.php
 
 # Certificate test temp
 /tests/tmp/

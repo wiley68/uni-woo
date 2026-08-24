@@ -33,7 +33,8 @@ if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
 /**
  * SmartUCF mTLS private-key password — not in Git source.
  *
- * Production ZIP (prepared by module vendor): secrets/smartucf-key.php
+ * Production ZIP (prepared by module vendor): before creating the ZIP, add
+ * secrets/smartucf-key.php containing the SmartUCF private-key password.
  * Dev/staging overrides: MTUC_SMARTUCF_KEY_PASSWORD in wp-config.php or environment.
  * Legacy external MTUC_SSL_PASSWD constant is still supported when defined outside the plugin.
  */

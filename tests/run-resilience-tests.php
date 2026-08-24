@@ -449,6 +449,10 @@ mtuc_res_assert(
 	is_string( $gitignore_source ) && false !== strpos( $gitignore_source, '/secrets/*' ),
 	'gitignore must exclude deployment secrets directory contents'
 );
+mtuc_res_assert(
+	! is_file( MTUC_PLUGIN_DIR . '/secrets/smartucf-key.example.php' ),
+	'tracked secret example template must not exist'
+);
 
 /**
  * Write a temporary deployment secret file for isolated resolver tests.
