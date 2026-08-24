@@ -128,6 +128,40 @@ function mtuc_admin_currency_mismatch_notice(): void {
 }
 
 /**
+ * Warn administrators when stale-if-error shop configuration was used recently (AUD-WOO-010).
+ *
+ * @return void
+ */
+function mtuc_admin_shop_cache_stale_notice(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	if ( ! class_exists( 'Mtuc_Shop_Cache' ) ) {
+		return;
+	}
+
+	$notice = Mtuc_Shop_Cache::get_stale_fallback_notice();
+	if ( null === $notice ) {
+		return;
+	}
+
+	$category = isset( $notice['category'] ) ? sanitize_key( (string) $notice['category'] ) : 'configuration_error';
+
+	echo '<div class="notice notice-warning"><p><strong>'
+		. esc_html__( 'УНИ Кредит:', 'mtunicredit' )
+		. '</strong> '
+		. esc_html(
+			sprintf(
+				/* translators: %s: normalized failure category */
+				__( 'Конфигурацията от КП се обслужва от кеш (stale-if-error) поради временен проблем (%s). Проверете връзката с Контролния панел.', 'mtunicredit' ),
+				$category
+			)
+		)
+		. '</p></div>';
+}
+
+/**
  * Download debug journal as JSON when requested from settings.
  *
  * @return void

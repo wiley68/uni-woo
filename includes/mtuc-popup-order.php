@@ -1015,12 +1015,28 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
  * Does not change native WooCommerce order status (AUD-WOO-004).
  *
  * @param WC_Order             $order  Order instance.
- * @param string               $reason Optional failure details for debug log only.
+ * @param WP_Error|string      $error_or_reason Failure details or WP_Error.
  * @param array<string, mixed> $shop   Shop data (determines Process 1 vs Process 2 failure label).
  * @return void
  */
-function mtuc_fail_order_on_cp_create_error( WC_Order $order, string $reason = '', array $shop = array() ): void {
-	$reason = trim( $reason );
+function mtuc_fail_order_on_cp_create_error( WC_Order $order, $error_or_reason = '', array $shop = array() ): void {
+	$reason = '';
+	if ( $error_or_reason instanceof WP_Error ) {
+		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+			mtuc_record_order_financing_diagnostic( $order, $error_or_reason, 'cp' );
+		}
+		$reason = $error_or_reason->get_error_message();
+	} else {
+		$reason = trim( (string) $error_or_reason );
+		if ( '' !== $reason && function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+			mtuc_record_order_financing_diagnostic(
+				$order,
+				new WP_Error( 'mtuc_cp_create_failed', $reason ),
+				'cp'
+			);
+		}
+	}
+
 	if ( '' !== $reason && defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug only.
 		error_log( 'MTUC CP create order failed (order #' . $order->get_id() . '): ' . $reason );
@@ -1045,12 +1061,28 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, string $reason = '
  * Persist ambiguous CP create outcome (timeout / transport) without claiming non-creation.
  *
  * @param WC_Order             $order  Order instance.
- * @param string               $reason Optional debug detail.
+ * @param WP_Error|string      $error_or_reason Optional debug detail.
  * @param array<string, mixed> $shop   Shop data.
  * @return void
  */
-function mtuc_record_cp_create_outcome_unknown( WC_Order $order, string $reason = '', array $shop = array() ): void {
-	$reason = trim( $reason );
+function mtuc_record_cp_create_outcome_unknown( WC_Order $order, $error_or_reason = '', array $shop = array() ): void {
+	$reason = '';
+	if ( $error_or_reason instanceof WP_Error ) {
+		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+			mtuc_record_order_financing_diagnostic( $order, $error_or_reason, 'cp' );
+		}
+		$reason = $error_or_reason->get_error_message();
+	} else {
+		$reason = trim( (string) $error_or_reason );
+		if ( '' !== $reason && function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+			mtuc_record_order_financing_diagnostic(
+				$order,
+				new WP_Error( 'mtuc_cp_create_unknown', $reason ),
+				'cp'
+			);
+		}
+	}
+
 	if ( '' !== $reason && defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug only.
 		error_log( 'MTUC CP create outcome unknown (order #' . $order->get_id() . '): ' . $reason );
@@ -1079,13 +1111,38 @@ function mtuc_record_cp_create_outcome_unknown( WC_Order $order, string $reason 
  * generic bank_send_failed status rather than SmartUCF-specific failure.
  * Does not change native WooCommerce order status (AUD-WOO-004).
  *
- * @param WC_Order $order  Order instance.
- * @param string   $reason Optional failure details for debug log only.
- * @param string   $error_code Optional WP_Error code from start_session.
+ * @param WC_Order       $order      Order instance.
+ * @param WP_Error|string $error_or_reason Optional failure details.
+ * @param string         $error_code Optional WP_Error code from start_session.
  * @return void
  */
-function mtuc_fail_order_on_smartucf_error( WC_Order $order, string $reason = '', string $error_code = '' ): void {
-	$reason = trim( $reason );
+function mtuc_fail_order_on_smartucf_error( WC_Order $order, $error_or_reason = '', string $error_code = '' ): void {
+	$reason = '';
+	$subsystem = 'smartucf';
+
+	if ( $error_or_reason instanceof WP_Error ) {
+		$error_code = $error_or_reason->get_error_code();
+		if ( mtuc_is_ssl_presend_error_code( $error_code ) ) {
+			$subsystem = 'certificate';
+		}
+		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+			mtuc_record_order_financing_diagnostic( $order, $error_or_reason, $subsystem );
+		}
+		$reason = $error_or_reason->get_error_message();
+	} else {
+		$reason = trim( (string) $error_or_reason );
+		if ( mtuc_is_ssl_presend_error_code( $error_code ) ) {
+			$subsystem = 'certificate';
+		}
+		if ( '' !== $reason && function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+			mtuc_record_order_financing_diagnostic(
+				$order,
+				new WP_Error( $error_code !== '' ? $error_code : 'mtuc_smartucf_failed', $reason ),
+				$subsystem
+			);
+		}
+	}
+
 	if ( '' !== $reason && defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug only.
 		error_log( 'MTUC SmartUCF session failed (order #' . $order->get_id() . '): ' . $reason );
@@ -1277,6 +1334,9 @@ function mtuc_complete_order_bank_submission(
 
 	if ( $process2 ) {
 		$order->save();
+		if ( function_exists( 'mtuc_clear_order_financing_diagnostic' ) ) {
+			mtuc_clear_order_financing_diagnostic( $order );
+		}
 
 		return array(
 			'redirect_url' => mtuc_get_popup_order_thankyou_url( $order ),
@@ -1307,6 +1367,9 @@ function mtuc_complete_order_bank_submission(
 		MTUC_BANK_STATUS_SENT_PROCESS1,
 		array( 'sync_cp' => true )
 	);
+	if ( function_exists( 'mtuc_clear_order_financing_diagnostic' ) ) {
+		mtuc_clear_order_financing_diagnostic( $order );
+	}
 	$order->update_meta_data(
 		MTUC_ORDER_META_SMARTUCF_REDIRECT_URL,
 		esc_url_raw( (string) $smartucf_result['redirect_url'] )
@@ -1863,11 +1926,11 @@ function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, ar
 
 	if ( is_wp_error( $response ) ) {
 		if ( mtuc_is_cp_transport_ambiguous_error( $response ) ) {
-			mtuc_record_cp_create_outcome_unknown( $order, $response->get_error_message(), $shop );
+			mtuc_record_cp_create_outcome_unknown( $order, $response, $shop );
 			return $response;
 		}
 
-		mtuc_fail_order_on_cp_create_error( $order, $response->get_error_message(), $shop );
+		mtuc_fail_order_on_cp_create_error( $order, $response, $shop );
 		return $response;
 	}
 
@@ -1884,6 +1947,9 @@ function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, ar
 	}
 
 	mtuc_clear_cp_create_outcome_unknown( $order );
+	if ( function_exists( 'mtuc_clear_order_financing_diagnostic' ) ) {
+		mtuc_clear_order_financing_diagnostic( $order );
+	}
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
 
 	if ( mtuc_is_shop_process_2( $shop ) ) {
@@ -1967,7 +2033,7 @@ function mtuc_send_cart_popup_order_to_smartucf(
 	$result  = Mtuc_Smartucf_Api_Client::start_session( $payload, $shop );
 
 	if ( is_wp_error( $result ) ) {
-		mtuc_fail_order_on_smartucf_error( $order, $result->get_error_message(), $result->get_error_code() );
+		mtuc_fail_order_on_smartucf_error( $order, $result );
 		return $result;
 	}
 
@@ -2015,13 +2081,13 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 	$cart_state = mtuc_resolve_cart_scheme_state();
 	if ( is_wp_error( $cart_state ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $cart_state->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $cart_state, 400, 'general' );
 	}
 
 	$shop = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $shop->get_error_message() ), 500 );
+		mtuc_send_customer_safe_json_error( $shop, 500, 'configuration' );
 	}
 
 	$cart_total = (float) ( $cart_state['cart_total'] ?? 0 );
@@ -2052,7 +2118,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 
 	if ( is_wp_error( $calculation ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $calculation->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $calculation, 400, 'general' );
 	}
 
 	$cart_lines = isset( $cart_state['lines'] ) && is_array( $cart_state['lines'] )
@@ -2062,7 +2128,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 	$operation_token = mtuc_get_submitted_operation_token();
 	if ( is_wp_error( $operation_token ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $operation_token->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $operation_token, 400, 'general' );
 	}
 
 	$scope_key = mtuc_build_cart_operation_scope_key();
@@ -2077,7 +2143,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 	if ( is_wp_error( $resolved ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		$status = 'mtuc_operation_contention' === $resolved->get_error_code() ? 429 : 500;
-		wp_send_json_error( array( 'message' => $resolved->get_error_message() ), $status );
+		mtuc_send_customer_safe_json_error( $resolved, $status, 'general' );
 	}
 
 	$order = $resolved['order'];
@@ -2099,7 +2165,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		if ( is_wp_error( $calculation ) ) {
 			$order->delete( true );
 			mtuc_release_popup_submit_lock( $lock_key );
-			wp_send_json_error( array( 'message' => $calculation->get_error_message() ), 400 );
+			mtuc_send_customer_safe_json_error( $calculation, 400, 'general' );
 		}
 		mtuc_save_order_credit_meta(
 			$order,
@@ -2119,7 +2185,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 	$submission = mtuc_complete_order_bank_submission( $order, $customer, $calculation, $shop );
 	if ( is_wp_error( $submission ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $submission->get_error_message() ), 500 );
+		mtuc_send_customer_safe_json_error( $submission, 500, 'cp' );
 	}
 
 	if ( empty( $submission['bank_unavailable'] ) ) {
@@ -2427,7 +2493,7 @@ function mtuc_send_popup_order_to_smartucf(
 
 	$result = Mtuc_Smartucf_Api_Client::start_session( $payload, $shop );
 	if ( is_wp_error( $result ) ) {
-		mtuc_fail_order_on_smartucf_error( $order, $result->get_error_message(), $result->get_error_code() );
+		mtuc_fail_order_on_smartucf_error( $order, $result );
 		return $result;
 	}
 
@@ -2457,7 +2523,7 @@ function mtuc_ajax_popup_submit(): void {
 
 	$customer = mtuc_validate_popup_customer_payload( $_POST, $process2 );
 	if ( is_wp_error( $customer ) ) {
-		wp_send_json_error( array( 'message' => $customer->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $customer, 400, 'general' );
 	}
 
 	$source = isset( $_POST['source'] ) ? sanitize_key( wp_unslash( $_POST['source'] ) ) : 'product';
@@ -2495,7 +2561,7 @@ function mtuc_ajax_popup_submit(): void {
 
 	$line = mtuc_resolve_authoritative_product_financing_line( $product_id, $variation_id, $quantity );
 	if ( is_wp_error( $line ) ) {
-		wp_send_json_error( array( 'message' => $line->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $line, 400, 'general' );
 	}
 
 	$product      = $line['product'];
@@ -2515,13 +2581,13 @@ function mtuc_ajax_popup_submit(): void {
 	$shop = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $shop->get_error_message() ), 500 );
+		mtuc_send_customer_safe_json_error( $shop, 500, 'configuration' );
 	}
 
 	$currency = mtuc_resolve_transaction_currency( $shop );
 	if ( is_wp_error( $currency ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $currency->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $currency, 400, 'general' );
 	}
 
 	if ( ! mtuc_is_product_price_in_shop_range( $shop, $price ) ) {
@@ -2544,13 +2610,13 @@ function mtuc_ajax_popup_submit(): void {
 
 	if ( is_wp_error( $calculation ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $calculation->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $calculation, 400, 'general' );
 	}
 
 	$operation_token = mtuc_get_submitted_operation_token();
 	if ( is_wp_error( $operation_token ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $operation_token->get_error_message() ), 400 );
+		mtuc_send_customer_safe_json_error( $operation_token, 400, 'general' );
 	}
 
 	$scope_key = mtuc_build_product_operation_scope_key( $parent_id, $variation_id );
@@ -2573,7 +2639,7 @@ function mtuc_ajax_popup_submit(): void {
 	if ( is_wp_error( $resolved ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		$status = 'mtuc_operation_contention' === $resolved->get_error_code() ? 429 : 500;
-		wp_send_json_error( array( 'message' => $resolved->get_error_message() ), $status );
+		mtuc_send_customer_safe_json_error( $resolved, $status, 'general' );
 	}
 
 	$order = $resolved['order'];
@@ -2596,7 +2662,7 @@ function mtuc_ajax_popup_submit(): void {
 
 	if ( is_wp_error( $submission ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $submission->get_error_message() ), 500 );
+		mtuc_send_customer_safe_json_error( $submission, 500, 'cp' );
 	}
 
 	if ( ! empty( $submission['bank_unavailable'] ) ) {
@@ -2839,6 +2905,10 @@ function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 		}
 
 		$rows[ __( 'Съобщение', 'mtunicredit' ) ] = mtuc_get_process2_confirmation_message();
+	}
+
+	if ( function_exists( 'mtuc_get_order_diagnostic_admin_rows' ) ) {
+		$rows = array_merge( $rows, mtuc_get_order_diagnostic_admin_rows( $order ) );
 	}
 
 	return $rows;

@@ -1317,10 +1317,7 @@ function mtuc_ajax_product_calculator_refresh(): void {
 
 	$line = mtuc_resolve_authoritative_product_financing_line( $product_id, $variation_id, $quantity );
 	if ( is_wp_error( $line ) ) {
-		wp_send_json_error(
-			array( 'message' => $line->get_error_message() ),
-			400
-		);
+		mtuc_send_customer_safe_json_error( $line, 400, 'general' );
 	}
 
 	wp_send_json_success(
@@ -1466,10 +1463,7 @@ function mtuc_ajax_popup_calculate(): void {
 	if ( in_array( $source, array( 'cart', 'checkout' ), true ) ) {
 		$cart_state = mtuc_resolve_cart_scheme_state();
 		if ( is_wp_error( $cart_state ) ) {
-			wp_send_json_error(
-				array( 'message' => $cart_state->get_error_message() ),
-				400
-			);
+			mtuc_send_customer_safe_json_error( $cart_state, 400, 'general' );
 		}
 
 		$shop       = mtuc_get_shop_data();
@@ -1497,10 +1491,7 @@ function mtuc_ajax_popup_calculate(): void {
 		);
 
 		if ( is_wp_error( $result ) ) {
-			wp_send_json_error(
-				array( 'message' => $result->get_error_message() ),
-				400
-			);
+			mtuc_send_customer_safe_json_error( $result, 400, 'general' );
 		}
 
 		wp_send_json_success( $result );
@@ -1516,10 +1507,7 @@ function mtuc_ajax_popup_calculate(): void {
 
 	$line = mtuc_resolve_authoritative_product_financing_line( $product_id, $variation_id, $quantity );
 	if ( is_wp_error( $line ) ) {
-		wp_send_json_error(
-			array( 'message' => $line->get_error_message() ),
-			400
-		);
+		mtuc_send_customer_safe_json_error( $line, 400, 'general' );
 	}
 
 	$product = $line['product'];
@@ -1527,10 +1515,7 @@ function mtuc_ajax_popup_calculate(): void {
 
 	$shop = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
-		wp_send_json_error(
-			array( 'message' => $shop->get_error_message() ),
-			500
-		);
+		mtuc_send_customer_safe_json_error( $shop, 500, 'configuration' );
 	}
 
 	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
@@ -1551,10 +1536,7 @@ function mtuc_ajax_popup_calculate(): void {
 	$result     = mtuc_calculate_popup_credit( $shop, $coeff_list, $price, $months, $type, $parva, $product, $filter_id, $scheme_type );
 
 	if ( is_wp_error( $result ) ) {
-		wp_send_json_error(
-			array( 'message' => $result->get_error_message() ),
-			400
-		);
+		mtuc_send_customer_safe_json_error( $result, 400, 'general' );
 	}
 
 	wp_send_json_success( $result );

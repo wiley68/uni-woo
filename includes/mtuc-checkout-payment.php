@@ -826,7 +826,7 @@ function mtuc_checkout_validate_process2_fields(): void {
 
 	$validated = mtuc_validate_process2_fields_from_post( $_POST );
 	if ( is_wp_error( $validated ) ) {
-		wc_add_notice( $validated->get_error_message(), 'error' );
+		mtuc_add_customer_safe_notice( $validated, 'general' );
 	}
 }
 

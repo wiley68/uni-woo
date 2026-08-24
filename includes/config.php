@@ -30,9 +30,15 @@ if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
 	define( 'MTUC_API_BASE_URL', untrailingslashit( MTUC_CONTROL_PANEL_URL ) . '/api/v1' );
 }
 
-if ( ! defined( 'MTUC_SSL_PASSWD' ) ) {
-	define( 'MTUC_SSL_PASSWD', '1234' );
-}
+/**
+ * SmartUCF mTLS private-key password — define in wp-config.php, not here.
+ *
+ * Example (wp-config.php):
+ * define( 'MTUC_SMARTUCF_KEY_PASSWORD', 'your-secret' );
+ *
+ * Or set environment variable MTUC_SMARTUCF_KEY_PASSWORD.
+ * Legacy MTUC_SSL_PASSWD constant is still supported when defined externally.
+ */
 
 /** Minimum installment count for leasing schemes (inclusive). */
 if ( ! defined( 'MTUC_SCHEME_MONTH_MIN' ) ) {

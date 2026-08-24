@@ -155,10 +155,18 @@ class Mtuc_Smartucf_Api_Client {
 		);
 
 		if ( $lease instanceof Mtuc_Certificate_Consumer_Lease ) {
+			$key_password = function_exists( 'mtuc_get_smartucf_key_password' )
+				? mtuc_get_smartucf_key_password()
+				: null;
+
+			if ( null === $key_password || '' === $key_password ) {
+				return array(); // Caller receives empty options; start_session validates lease path.
+			}
+
 			$curl_options[ CURLOPT_SSLKEY ]        = $lease->get_key_path();
-			$curl_options[ CURLOPT_SSLKEYPASSWD ]  = MTUC_SSL_PASSWD;
+			$curl_options[ CURLOPT_SSLKEYPASSWD ]  = $key_password;
 			$curl_options[ CURLOPT_SSLCERT ]       = $lease->get_cert_path();
-			$curl_options[ CURLOPT_SSLCERTPASSWD ] = MTUC_SSL_PASSWD;
+			$curl_options[ CURLOPT_SSLCERTPASSWD ] = $key_password;
 			$curl_options[ CURLOPT_SSLVERSION ]    = CURL_SSLVERSION_TLSv1_2;
 		}
 
@@ -185,6 +193,13 @@ class Mtuc_Smartucf_Api_Client {
 		$lease           = null;
 
 		if ( $use_certificate ) {
+			if ( function_exists( 'mtuc_has_smartucf_key_password' ) && ! mtuc_has_smartucf_key_password() ) {
+				return new WP_Error(
+					'mtuc_ssl_missing_password',
+					__( 'Липсва конфигурирана парола за SmartUCF SSL частния ключ.', 'mtunicredit' )
+				);
+			}
+
 			$lease = is_callable( self::$certificate_synchronizer )
 				? call_user_func( self::$certificate_synchronizer, $shop )
 				: Mtuc_Certificate_Synchronizer::ensure_current( $shop );
@@ -257,10 +272,10 @@ class Mtuc_Smartucf_Api_Client {
 			if ( '' !== $curl_error ) {
 				return new WP_Error(
 					'mtuc_smartucf_http_error',
-					sprintf(
-						/* translators: %s: curl error message */
-						__( 'Грешка при връзка със SmartUCF: %s', 'mtunicredit' ),
-						$curl_error
+					__( 'Грешка при връзка със SmartUCF.', 'mtunicredit' ),
+					array(
+						'curl_error' => $curl_error,
+						'http_code'  => $http_code,
 					)
 				);
 			}

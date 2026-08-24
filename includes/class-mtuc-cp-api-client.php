@@ -28,11 +28,22 @@ class Mtuc_Cp_Api_Client {
 	private const TIMEOUT = 15;
 
 	/**
+	 * Optional test override for fetch_shop (unit tests only).
+	 *
+	 * @var callable|null
+	 */
+	public static $fetch_shop_override = null;
+
+	/**
 	 * Fetch shop configuration from CP (GET /shop).
 	 *
 	 * @return array<string, mixed>|WP_Error Decoded JSON body.
 	 */
 	public static function fetch_shop() {
+		if ( is_callable( self::$fetch_shop_override ) ) {
+			return call_user_func( self::$fetch_shop_override );
+		}
+
 		$token = self::ensure_access_token();
 		if ( is_wp_error( $token ) ) {
 			return $token;

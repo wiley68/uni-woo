@@ -29,6 +29,22 @@ class Mtuc_Shop_Cache {
 	public const TTL = DAY_IN_SECONDS;
 
 	/**
+	 * Stale-if-error fallback window after TTL expiry (AUD-WOO-010).
+	 *
+	 * Eligible only on transient CP failures; never after auth/revocation/invalid payload.
+	 *
+	 * @var int
+	 */
+	public const STALE_FALLBACK_TTL = 6 * HOUR_IN_SECONDS;
+
+	/**
+	 * Refresh lock TTL — prevents concurrent CP refresh stampede.
+	 *
+	 * @var int
+	 */
+	public const REFRESH_LOCK_TTL = 90;
+
+	/**
 	 * Full table name including $wpdb->prefix.
 	 *
 	 * @return string
@@ -125,7 +141,42 @@ class Mtuc_Shop_Cache {
 			}
 		}
 
-		return self::refresh_from_api( $unicid );
+		$stale_row = $force_refresh ? null : self::get_stale_eligible_row( $unicid );
+
+		if ( ! self::acquire_refresh_lock( $unicid ) ) {
+			if ( null !== $stale_row ) {
+				self::maybe_log_stale_fallback( $unicid, 'refresh_lock_contention' );
+				$data = self::decode_shop_data( $stale_row['shop_data'] );
+				if ( ! is_wp_error( $data ) ) {
+					return $data;
+				}
+			}
+
+			$fresh_after_wait = self::get_fresh_row( $unicid );
+			if ( null !== $fresh_after_wait ) {
+				$data = self::decode_shop_data( $fresh_after_wait['shop_data'] );
+				if ( ! is_wp_error( $data ) ) {
+					return $data;
+				}
+			}
+		}
+
+		$result = self::refresh_from_api( $unicid, false );
+		self::release_refresh_lock( $unicid );
+
+		if ( ! is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		if ( null !== $stale_row && self::is_stale_fallback_allowed( $result ) ) {
+			self::maybe_log_stale_fallback( $unicid, mtuc_normalize_error( $result, 'configuration' )['category'] ?? 'configuration_error' );
+			$data = self::decode_shop_data( $stale_row['shop_data'] );
+			if ( ! is_wp_error( $data ) ) {
+				return $data;
+			}
+		}
+
+		return $result;
 	}
 
 	/**
@@ -134,10 +185,11 @@ class Mtuc_Shop_Cache {
 	 * On irrecoverable CP/auth failures the entire cache table is cleared so the
 	 * module cannot keep serving outdated shop data.
 	 *
-	 * @param string|null $unicid Store unicid (defaults to settings).
+	 * @param string|null $unicid        Store unicid (defaults to settings).
+	 * @param bool        $force_purge   Whether to purge on irrecoverable failure (admin explicit refresh).
 	 * @return array<string, mixed>|WP_Error
 	 */
-	public static function refresh_from_api( $unicid = null ) {
+	public static function refresh_from_api( $unicid = null, bool $force_purge = true ) {
 		if ( null === $unicid ) {
 			$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
 		}
@@ -152,7 +204,9 @@ class Mtuc_Shop_Cache {
 
 		$response = Mtuc_Cp_Api_Client::fetch_shop();
 		if ( is_wp_error( $response ) ) {
-			self::purge_on_api_failure( $response );
+			if ( $force_purge ) {
+				self::purge_on_api_failure( $response );
+			}
 			return $response;
 		}
 
@@ -339,6 +393,167 @@ class Mtuc_Shop_Cache {
 		);
 
 		return is_array( $row ) ? $row : null;
+	}
+
+	/**
+	 * Read cache row eligible for stale-if-error fallback.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return array<string, string>|null
+	 */
+	private static function get_stale_eligible_row( string $unicid ): ?array {
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT shop_data, fetched_at, expires_at FROM {$table} WHERE unicid = %s LIMIT 1", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$unicid
+			),
+			ARRAY_A
+		);
+
+		if ( ! is_array( $row ) ) {
+			return null;
+		}
+
+		$expires_ts = strtotime( (string) $row['expires_at'] . ' UTC' );
+		if ( false === $expires_ts ) {
+			return null;
+		}
+
+		$stale_deadline = $expires_ts + self::STALE_FALLBACK_TTL;
+		if ( time() > $stale_deadline ) {
+			return null;
+		}
+
+		return $row;
+	}
+
+	/**
+	 * Whether a refresh failure may use stale-if-error fallback.
+	 *
+	 * @param WP_Error $error Refresh error.
+	 * @return bool
+	 */
+	private static function is_stale_fallback_allowed( WP_Error $error ): bool {
+		if ( self::is_irrecoverable_api_failure( $error ) ) {
+			return false;
+		}
+
+		if ( function_exists( 'mtuc_normalize_error' ) ) {
+			$normalized = mtuc_normalize_error( $error, 'configuration' );
+			return in_array(
+				$normalized['category'],
+				array( 'cp_timeout', 'cp_network', 'cp_server', 'configuration_error' ),
+				true
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Option key for per-shop refresh lock.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return string
+	 */
+	private static function refresh_lock_option_key( string $unicid ): string {
+		return 'mtuc_scr_' . md5( $unicid );
+	}
+
+	/**
+	 * Acquire atomic refresh lock.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return bool True when this request owns the refresh.
+	 */
+	private static function acquire_refresh_lock( string $unicid ): bool {
+		$key = self::refresh_lock_option_key( $unicid );
+
+		if ( add_option( $key, (string) time(), '', 'no' ) ) {
+			return true;
+		}
+
+		$started = (int) get_option( $key, 0 );
+		if ( $started > 0 && ( time() - $started ) > self::REFRESH_LOCK_TTL ) {
+			delete_option( $key );
+			return add_option( $key, (string) time(), '', 'no' );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Release refresh lock.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return void
+	 */
+	private static function release_refresh_lock( string $unicid ): void {
+		delete_option( self::refresh_lock_option_key( $unicid ) );
+	}
+
+	/**
+	 * Log stale fallback once per unicid per hour (admin observability).
+	 *
+	 * @param string $unicid   Store unicid.
+	 * @param string $category Failure category.
+	 * @return void
+	 */
+	private static function maybe_log_stale_fallback( string $unicid, string $category ): void {
+		$flag_key = 'mtuc_stale_cfg_' . md5( $unicid );
+		if ( get_transient( $flag_key ) ) {
+			return;
+		}
+
+		set_transient( $flag_key, 1, HOUR_IN_SECONDS );
+		update_option(
+			'mtuc_shop_cache_stale_notice',
+			wp_json_encode(
+				array(
+					'unicid'   => $unicid,
+					'category' => sanitize_key( $category ),
+					'ts'       => time(),
+				)
+			),
+			false
+		);
+
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			error_log(
+				'MTUC shop config stale-if-error fallback (unicid hash=' . substr( md5( $unicid ), 0, 8 )
+				. ', category=' . sanitize_key( $category ) . ')'
+			);
+		}
+	}
+
+	/**
+	 * Admin notice payload when stale configuration was used recently.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	public static function get_stale_fallback_notice(): ?array {
+		$raw = get_option( 'mtuc_shop_cache_stale_notice', '' );
+		if ( ! is_string( $raw ) || '' === $raw ) {
+			return null;
+		}
+
+		$data = json_decode( $raw, true );
+		if ( ! is_array( $data ) ) {
+			return null;
+		}
+
+		$ts = isset( $data['ts'] ) ? (int) $data['ts'] : 0;
+		if ( $ts <= 0 || ( time() - $ts ) > DAY_IN_SECONDS ) {
+			delete_option( 'mtuc_shop_cache_stale_notice' );
+			return null;
+		}
+
+		return $data;
 	}
 
 	/**

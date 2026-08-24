@@ -63,6 +63,11 @@ define( 'MTUC_CSS_URI', MTUC_PLUGIN_URL . '/css' );
 define( 'MTUC_JS_URI', MTUC_PLUGIN_URL . '/js' );
 define( 'MTUC_FONTS_URI', MTUC_PLUGIN_URL . '/fonts' );
 
+/** Shared remediation helpers (AUD-WOO-010–013) — before cache/client consumers. */
+require_once MTUC_INCLUDES_DIR . '/mtuc-secrets.php';
+require_once MTUC_INCLUDES_DIR . '/mtuc-error-normalizer.php';
+require_once MTUC_INCLUDES_DIR . '/mtuc-order-diagnostics.php';
+
 /** Includes */
 $mtuc_files = array(
 	'/class-mtuc-settings.php',
@@ -145,6 +150,8 @@ function mtuc_plugin_bootstrap() {
 	if ( is_admin() ) {
 		add_action( 'admin_menu', 'mtuc_admin_register_menu' );
 		add_action( 'admin_notices', 'mtuc_admin_currency_mismatch_notice' );
+		add_action( 'admin_notices', 'mtuc_admin_shop_cache_stale_notice' );
+		add_action( 'admin_notices', 'mtuc_maybe_admin_notice_missing_ssl_password' );
 	}
 
 	Mtuc_Rest_Api::init();

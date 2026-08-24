@@ -7,9 +7,11 @@
 
 define( 'ABSPATH', __DIR__ . '/../' );
 define( 'MTUC_PLUGIN_DIR', realpath( __DIR__ . '/..' ) );
-define( 'MTUC_SSL_PASSWD', '1234' );
+putenv( 'MTUC_SMARTUCF_KEY_PASSWORD=1234' );
 define( 'WP_DEBUG', true );
 define( 'WP_DEBUG_LOG', false );
+
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-secrets.php';
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	/**

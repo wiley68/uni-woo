@@ -167,13 +167,13 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 
 		$cart_state = mtuc_resolve_cart_scheme_state();
 		if ( is_wp_error( $cart_state ) ) {
-			wc_add_notice( $cart_state->get_error_message(), 'error' );
+			mtuc_add_customer_safe_notice( $cart_state, 'general' );
 			return false;
 		}
 
 		$shop = mtuc_get_shop_data();
 		if ( is_wp_error( $shop ) ) {
-			wc_add_notice( $shop->get_error_message(), 'error' );
+			mtuc_add_customer_safe_notice( $shop, 'configuration' );
 			return false;
 		}
 
@@ -193,21 +193,21 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 		);
 
 		if ( is_wp_error( $calculation ) ) {
-			wc_add_notice( $calculation->get_error_message(), 'error' );
+			mtuc_add_customer_safe_notice( $calculation, 'general' );
 			return false;
 		}
 
 		if ( mtuc_is_shop_process_2( $shop ) ) {
 			$validated = mtuc_validate_process2_fields_from_post( $_POST );
 			if ( is_wp_error( $validated ) ) {
-				wc_add_notice( $validated->get_error_message(), 'error' );
+				mtuc_add_customer_safe_notice( $validated, 'general' );
 				return false;
 			}
 		}
 
 		$consents_valid = mtuc_validate_mandatory_consents_from_post( $_POST, $shop );
 		if ( is_wp_error( $consents_valid ) ) {
-			wc_add_notice( $consents_valid->get_error_message(), 'error' );
+			mtuc_add_customer_safe_notice( $consents_valid, 'general' );
 			return false;
 		}
 
@@ -248,7 +248,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 
 		$result = mtuc_process_checkout_order_payment( $order, $posted );
 		if ( is_wp_error( $result ) ) {
-			wc_add_notice( $result->get_error_message(), 'error' );
+			mtuc_add_customer_safe_notice( $result, 'cp' );
 
 			return array(
 				'result'   => 'fail',

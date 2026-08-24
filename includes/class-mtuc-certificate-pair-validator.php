@@ -81,7 +81,7 @@ class Mtuc_Certificate_Pair_Validator {
 	 * Resolve a parseable private-key PEM from raw bytes.
 	 *
 	 * @param string $raw        Raw key file contents.
-	 * @param string $passphrase Optional passphrase (default MTUC_SSL_PASSWD).
+	 * @param string $passphrase Optional passphrase (resolved from protected config when empty).
 	 * @return string Empty when unusable.
 	 */
 	public static function resolve_private_key_pem( string $raw, string $passphrase = '' ): string {
@@ -89,8 +89,11 @@ class Mtuc_Certificate_Pair_Validator {
 			return '';
 		}
 
-		if ( '' === $passphrase && defined( 'MTUC_SSL_PASSWD' ) ) {
-			$passphrase = (string) MTUC_SSL_PASSWD;
+		if ( '' === $passphrase && function_exists( 'mtuc_get_smartucf_key_password' ) ) {
+			$resolved = mtuc_get_smartucf_key_password();
+			if ( is_string( $resolved ) ) {
+				$passphrase = $resolved;
+			}
 		}
 
 		$key = @openssl_pkey_get_private( $raw, $passphrase ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
@@ -164,8 +167,11 @@ class Mtuc_Certificate_Pair_Validator {
 			);
 		}
 
-		if ( '' === $passphrase && defined( 'MTUC_SSL_PASSWD' ) ) {
-			$passphrase = (string) MTUC_SSL_PASSWD;
+		if ( '' === $passphrase && function_exists( 'mtuc_get_smartucf_key_password' ) ) {
+			$resolved = mtuc_get_smartucf_key_password();
+			if ( is_string( $resolved ) ) {
+				$passphrase = $resolved;
+			}
 		}
 
 		$key = openssl_pkey_get_private( $key_for_parse, $passphrase );

@@ -148,6 +148,10 @@ function mtuc_mark_cp_status_sync_pending( WC_Order $order, string $bank_status_
 	$attempts = (int) $order->get_meta( MTUC_ORDER_META_CP_SYNC_ATTEMPTS );
 	++$attempts;
 
+	if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+		mtuc_record_order_financing_diagnostic( $order, $error, 'sync' );
+	}
+
 	$order->update_meta_data( MTUC_ORDER_META_CP_SYNC_PENDING, sanitize_key( $bank_status_key ) );
 	$order->update_meta_data( MTUC_ORDER_META_CP_SYNC_LABEL, $status_label );
 	$order->update_meta_data( MTUC_ORDER_META_CP_SYNC_ERROR, mtuc_sanitize_cp_sync_error_category( $error ) );
@@ -181,6 +185,10 @@ function mtuc_clear_cp_status_sync_pending( WC_Order $order ): void {
 	$order->delete_meta_data( MTUC_ORDER_META_CP_SYNC_ERROR );
 	$order->delete_meta_data( MTUC_ORDER_META_CP_SYNC_ATTEMPTS );
 	$order->delete_meta_data( MTUC_ORDER_META_CP_SYNC_LAST_AT );
+
+	if ( function_exists( 'mtuc_clear_order_financing_diagnostic' ) ) {
+		mtuc_clear_order_financing_diagnostic( $order );
+	}
 }
 
 /**

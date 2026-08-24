@@ -34,6 +34,10 @@ License URI: https://www.gnu.org/licenses/gpl-3.0.html
 * CP status PATCH failures persist pending sync diagnostics with bounded retry (AUD-WOO-009).
 * Durable popup operation token prevents duplicate Woo/CP/SmartUCF orders on retry (AUD-WOO-006).
 * Collision-safe persisted CP shop order_id (max 13) and exact HPOS lookup (AUD-WOO-007).
+* Shop configuration stale-if-error fallback with refresh lock and stampede protection (AUD-WOO-010).
+* SmartUCF SSL private-key password resolved from wp-config/environment, not plugin source (AUD-WOO-011).
+* Customer-safe error normalization for AJAX, checkout and gateway flows (AUD-WOO-012).
+* Order-level financing diagnostics independent of WP_DEBUG (AUD-WOO-013).
 
 = 1.0.0 =
 * Първоначална версия — гръбнак на модула.
