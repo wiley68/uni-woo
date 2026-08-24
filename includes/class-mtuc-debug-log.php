@@ -23,10 +23,23 @@ class Mtuc_Debug_Log {
 	/** @var int Delete entries older than this many months on each insert. */
 	private const RETENTION_MONTHS = 3;
 
-	/** @var string Placeholder for redacted PII in stored request bodies. */
+	/** @var string Placeholder for redacted PII in stored request/response bodies. */
 	private const REDACTED_VALUE = '[REDACTED]';
 
-	/** @var list<string> SmartUCF request keys to anonymize before journaling. */
+	/** @var string Marker when a request body cannot be parsed as JSON for journaling. */
+	public const UNPARSEABLE_REQUEST_MARKER = '[UNPARSEABLE_REQUEST_REDACTED]';
+
+	/** @var string Marker when a response body is not valid JSON for journaling. */
+	public const NON_JSON_RESPONSE_MARKER = '[NON_JSON_RESPONSE_REDACTED]';
+
+	/**
+	 * SmartUCF keys to anonymize before journaling.
+	 *
+	 * Includes sucfOnlineSessionID: it is appended to the public application URL
+	 * (`…/Request/Start/{id}`) and can resume a live financing session.
+	 *
+	 * @var list<string>
+	 */
 	private const SMARTUCF_PII_KEYS = array(
 		'user',
 		'pass',
@@ -35,6 +48,7 @@ class Mtuc_Debug_Log {
 		'clientPhone',
 		'clientEmail',
 		'clientDeliveryAddress',
+		'sucfOnlineSessionID',
 	);
 
 	/**
@@ -119,8 +133,10 @@ class Mtuc_Debug_Log {
 	/**
 	 * Store SmartUCF sucfOnlineSessionStart request and response in the debug journal.
 	 *
+	 * Sanitizes copies only; callers must keep using the original request/response for business logic.
+	 *
 	 * @param string $request_body  Raw JSON request body.
-	 * @param string $response_body Raw JSON response body.
+	 * @param string $response_body Raw response body (JSON or otherwise).
 	 * @param int    $http_code     HTTP status code (0 if unavailable).
 	 * @param int    $wc_order_id   Related WooCommerce order ID.
 	 * @return void
@@ -141,8 +157,8 @@ class Mtuc_Debug_Log {
 				'log_type'      => self::TYPE_SMARTUCF,
 				'order_id'      => max( 0, $wc_order_id ),
 				'http_code'     => max( 0, $http_code ),
-				'request_json'  => self::normalize_json_body( self::anonymize_request_body( $request_body ) ),
-				'response_json' => self::normalize_json_body( $response_body ),
+				'request_json'  => self::normalize_json_body( self::sanitize_request_for_journal( $request_body ) ),
+				'response_json' => self::normalize_json_body( self::sanitize_response_for_journal( $response_body ) ),
 				'created_at'    => current_time( 'mysql', true ),
 			),
 			array( '%s', '%d', '%d', '%s', '%s', '%s' )
@@ -150,30 +166,102 @@ class Mtuc_Debug_Log {
 	}
 
 	/**
-	 * Remove personal data from a SmartUCF request body before it is stored in the journal.
+	 * Sanitize a SmartUCF request body before journal persistence.
 	 *
-	 * @param string $request_body Raw JSON request body.
+	 * Valid JSON: recursively redact known sensitive keys.
+	 * Invalid / non-object JSON: persist a bounded safe marker (never the raw body).
+	 *
+	 * @param string $request_body Raw request body.
 	 * @return string
 	 */
-	private static function anonymize_request_body( string $request_body ): string {
+	public static function sanitize_request_for_journal( string $request_body ): string {
 		if ( '' === trim( $request_body ) ) {
 			return $request_body;
 		}
 
 		$decoded = json_decode( $request_body, true );
-		if ( ! is_array( $decoded ) ) {
-			return $request_body;
+		if ( JSON_ERROR_NONE !== json_last_error() || ! is_array( $decoded ) ) {
+			return self::build_safe_body_marker( self::UNPARSEABLE_REQUEST_MARKER, strlen( $request_body ) );
 		}
 
-		foreach ( self::SMARTUCF_PII_KEYS as $key ) {
-			if ( array_key_exists( $key, $decoded ) ) {
-				$decoded[ $key ] = self::REDACTED_VALUE;
+		$sanitized = self::redact_sensitive_tree( $decoded );
+		$encoded   = wp_json_encode( $sanitized );
+
+		if ( ! is_string( $encoded ) ) {
+			return self::build_safe_body_marker( self::UNPARSEABLE_REQUEST_MARKER, strlen( $request_body ) );
+		}
+
+		return $encoded;
+	}
+
+	/**
+	 * Sanitize a SmartUCF response body before journal persistence.
+	 *
+	 * Valid JSON object/array: recursively redact known sensitive keys.
+	 * Non-JSON / non-object: persist a bounded safe marker (never the raw body).
+	 *
+	 * @param string $response_body Raw response body.
+	 * @return string
+	 */
+	public static function sanitize_response_for_journal( string $response_body ): string {
+		if ( '' === trim( $response_body ) ) {
+			return $response_body;
+		}
+
+		$decoded = json_decode( $response_body, true );
+		if ( JSON_ERROR_NONE !== json_last_error() || ! is_array( $decoded ) ) {
+			return self::build_safe_body_marker( self::NON_JSON_RESPONSE_MARKER, strlen( $response_body ) );
+		}
+
+		$sanitized = self::redact_sensitive_tree( $decoded );
+		$encoded   = wp_json_encode( $sanitized );
+
+		if ( ! is_string( $encoded ) ) {
+			return self::build_safe_body_marker( self::NON_JSON_RESPONSE_MARKER, strlen( $response_body ) );
+		}
+
+		return $encoded;
+	}
+
+	/**
+	 * Recursively replace known sensitive key values with the redaction marker.
+	 *
+	 * Key comparison is exact (case-sensitive), matching the SmartUCF contract names.
+	 *
+	 * @param array<mixed> $data Decoded JSON structure.
+	 * @return array<mixed>
+	 */
+	private static function redact_sensitive_tree( array $data ): array {
+		foreach ( $data as $key => $value ) {
+			if ( is_string( $key ) && in_array( $key, self::SMARTUCF_PII_KEYS, true ) ) {
+				$data[ $key ] = self::REDACTED_VALUE;
+				continue;
+			}
+
+			if ( is_array( $value ) ) {
+				$data[ $key ] = self::redact_sensitive_tree( $value );
 			}
 		}
 
-		$encoded = wp_json_encode( $decoded );
+		return $data;
+	}
 
-		return is_string( $encoded ) ? $encoded : $request_body;
+	/**
+	 * Build a bounded JSON diagnostic stub for unparseable / non-JSON bodies.
+	 *
+	 * @param string $marker      Structural redaction marker.
+	 * @param int    $byte_length Original body length in bytes.
+	 * @return string
+	 */
+	private static function build_safe_body_marker( string $marker, int $byte_length ): string {
+		$encoded = wp_json_encode(
+			array(
+				'message'     => $marker,
+				'byte_length' => max( 0, $byte_length ),
+			)
+		);
+
+		return is_string( $encoded ) ? $encoded : '{"message":"' . $marker . '"}';
 	}
 
 	/**

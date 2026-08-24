@@ -146,7 +146,7 @@ require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-synchronizer.ph
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-smartucf-endpoint-policy.php';
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-smartucf-api-client.php';
 
-if ( ! class_exists( 'Mtuc_Debug_Log', false ) ) {
+if ( ! defined( 'MTUC_TEST_USE_REAL_DEBUG_LOG' ) && ! class_exists( 'Mtuc_Debug_Log', false ) ) {
 	/**
 	 * No-op debug journal stub for unit tests.
 	 */
