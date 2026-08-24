@@ -471,7 +471,8 @@ function mtuc_res_write_secret_file( string $dir, array $payload ): string {
 $secrets_tmp = sys_get_temp_dir() . '/mtuc-secret-' . (string) getmypid();
 @mkdir( $secrets_tmp, 0700, true );
 
-unset( $GLOBALS['mtuc_test_secret_file_path'] );
+// Isolate from any real deployment secrets/smartucf-key.php in the working tree.
+$GLOBALS['mtuc_test_secret_file_path'] = $secrets_tmp . '/absent-smartucf-key.php';
 putenv( 'MTUC_SMARTUCF_KEY_PASSWORD=env-secret' );
 mtuc_res_assert( 'env-secret' === mtuc_get_smartucf_key_password(), 'environment must resolve when local file absent and constant undefined' );
 
@@ -525,7 +526,7 @@ mtuc_res_assert(
 	'malformed local file must set internal diagnostic'
 );
 
-unset( $GLOBALS['mtuc_test_secret_file_path'] );
+$GLOBALS['mtuc_test_secret_file_path'] = $secrets_tmp . '/absent-after-suite.php';
 putenv( 'MTUC_SMARTUCF_KEY_PASSWORD=1234' );
 
 // --- AUD-WOO-012: customer-safe errors ---
