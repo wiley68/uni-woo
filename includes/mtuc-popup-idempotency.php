@@ -290,12 +290,15 @@ function mtuc_operation_token_matches_order_scope( WC_Order $order, string $scop
  * @param WC_Order $order      Order instance.
  * @param string   $token      Operation token.
  * @param string   $scope_key  Scope key.
- * @return void
+ * @return true|WP_Error
  */
-function mtuc_commit_financing_operation( string $option_key, WC_Order $order, string $token, string $scope_key ): void {
+function mtuc_commit_financing_operation( string $option_key, WC_Order $order, string $token, string $scope_key ) {
 	$order->update_meta_data( MTUC_ORDER_META_OPERATION_TOKEN, $token );
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'operation_scope', $scope_key );
-	mtuc_assign_cp_shop_order_id( $order );
+	$cp_id = mtuc_assign_cp_shop_order_id( $order );
+	if ( is_wp_error( $cp_id ) ) {
+		return $cp_id;
+	}
 	$order->save();
 
 	update_option(
@@ -310,6 +313,8 @@ function mtuc_commit_financing_operation( string $option_key, WC_Order $order, s
 		),
 		false
 	);
+
+	return true;
 }
 
 /**
@@ -323,25 +328,51 @@ function mtuc_release_financing_operation_claim( string $option_key ): void {
 }
 
 /**
- * Generate and persist collision-safe external CP shop order_id (max 13 chars).
+ * Generate and persist CP shop order_id for new financing orders (max 13 decimal digits).
  *
- * Uses Woo internal order ID (base36) — independent of custom display order numbers.
+ * New orders use the Woo internal numeric order ID. Existing persisted values (including
+ * legacy W-prefixed identifiers from an earlier remediation) are returned unchanged.
  *
  * @param WC_Order $order Order instance.
- * @return string
+ * @return string|WP_Error Decimal CP order_id, persisted meta value, or validation error.
  */
-function mtuc_assign_cp_shop_order_id( WC_Order $order ): string {
+function mtuc_assign_cp_shop_order_id( WC_Order $order ) {
 	$existing = (string) $order->get_meta( MTUC_ORDER_META_CP_SHOP_ORDER_ID );
 	if ( '' !== $existing ) {
 		return $existing;
 	}
 
-	$internal_id = max( 1, (int) $order->get_id() );
-	$encoded     = strtoupper( base_convert( (string) $internal_id, 10, 36 ) );
-	$cp_id       = 'W' . str_pad( $encoded, MTUC_CP_SHOP_ORDER_ID_MAX_LEN - 1, '0', STR_PAD_LEFT );
+	$internal_id = (int) $order->get_id();
+	if ( $internal_id <= 0 ) {
+		return new WP_Error(
+			'mtuc_cp_shop_order_id_invalid',
+			sprintf(
+				/* translators: %d: WooCommerce internal order ID */
+				__( 'Невалиден Woo internal order ID (%d) за CP order_id.', 'mtunicredit' ),
+				$internal_id
+			),
+			array(
+				'wc_order_id' => $internal_id,
+			)
+		);
+	}
 
+	$cp_id = (string) $internal_id;
 	if ( strlen( $cp_id ) > MTUC_CP_SHOP_ORDER_ID_MAX_LEN ) {
-		$cp_id = substr( $cp_id, -MTUC_CP_SHOP_ORDER_ID_MAX_LEN );
+		return new WP_Error(
+			'mtuc_cp_shop_order_id_too_long',
+			sprintf(
+				/* translators: 1: WooCommerce internal order ID, 2: CP maximum length */
+				__( 'Woo internal order ID %1$s надхвърля CP лимита от %2$d символа.', 'mtunicredit' ),
+				$cp_id,
+				MTUC_CP_SHOP_ORDER_ID_MAX_LEN
+			),
+			array(
+				'wc_order_id' => $internal_id,
+				'cp_order_id' => $cp_id,
+				'max_len'     => MTUC_CP_SHOP_ORDER_ID_MAX_LEN,
+			)
+		);
 	}
 
 	$order->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, $cp_id );
@@ -385,7 +416,11 @@ function mtuc_resolve_popup_financing_order( string $operation_token, string $sc
 		);
 	}
 
-	mtuc_commit_financing_operation( $operation['option_key'], $order, $operation_token, $scope_key );
+	$committed = mtuc_commit_financing_operation( $operation['option_key'], $order, $operation_token, $scope_key );
+	if ( is_wp_error( $committed ) ) {
+		mtuc_release_financing_operation_claim( $operation['option_key'] );
+		return $committed;
+	}
 
 	return array(
 		'order'      => $order,

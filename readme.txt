@@ -39,7 +39,7 @@ The ZIP is prepared manually and uploaded to the Bank/CP portal. It contains Git
 * Process 1 records `bank_sent_process1` only after SmartUCF success; Process 2 after CP create (AUD-WOO-008).
 * CP status PATCH failures persist pending sync diagnostics with bounded retry (AUD-WOO-009).
 * Durable popup operation token prevents duplicate Woo/CP/SmartUCF orders on retry (AUD-WOO-006).
-* Collision-safe persisted CP shop order_id (max 13) and exact HPOS lookup (AUD-WOO-007).
+* CP shop order_id equals Woo internal numeric order ID (max 13), persisted meta and exact HPOS lookup (AUD-WOO-007; hotfix: not base36/W-prefix).
 * Shop configuration stale-if-error fallback with refresh lock and stampede protection (AUD-WOO-010).
 * SmartUCF SSL private-key password from deployment secret file or dev overrides, not plugin source (AUD-WOO-011).
 * Customer-safe error normalization for AJAX, checkout and gateway flows (AUD-WOO-012).

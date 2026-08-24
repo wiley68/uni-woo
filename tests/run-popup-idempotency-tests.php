@@ -257,25 +257,74 @@ if ( ! function_exists( 'mtuc_apply_payment_gateway_to_order' ) ) {
 // AUD-WOO-007 — external CP shop order_id
 // ---------------------------------------------------------------------------
 
+$order_874 = new WC_Order( 874 );
+$order_874->order_number = 'STORE-CUSTOM-874';
+$GLOBALS['mtuc_test_orders'][874] = $order_874;
+$id_874 = mtuc_assign_cp_shop_order_id( $order_874 );
+mtuc_pi_assert( is_string( $id_874 ), '874 assign returns string' );
+mtuc_pi_assert( '874' === $id_874, 'Woo internal ID 874 maps to decimal CP id' );
+mtuc_pi_assert( ctype_digit( $id_874 ), '874 CP id is digits only' );
+mtuc_pi_assert( $id_874 === mtuc_assign_cp_shop_order_id( $order_874 ), '874 CP id stable on repeat' );
+mtuc_pi_assert( '874' === (string) $order_874->get_meta( MTUC_ORDER_META_CP_SHOP_ORDER_ID ), '874 meta equals internal Woo ID' );
+mtuc_pi_assert( '874' === mtuc_get_cp_shop_order_id( $order_874 ), '874 getter uses persisted numeric id' );
+
 $order_a = mtuc_pi_create_test_order();
 $order_a->order_number = 'STORE-202600001-A';
 $id_a                  = mtuc_assign_cp_shop_order_id( $order_a );
-mtuc_pi_assert( strlen( $id_a ) === MTUC_CP_SHOP_ORDER_ID_MAX_LEN, 'CP id length' );
-mtuc_pi_assert( 'W' === $id_a[0], 'CP id prefix' );
+mtuc_pi_assert( is_string( $id_a ), 'CP id assign returns string' );
+mtuc_pi_assert( (string) $order_a->get_id() === $id_a, 'CP id equals Woo internal numeric ID' );
+mtuc_pi_assert( ctype_digit( $id_a ), 'CP id digits only' );
+mtuc_pi_assert( 'W' !== $id_a[0], 'CP id has no W prefix' );
 mtuc_pi_assert( $id_a === mtuc_assign_cp_shop_order_id( $order_a ), 'CP id stable on repeat' );
 mtuc_pi_assert( $id_a === mtuc_get_cp_shop_order_id( $order_a ), 'getter uses persisted id' );
 
 $order_b = mtuc_pi_create_test_order();
 $order_b->order_number = 'STORE-202600001-B';
 $id_b                  = mtuc_assign_cp_shop_order_id( $order_b );
+mtuc_pi_assert( (string) $order_b->get_id() === $id_b, 'second order CP id equals internal ID' );
 mtuc_pi_assert( $id_a !== $id_b, 'distinct Woo IDs must not collide after custom order numbers' );
 
 $legacy = mtuc_pi_create_test_order();
 $legacy->order_number = 'LEGACY-ORDER-999';
 mtuc_pi_assert( 'LEGACY-ORDER-' === mtuc_get_cp_shop_order_id( $legacy ), 'legacy fallback truncates display number' );
 
+$existing_w = new WC_Order( 875 );
+$existing_w->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, 'W0000000000OA' );
+$GLOBALS['mtuc_test_orders'][875] = $existing_w;
+mtuc_pi_assert( 'W0000000000OA' === mtuc_get_cp_shop_order_id( $existing_w ), 'W-format persisted meta preserved' );
+mtuc_pi_assert( 'W0000000000OA' === mtuc_assign_cp_shop_order_id( $existing_w ), 'W-format not rewritten on assign' );
+$found_w = mtuc_find_order_by_cp_order_id( 'W0000000000OA' );
+mtuc_pi_assert( $found_w instanceof WC_Order && 875 === $found_w->get_id(), 'W-format callback lookup resolves' );
+
 $found = mtuc_find_order_by_cp_order_id( $id_a );
 mtuc_pi_assert( $found instanceof WC_Order && $found->get_id() === $order_a->get_id(), 'exact meta lookup' );
+
+$found_874 = mtuc_find_order_by_cp_order_id( '874' );
+mtuc_pi_assert( $found_874 instanceof WC_Order && 874 === $found_874->get_id(), 'numeric CP id lookup by meta and wc_get_order' );
+
+$max_valid = new WC_Order( 9999999999999 );
+$GLOBALS['mtuc_test_orders'][9999999999999] = $max_valid;
+$id_max = mtuc_assign_cp_shop_order_id( $max_valid );
+mtuc_pi_assert( '9999999999999' === $id_max, '13-digit internal ID accepted at CP max' );
+mtuc_pi_assert( strlen( $id_max ) === MTUC_CP_SHOP_ORDER_ID_MAX_LEN, 'CP id at max length boundary' );
+
+$too_long = new WC_Order( 10000000000000 );
+$GLOBALS['mtuc_test_orders'][10000000000000] = $too_long;
+$too_long_result = mtuc_assign_cp_shop_order_id( $too_long );
+mtuc_pi_assert( is_wp_error( $too_long_result ), 'internal ID exceeding CP max fails safely' );
+mtuc_pi_assert( 'mtuc_cp_shop_order_id_too_long' === $too_long_result->get_error_code(), 'too-long CP id error code' );
+mtuc_pi_assert( '' === (string) $too_long->get_meta( MTUC_ORDER_META_CP_SHOP_ORDER_ID ), 'no meta persisted when CP id too long' );
+
+$long_token = 'dddddddddddddddddddddddddddddddd';
+$scope_long = mtuc_build_product_operation_scope_key( 99, 0 );
+$long_resolved = mtuc_resolve_popup_financing_order(
+	$long_token,
+	$scope_long,
+	static function () use ( $too_long ) {
+		return $too_long;
+	}
+);
+mtuc_pi_assert( is_wp_error( $long_resolved ), 'resolve fails when CP id exceeds limit' );
 
 // ---------------------------------------------------------------------------
 // AUD-WOO-006 — durable operation token
@@ -306,6 +355,10 @@ mtuc_pi_assert( 1 === $create_count, 'order created once' );
 $first_order = $resolved['order'];
 mtuc_pi_assert( $token === $first_order->get_meta( MTUC_ORDER_META_OPERATION_TOKEN ), 'token persisted on order' );
 mtuc_pi_assert( '' !== (string) $first_order->get_meta( MTUC_ORDER_META_CP_SHOP_ORDER_ID ), 'CP id assigned on commit' );
+mtuc_pi_assert(
+	(string) $first_order->get_id() === (string) $first_order->get_meta( MTUC_ORDER_META_CP_SHOP_ORDER_ID ),
+	'commit persists numeric internal CP id'
+);
 
 $create_count = 0;
 $retry        = mtuc_resolve_popup_financing_order(

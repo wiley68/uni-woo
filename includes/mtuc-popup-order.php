@@ -130,7 +130,7 @@ function mtuc_get_cp_order_create_status_payload( array $shop ): ?array {
 /**
  * External shop order_id sent to CP (max 13 chars).
  *
- * New orders use persisted collision-safe ID (AUD-WOO-007).
+ * New orders use persisted Woo internal numeric ID (AUD-WOO-007).
  * Legacy orders without meta fall back to truncated display order number.
  *
  * @param WC_Order $order WooCommerce order.
