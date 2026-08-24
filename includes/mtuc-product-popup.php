@@ -1310,19 +1310,21 @@ function mtuc_ajax_product_calculator_refresh(): void {
 
 	$product_id   = isset( $_POST['product_id'] ) ? absint( wp_unslash( $_POST['product_id'] ) ) : 0;
 	$variation_id = isset( $_POST['variation_id'] ) ? absint( wp_unslash( $_POST['variation_id'] ) ) : 0;
-	$line_price   = isset( $_POST['line_price'] ) ? (float) wp_unslash( $_POST['line_price'] ) : 0.0;
+	$quantity     = isset( $_POST['quantity'] ) ? (int) wp_unslash( $_POST['quantity'] ) : 1;
+	if ( $quantity <= 0 ) {
+		$quantity = 1;
+	}
 
-	$load_id = $variation_id > 0 ? $variation_id : $product_id;
-	$product = mtuc_get_wc_product_by_id( $load_id );
-	if ( ! $product instanceof WC_Product ) {
+	$line = mtuc_resolve_authoritative_product_financing_line( $product_id, $variation_id, $quantity );
+	if ( is_wp_error( $line ) ) {
 		wp_send_json_error(
-			array( 'message' => __( 'Невалиден продукт.', 'mtunicredit' ) ),
+			array( 'message' => $line->get_error_message() ),
 			400
 		);
 	}
 
 	wp_send_json_success(
-		mtuc_build_product_calculator_refresh_payload( $product, $line_price )
+		mtuc_build_product_calculator_refresh_payload( $line['product'], (float) $line['line_total'] )
 	);
 }
 
@@ -1506,16 +1508,22 @@ function mtuc_ajax_popup_calculate(): void {
 
 	$product_id   = isset( $_POST['product_id'] ) ? absint( wp_unslash( $_POST['product_id'] ) ) : 0;
 	$variation_id = isset( $_POST['variation_id'] ) ? absint( wp_unslash( $_POST['variation_id'] ) ) : 0;
-	$line_price   = isset( $_POST['line_price'] ) ? (float) wp_unslash( $_POST['line_price'] ) : 0.0;
+	$quantity     = isset( $_POST['quantity'] ) ? (int) wp_unslash( $_POST['quantity'] ) : 1;
+	if ( $quantity <= 0 ) {
+		$quantity = 1;
+	}
+	// Client line_price is ignored for amount authority.
 
-	$load_id = $variation_id > 0 ? $variation_id : $product_id;
-	$product = mtuc_get_wc_product_by_id( $load_id );
-	if ( ! $product instanceof WC_Product ) {
+	$line = mtuc_resolve_authoritative_product_financing_line( $product_id, $variation_id, $quantity );
+	if ( is_wp_error( $line ) ) {
 		wp_send_json_error(
-			array( 'message' => __( 'Невалиден продукт.', 'mtunicredit' ) ),
+			array( 'message' => $line->get_error_message() ),
 			400
 		);
 	}
+
+	$product = $line['product'];
+	$price   = (float) $line['line_total'];
 
 	$shop = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
@@ -1525,10 +1533,9 @@ function mtuc_ajax_popup_calculate(): void {
 		);
 	}
 
-	$price = $line_price > 0 ? round( $line_price, 2 ) : mtuc_get_product_price( $product );
-	if ( null === $price ) {
+	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
 		wp_send_json_error(
-			array( 'message' => __( 'Не може да се определи цената на продукта.', 'mtunicredit' ) ),
+			array( 'message' => __( 'Валутата на магазина не съвпада с конфигурацията за финансиране.', 'mtunicredit' ) ),
 			400
 		);
 	}

@@ -1241,6 +1241,38 @@ class WC_Cart
 		return 0.0;
 	}
 
+	/**
+	 * Cart grand total (tax inclusive).
+	 *
+	 * @param string $context view|edit
+	 * @return string|float
+	 */
+	public function get_total( string $context = 'view' ) {
+		unset( $context );
+
+		return 0.0;
+	}
+
+	public function calculate_totals(): void {}
+
+	/**
+	 * Applied coupons keyed by code.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function get_coupons(): array {
+		return array();
+	}
+
+	/**
+	 * Cart fees.
+	 *
+	 * @return array<int|string, object>
+	 */
+	public function get_fees(): array {
+		return array();
+	}
+
 	public function add_to_cart(...$args) {}
 }
 
@@ -1325,6 +1357,25 @@ class WooCommerce
 	public function mailer(): WC_Emails
 	{
 		return new WC_Emails();
+	}
+
+	public function shipping(): WC_Shipping
+	{
+		return new WC_Shipping();
+	}
+}
+
+/**
+ * WooCommerce shipping handler.
+ */
+class WC_Shipping
+{
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_packages(): array
+	{
+		return array();
 	}
 }
 
@@ -1413,6 +1464,62 @@ class WC_Order_Item_Product
 	public function add_meta_data(string $key, mixed $value, bool $unique = false): void
 	{
 		unset($key, $value, $unique);
+	}
+}
+
+class WC_Order_Item_Fee
+{
+	public function set_name( string $value ): void {
+		unset( $value );
+	}
+
+	public function set_amount( float|string $value ): void {
+		unset( $value );
+	}
+
+	public function set_total( float|string $value ): void {
+		unset( $value );
+	}
+
+	public function set_tax_class( string $value ): void {
+		unset( $value );
+	}
+
+	public function set_tax_status( string $value ): void {
+		unset( $value );
+	}
+
+	/**
+	 * @param array<string, mixed> $taxes Tax data.
+	 */
+	public function set_taxes( array $taxes ): void {
+		unset( $taxes );
+	}
+}
+
+class WC_Order_Item_Shipping
+{
+	public function set_method_title( string $value ): void {
+		unset( $value );
+	}
+
+	public function set_method_id( string $value ): void {
+		unset( $value );
+	}
+
+	public function set_instance_id( int $value ): void {
+		unset( $value );
+	}
+
+	public function set_total( float|string $value ): void {
+		unset( $value );
+	}
+
+	/**
+	 * @param array<string, mixed> $taxes Tax data.
+	 */
+	public function set_taxes( array $taxes ): void {
+		unset( $taxes );
 	}
 }
 
@@ -1524,6 +1631,26 @@ class WC_Order extends WC_Data
 	public function add_product($product, int $quantity = 1, array $args = array()): int|false
 	{
 		unset($product, $quantity, $args);
+
+		return 0;
+	}
+
+	/**
+	 * @param string $code Coupon code.
+	 * @return bool|WP_Error
+	 */
+	public function apply_coupon( string $code ) {
+		unset( $code );
+
+		return true;
+	}
+
+	/**
+	 * @param WC_Order_Item_Product|WC_Order_Item_Fee|WC_Order_Item_Shipping|object $item Order item.
+	 * @return int Item ID.
+	 */
+	public function add_item( $item ): int {
+		unset( $item );
 
 		return 0;
 	}

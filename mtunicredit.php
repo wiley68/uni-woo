@@ -3,7 +3,7 @@
  * Plugin Name:       УниКредит покупки на Кредит
  * Plugin URI:        https://www.unicreditbulbank.bg/bg/ucfin
  * Description:       УниКредит покупки на Кредит — WooCommerce модул за покупки на изплащане.
- * Version:           2.0.0
+ * Version:           2.0.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -53,7 +53,7 @@ if ( ! mtuc_is_woocommerce_active() ) {
 require_once __DIR__ . '/includes/config.php';
 
 /** Plugin constants */
-define( 'MTUC_VERSION', '2.0.0' );
+define( 'MTUC_VERSION', '2.0.1' );
 define( 'MTUC_DB_VERSION', '1.4.0' );
 define( 'MTUC_PLUGIN_FILE', __FILE__ );
 define( 'MTUC_PLUGIN_DIR', untrailingslashit( __DIR__ ) );
@@ -81,6 +81,7 @@ $mtuc_files = array(
 	'/class-mtuc-rest-api.php',
 	'/admin.php',
 	'/functions.php',
+	'/mtuc-financial-integrity.php',
 	'/mtuc-product-popup.php',
 	'/mtuc-cart-calculator.php',
 	'/mtuc-popup-order.php',
@@ -141,6 +142,7 @@ function mtuc_plugin_bootstrap() {
 
 	if ( is_admin() ) {
 		add_action( 'admin_menu', 'mtuc_admin_register_menu' );
+		add_action( 'admin_notices', 'mtuc_admin_currency_mismatch_notice' );
 	}
 
 	Mtuc_Rest_Api::init();

@@ -10,7 +10,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Cart total including tax (contents only, no shipping).
+ * Cart merchandise contents total including tax (no shipping/fees).
+ *
+ * Prefer mtuc_get_canonical_financeable_cart_total() for financing eligibility,
+ * installment calculation, snapshots, CP and SmartUCF amounts.
  *
  * @return float
  */
@@ -544,7 +547,11 @@ function mtuc_build_cart_calculator_context(): ?array {
 		return null;
 	}
 
-	$cart_total       = mtuc_get_cart_contents_total_inc_tax();
+	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
+		return null;
+	}
+
+	$cart_total       = mtuc_get_canonical_financeable_cart_total();
 	$coeff_list       = mtuc_get_shop_coeff_list( $shop );
 	$standard         = null;
 	$promo            = null;
@@ -949,7 +956,7 @@ function mtuc_send_cart_split_required_notification(): bool {
 		return false;
 	}
 
-	$cart_total = mtuc_get_cart_contents_total_inc_tax();
+	$cart_total = mtuc_get_canonical_financeable_cart_total();
 	$shop       = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
 		return false;
@@ -1138,7 +1145,14 @@ function mtuc_resolve_cart_scheme_state() {
 		return $shop;
 	}
 
-	$cart_total = mtuc_get_cart_contents_total_inc_tax();
+	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
+		return new WP_Error(
+			'mtuc_currency_mismatch',
+			__( 'Валутата на магазина не съвпада с конфигурацията за финансиране.', 'mtunicredit' )
+		);
+	}
+
+	$cart_total = mtuc_get_canonical_financeable_cart_total();
 	if ( $cart_total <= 0 || ! mtuc_is_product_price_in_shop_range( $shop, $cart_total ) ) {
 		return new WP_Error( 'mtuc_cart_price', __( 'Сумата на количката е извън допустимия диапазон.', 'mtunicredit' ) );
 	}

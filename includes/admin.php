@@ -84,6 +84,50 @@ add_action( 'admin_enqueue_scripts', 'mtuc_admin_enqueue_styles' );
 add_action( 'admin_init', 'mtuc_admin_handle_debug_export' );
 
 /**
+ * Warn administrators when WooCommerce currency disagrees with CP uni_eur mode.
+ *
+ * @return void
+ */
+function mtuc_admin_currency_mismatch_notice(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	if ( ! function_exists( 'mtuc_get_shop_data' ) || ! function_exists( 'mtuc_is_transaction_currency_compatible' ) ) {
+		return;
+	}
+
+	if ( ! Mtuc_Settings::is_enabled() ) {
+		return;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+		return;
+	}
+
+	if ( mtuc_is_transaction_currency_compatible( $shop ) ) {
+		return;
+	}
+
+	$wc_currency = mtuc_get_woocommerce_transaction_currency();
+	$expected    = mtuc_get_expected_transaction_currency( $shop );
+
+	echo '<div class="notice notice-error"><p><strong>'
+		. esc_html__( 'УНИ Кредит:', 'mtunicredit' )
+		. '</strong> '
+		. esc_html(
+			sprintf(
+				/* translators: 1: WooCommerce currency, 2: expected UniCredit transaction currency */
+				__( 'Валутата на магазина (%1$s) не съвпада с валутата за финансиране в Контролния панел (%2$s). Финансирането е деактивирано, докато конфигурацията бъде коригирана.', 'mtunicredit' ),
+				$wc_currency,
+				$expected
+			)
+		)
+		. '</p></div>';
+}
+
+/**
  * Download debug journal as JSON when requested from settings.
  *
  * @return void

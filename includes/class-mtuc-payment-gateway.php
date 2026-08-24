@@ -104,6 +104,15 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			return false;
 		}
 
+		$shop = function_exists( 'mtuc_get_shop_data' ) ? mtuc_get_shop_data() : null;
+		if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+			return false;
+		}
+
+		if ( ! mtuc_is_transaction_currency_compatible( $shop, $currency ) ) {
+			return false;
+		}
+
 		if ( ! function_exists( 'mtuc_build_cart_calculator_context' ) ) {
 			return false;
 		}

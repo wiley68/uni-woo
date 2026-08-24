@@ -1606,6 +1606,10 @@ function mtuc_get_product_calculator_context(): ?array {
 		return null;
 	}
 
+	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
+		return null;
+	}
+
 	$offer = null;
 	if ( mtuc_is_product_price_in_shop_range( $shop ) ) {
 		$offer = mtuc_get_product_calculator_offer( $shop );

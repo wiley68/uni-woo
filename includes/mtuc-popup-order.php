@@ -556,13 +556,15 @@ function mtuc_resolve_cp_order_addresses( WC_Order $order, array $customer ): ar
 }
 
 /**
- * Order grand total including taxes and fees.
+ * Order grand total including taxes, shipping and fees.
+ *
+ * Alias of the canonical financeable order amount.
  *
  * @param WC_Order $order WooCommerce order.
  * @return float
  */
 function mtuc_get_order_total_inc_tax( WC_Order $order ): float {
-	return round( (float) $order->get_total(), 2 );
+	return mtuc_get_canonical_financeable_order_total( $order );
 }
 
 /**
@@ -693,6 +695,84 @@ function mtuc_sync_cart_order_line_prices( WC_Order $order, array $cart_lines ):
 		}
 
 		mtuc_sync_order_item_line_price( $item, $line['product'], $line_total, $order );
+	}
+}
+
+/**
+ * Copy coupons, fees and chosen shipping from the current cart onto a popup order.
+ *
+ * Ensures the Woo order total matches the canonical financeable cart amount.
+ *
+ * @param WC_Order $order Target order.
+ * @return void
+ */
+function mtuc_apply_current_cart_adjustments_to_order( WC_Order $order ): void {
+	if ( ! function_exists( 'WC' ) || ! WC()->cart ) {
+		return;
+	}
+
+	$cart = WC()->cart;
+
+	foreach ( array_keys( $cart->get_coupons() ) as $code ) {
+		$code = (string) $code;
+		if ( '' === $code ) {
+			continue;
+		}
+		$order->apply_coupon( $code );
+	}
+
+	foreach ( $cart->get_fees() as $fee ) {
+		if ( ! is_object( $fee ) ) {
+			continue;
+		}
+
+		$item = new WC_Order_Item_Fee();
+		$item->set_name( isset( $fee->name ) ? (string) $fee->name : __( 'Такса', 'mtunicredit' ) );
+		$item->set_amount( isset( $fee->amount ) ? (float) $fee->amount : 0.0 );
+		$item->set_total( isset( $fee->total ) ? (float) $fee->total : 0.0 );
+		$item->set_tax_class( isset( $fee->tax_class ) ? (string) $fee->tax_class : '' );
+		$item->set_tax_status( ! empty( $fee->taxable ) ? 'taxable' : 'none' );
+
+		if ( isset( $fee->tax_data ) && is_array( $fee->tax_data ) ) {
+			$item->set_taxes(
+				array(
+					'total'    => $fee->tax_data,
+					'subtotal' => $fee->tax_data,
+				)
+			);
+		}
+
+		$order->add_item( $item );
+	}
+
+	if ( ! WC()->shipping() ) {
+		return;
+	}
+
+	$packages = WC()->shipping()->get_packages();
+	$chosen   = ( WC()->session ) ? (array) WC()->session->get( 'chosen_shipping_methods', array() ) : array();
+
+	foreach ( $packages as $index => $package ) {
+		if ( empty( $chosen[ $index ] ) || empty( $package['rates'][ $chosen[ $index ] ] ) ) {
+			continue;
+		}
+
+		$rate = $package['rates'][ $chosen[ $index ] ];
+		if ( ! is_object( $rate ) ) {
+			continue;
+		}
+
+		$item = new WC_Order_Item_Shipping();
+		$item->set_method_title( method_exists( $rate, 'get_label' ) ? (string) $rate->get_label() : '' );
+		$item->set_method_id( method_exists( $rate, 'get_method_id' ) ? (string) $rate->get_method_id() : '' );
+		$item->set_instance_id( method_exists( $rate, 'get_instance_id' ) ? (int) $rate->get_instance_id() : 0 );
+		$item->set_total( method_exists( $rate, 'get_cost' ) ? (float) $rate->get_cost() : 0.0 );
+
+		if ( method_exists( $rate, 'get_taxes' ) ) {
+			$item->set_taxes( array( 'total' => $rate->get_taxes() ) );
+		}
+
+		$order->add_item( $item );
 	}
 }
 
@@ -1162,16 +1242,22 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $customer;
 	}
 
-	$cart_state = mtuc_resolve_cart_scheme_state();
-	if ( is_wp_error( $cart_state ) ) {
-		mtuc_release_popup_submit_lock( $lock_key );
-		return $cart_state;
-	}
-
 	$shop = mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		return $shop;
+	}
+
+	$currency = mtuc_resolve_transaction_currency( $shop, $order->get_currency() );
+	if ( is_wp_error( $currency ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return $currency;
+	}
+
+	$cart_state = mtuc_resolve_cart_scheme_state();
+	if ( is_wp_error( $cart_state ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return $cart_state;
 	}
 
 	if ( mtuc_is_shop_process_2( $shop ) ) {
@@ -1186,8 +1272,16 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		}
 	}
 
-	$cart_total = (float) ( $cart_state['cart_total'] ?? 0 );
-	$common     = mtuc_resolve_checkout_scheme_common( $cart_state );
+	$cart_total = mtuc_get_canonical_financeable_order_total( $order );
+	if ( $cart_total <= 0 || ! mtuc_is_product_price_in_shop_range( $shop, $cart_total ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		return new WP_Error(
+			'mtuc_order_price',
+			__( 'Сумата на поръчката е извън допустимия диапазон.', 'mtunicredit' )
+		);
+	}
+
+	$common = mtuc_resolve_checkout_scheme_common( $cart_state );
 
 	if ( empty( $common ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
@@ -1424,6 +1518,7 @@ function mtuc_create_cart_popup_pending_order(
 	}
 
 	mtuc_sync_cart_order_line_prices( $order, $cart_lines );
+	mtuc_apply_current_cart_adjustments_to_order( $order );
 	$order->calculate_totals();
 
 	$order->set_created_via( 'mtuc_cart_popup' );
@@ -1615,7 +1710,7 @@ function mtuc_build_cp_cart_order_payload(
 		'products_name' => $cp_products['products_name'],
 		'products_q'    => $cp_products['products_q'],
 		'type_client'   => mtuc_get_cp_type_client(),
-		'currency'      => mtuc_get_cp_order_currency( $shop ),
+		'currency'      => mtuc_get_cp_order_currency( $shop, $order->get_currency() ),
 		'version'       => mtuc_get_cp_order_version(),
 	);
 }
@@ -1816,6 +1911,36 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
 	}
 
+	// Recalculate from authoritative order total so snapshot/CP/SmartUCF stay aligned.
+	$order_total = mtuc_get_canonical_financeable_order_total( $order );
+	if ( abs( $order_total - $cart_total ) > 0.009 ) {
+		$calculation = mtuc_calculate_cart_popup_credit(
+			$shop,
+			$coeff_list,
+			$order_total,
+			$months,
+			$offer_type,
+			$parva,
+			$filter_id,
+			$scheme_type,
+			$common
+		);
+		if ( is_wp_error( $calculation ) ) {
+			$order->delete( true );
+			mtuc_release_popup_submit_lock( $lock_key );
+			wp_send_json_error( array( 'message' => $calculation->get_error_message() ), 400 );
+		}
+		mtuc_save_order_credit_meta(
+			$order,
+			$calculation,
+			array(
+				'submission_source' => 'cart_popup',
+				'line_count'        => count( $cart_lines ),
+			)
+		);
+		$order->save();
+	}
+
 	if ( mtuc_is_shop_process_2( $shop ) ) {
 		mtuc_save_order_process2_customer_meta( $order, $customer );
 	}
@@ -1853,19 +1978,23 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 }
 
 /**
- * Resolve CP order currency code from shop settings.
+ * Resolve CP order currency code — must match Woo transaction currency.
  *
- * @param array<string, mixed> $shop Shop `data` object from CP.
+ * Requires compatibility between WooCommerce currency and shop `uni_eur` mode.
+ * Dual-display modes (1/2) do not change the submitted transaction currency.
+ *
+ * @param array<string, mixed> $shop        Shop `data` object from CP.
+ * @param string|null          $wc_currency Optional Woo/order currency override.
  * @return string BGN|EUR
  */
-function mtuc_get_cp_order_currency( array $shop ): string {
-	$uni_eur = (int) ( $shop['uni_eur'] ?? 0 );
-
-	if ( in_array( $uni_eur, array( 2, 3 ), true ) ) {
-		return 'EUR';
+function mtuc_get_cp_order_currency( array $shop, ?string $wc_currency = null ): string {
+	$resolved = mtuc_resolve_transaction_currency( $shop, $wc_currency );
+	if ( is_wp_error( $resolved ) ) {
+		// Callers must gate availability; fall back to expected bank currency for typing only.
+		return mtuc_get_expected_transaction_currency( $shop );
 	}
 
-	return 'BGN';
+	return $resolved;
 }
 
 /**
@@ -1964,7 +2093,7 @@ function mtuc_build_cp_order_payload(
 		'products_name' => $cp_products['products_name'],
 		'products_q'    => $cp_products['products_q'],
 		'type_client'   => mtuc_get_cp_type_client(),
-		'currency'      => mtuc_get_cp_order_currency( $shop ),
+		'currency'      => mtuc_get_cp_order_currency( $shop, $order->get_currency() ),
 		'version'       => mtuc_get_cp_order_version(),
 	);
 }
@@ -2211,37 +2340,19 @@ function mtuc_ajax_popup_submit(): void {
 
 	$product_id   = isset( $_POST['product_id'] ) ? absint( wp_unslash( $_POST['product_id'] ) ) : 0;
 	$variation_id = isset( $_POST['variation_id'] ) ? absint( wp_unslash( $_POST['variation_id'] ) ) : 0;
-	$line_price   = isset( $_POST['line_price'] ) ? (float) wp_unslash( $_POST['line_price'] ) : 0.0;
-	$quantity     = isset( $_POST['quantity'] ) ? absint( wp_unslash( $_POST['quantity'] ) ) : 1;
-	$quantity     = max( 1, $quantity );
+	$quantity     = isset( $_POST['quantity'] ) ? (int) wp_unslash( $_POST['quantity'] ) : 0;
+	// Client line_price is informational only and must never control financing amounts.
 
-	$parent_id = $product_id;
-	$load_id   = $variation_id > 0 ? $variation_id : $product_id;
-	$product   = mtuc_get_wc_product_by_id( $load_id );
-
-	if ( ! $product instanceof WC_Product ) {
-		wp_send_json_error( array( 'message' => __( 'Невалиден продукт.', 'mtunicredit' ) ), 400 );
+	$line = mtuc_resolve_authoritative_product_financing_line( $product_id, $variation_id, $quantity );
+	if ( is_wp_error( $line ) ) {
+		wp_send_json_error( array( 'message' => $line->get_error_message() ), 400 );
 	}
 
-	if ( $variation_id <= 0 && $product->is_type( 'variation' ) ) {
-		$variation_id = $product->get_id();
-		$parent_id    = (int) $product->get_parent_id();
-	}
-
-	if ( $variation_id <= 0 ) {
-		$parent_product = mtuc_get_wc_product_by_id( $parent_id );
-		if ( $parent_product instanceof WC_Product && $parent_product->is_type( 'variable' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Моля, изберете вариация на продукта.', 'mtunicredit' ) ), 400 );
-		}
-	}
-
-	if ( ! $product->is_purchasable() ) {
-		wp_send_json_error( array( 'message' => __( 'Продуктът не може да бъде закупен.', 'mtunicredit' ) ), 400 );
-	}
-
-	if ( ! $product->is_in_stock() ) {
-		wp_send_json_error( array( 'message' => __( 'Продуктът не е наличен.', 'mtunicredit' ) ), 400 );
-	}
+	$product      = $line['product'];
+	$parent_id    = (int) $line['parent_id'];
+	$variation_id = (int) $line['variation_id'];
+	$quantity     = (int) $line['quantity'];
+	$price        = (float) $line['line_total'];
 
 	$lock_key = mtuc_build_popup_submit_lock_key( $parent_id, $variation_id );
 	if ( ! mtuc_acquire_popup_submit_lock( $lock_key ) ) {
@@ -2257,10 +2368,10 @@ function mtuc_ajax_popup_submit(): void {
 		wp_send_json_error( array( 'message' => $shop->get_error_message() ), 500 );
 	}
 
-	$price = $line_price > 0 ? round( $line_price, 2 ) : mtuc_get_product_price( $product );
-	if ( null === $price ) {
+	$currency = mtuc_resolve_transaction_currency( $shop );
+	if ( is_wp_error( $currency ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => __( 'Не може да се определи цената на продукта.', 'mtunicredit' ) ), 400 );
+		wp_send_json_error( array( 'message' => $currency->get_error_message() ), 400 );
 	}
 
 	if ( ! mtuc_is_product_price_in_shop_range( $shop, $price ) ) {

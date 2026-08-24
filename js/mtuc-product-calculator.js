@@ -203,6 +203,13 @@
 					return;
 				}
 
+				const quantity = parseInt(
+					$('input[name="quantity"]').first().val(),
+					10,
+				);
+				const qty =
+					Number.isNaN(quantity) || quantity <= 0 ? 1 : quantity;
+
 				if (refreshRequest && refreshRequest.readyState !== 4) {
 					refreshRequest.abort();
 				}
@@ -214,6 +221,7 @@
 						parseInt($root.data("mtuc-product-id"), 10) ||
 						mtucCalculator.productId,
 					variation_id: variationId || 0,
+					quantity: qty,
 					line_price: linePrice.toFixed(2),
 				}).done(function (response) {
 					if (response && response.success && response.data) {

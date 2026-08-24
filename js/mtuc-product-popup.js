@@ -302,9 +302,7 @@
 				return;
 			}
 
-			$from
-				.prop("hidden", false)
-				.removeClass("mtuc-popup__step--active");
+			$from.prop("hidden", false).removeClass("mtuc-popup__step--active");
 			$to.prop("hidden", false).addClass("mtuc-popup__step--active");
 			$to.hide();
 			$from.hide("slow");
@@ -800,6 +798,7 @@
 				source: getPopupSource(),
 				product_id: lineContext.productId,
 				variation_id: lineContext.variationId,
+				quantity: lineContext.quantity || 1,
 				line_price: lineContext.linePrice.toFixed(2),
 				offer_type: $offerType.val(),
 				scheme_key: schemeKey,
