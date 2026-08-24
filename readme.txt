@@ -32,6 +32,8 @@ License URI: https://www.gnu.org/licenses/gpl-3.0.html
 * Ambiguous CP create outcomes are marked for safe idempotent retry instead of claiming non-creation (AUD-WOO-005).
 * Process 1 records `bank_sent_process1` only after SmartUCF success; Process 2 after CP create (AUD-WOO-008).
 * CP status PATCH failures persist pending sync diagnostics with bounded retry (AUD-WOO-009).
+* Durable popup operation token prevents duplicate Woo/CP/SmartUCF orders on retry (AUD-WOO-006).
+* Collision-safe persisted CP shop order_id (max 13) and exact HPOS lookup (AUD-WOO-007).
 
 = 1.0.0 =
 * Първоначална версия — гръбнак на модула.

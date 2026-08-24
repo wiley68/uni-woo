@@ -51,6 +51,18 @@ const MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT = '_mtuc_process2_uni_email_sent';
 /** Order meta: order was submitted via Process 2 (no SmartUCF). */
 const MTUC_ORDER_META_PROCESS2 = '_mtuc_process2';
 
+/** Order meta: durable financing operation token (AUD-WOO-006). */
+const MTUC_ORDER_META_OPERATION_TOKEN = '_mtuc_operation_token';
+
+/** Order meta: persisted external CP shop order_id (AUD-WOO-007). */
+const MTUC_ORDER_META_CP_SHOP_ORDER_ID = '_mtuc_cp_shop_order_id';
+
+/** Order meta: cart emptied once after accepted financing. */
+const MTUC_ORDER_META_CART_EMPTIED = '_mtuc_cart_emptied';
+
+/** CP external shop order_id maximum length. */
+const MTUC_CP_SHOP_ORDER_ID_MAX_LEN = 13;
+
 /**
  * Human-readable bank status labels for module-managed submission outcomes.
  *
@@ -116,22 +128,30 @@ function mtuc_get_cp_order_create_status_payload( array $shop ): ?array {
 }
 
 /**
- * Shop order_id sent to CP (max 13 chars).
+ * External shop order_id sent to CP (max 13 chars).
+ *
+ * New orders use persisted collision-safe ID (AUD-WOO-007).
+ * Legacy orders without meta fall back to truncated display order number.
  *
  * @param WC_Order $order WooCommerce order.
  * @return string
  */
 function mtuc_get_cp_shop_order_id( WC_Order $order ): string {
+	$persisted = (string) $order->get_meta( MTUC_ORDER_META_CP_SHOP_ORDER_ID );
+	if ( '' !== $persisted ) {
+		return $persisted;
+	}
+
 	$order_number = (string) $order->get_order_number();
-	if ( strlen( $order_number ) > 13 ) {
-		$order_number = substr( $order_number, 0, 13 );
+	if ( strlen( $order_number ) > MTUC_CP_SHOP_ORDER_ID_MAX_LEN ) {
+		$order_number = substr( $order_number, 0, MTUC_CP_SHOP_ORDER_ID_MAX_LEN );
 	}
 
 	return $order_number;
 }
 
 /**
- * Find WooCommerce order by CP shop order_id (same value as in CP payloads).
+ * Find WooCommerce order by CP shop order_id (exact persisted meta, HPOS-safe).
  *
  * @param string $cp_order_id Order identifier sent to CP (max 13 chars).
  * @return WC_Order|null
@@ -142,8 +162,29 @@ function mtuc_find_order_by_cp_order_id( string $cp_order_id ): ?WC_Order {
 		return null;
 	}
 
-	if ( strlen( $cp_order_id ) > 13 ) {
-		$cp_order_id = substr( $cp_order_id, 0, 13 );
+	if ( strlen( $cp_order_id ) > MTUC_CP_SHOP_ORDER_ID_MAX_LEN ) {
+		$cp_order_id = substr( $cp_order_id, 0, MTUC_CP_SHOP_ORDER_ID_MAX_LEN );
+	}
+
+	if ( ! function_exists( 'wc_get_orders' ) ) {
+		return null;
+	}
+
+	$by_meta = wc_get_orders(
+		array(
+			'limit'      => 1,
+			'meta_key'   => MTUC_ORDER_META_CP_SHOP_ORDER_ID,
+			'meta_value' => $cp_order_id,
+			'return'     => 'objects',
+		)
+	);
+
+	if ( is_array( $by_meta ) ) {
+		foreach ( $by_meta as $order ) {
+			if ( $order instanceof WC_Order && mtuc_get_cp_shop_order_id( $order ) === $cp_order_id ) {
+				return $order;
+			}
+		}
 	}
 
 	if ( ctype_digit( $cp_order_id ) ) {
@@ -153,13 +194,9 @@ function mtuc_find_order_by_cp_order_id( string $cp_order_id ): ?WC_Order {
 		}
 	}
 
-	if ( ! function_exists( 'wc_get_orders' ) ) {
-		return null;
-	}
-
 	$orders = wc_get_orders(
 		array(
-			'limit'   => 20,
+			'limit'   => 50,
 			'search'  => $cp_order_id,
 			'orderby' => 'date',
 			'order'   => 'DESC',
@@ -1204,8 +1241,20 @@ function mtuc_complete_order_bank_submission(
 	array $calculation,
 	array $shop
 ) {
-	$cp_result = mtuc_send_cart_popup_order_to_cp( $order, $customer, $calculation, $shop );
-	if ( is_wp_error( $cp_result ) ) {
+	$process2 = mtuc_is_shop_process_2( $shop );
+
+	if ( function_exists( 'mtuc_popup_order_has_successful_bank_submission' )
+		&& mtuc_popup_order_has_successful_bank_submission( $order, $process2 )
+	) {
+		$existing = mtuc_build_existing_popup_submission_result( $order, $shop, $process2 );
+		if ( ! is_wp_error( $existing ) ) {
+			return $existing;
+		}
+	}
+
+	if ( function_exists( 'mtuc_order_financing_is_terminal_failure' )
+		&& mtuc_order_financing_is_terminal_failure( $order )
+	) {
 		return array(
 			'bank_unavailable' => true,
 			'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
@@ -1213,8 +1262,20 @@ function mtuc_complete_order_bank_submission(
 	}
 
 	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	$outcome     = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ) );
 
-	if ( mtuc_is_shop_process_2( $shop ) ) {
+	if ( $cp_order_id <= 0 || 'unknown' === $outcome ) {
+		$cp_result = mtuc_send_cart_popup_order_to_cp( $order, $customer, $calculation, $shop );
+		if ( is_wp_error( $cp_result ) ) {
+			return array(
+				'bank_unavailable' => true,
+				'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
+			);
+		}
+		$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	}
+
+	if ( $process2 ) {
 		$order->save();
 
 		return array(
@@ -1222,6 +1283,15 @@ function mtuc_complete_order_bank_submission(
 			'cp_order_id'  => $cp_order_id,
 			'process2'     => true,
 		);
+	}
+
+	if ( function_exists( 'mtuc_popup_order_needs_smartucf_submission' )
+		&& ! mtuc_popup_order_needs_smartucf_submission( $order )
+	) {
+		$existing = mtuc_build_existing_popup_submission_result( $order, $shop, false );
+		if ( ! is_wp_error( $existing ) ) {
+			return $existing;
+		}
 	}
 
 	$smartucf_result = mtuc_send_cart_popup_order_to_smartucf( $order, $customer, $calculation, $shop );
@@ -1583,10 +1653,6 @@ function mtuc_create_cart_popup_pending_order(
 	$order->set_payment_method_title( mtuc_get_payment_gateway_title() );
 	$order->save();
 
-	if ( function_exists( 'WC' ) && WC()->cart ) {
-		WC()->cart->empty_cart();
-	}
-
 	return $order;
 }
 
@@ -1777,6 +1843,17 @@ function mtuc_build_cp_cart_order_payload(
  * @return array<string, mixed>|WP_Error
  */
 function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, array $shop ) {
+	$existing_cp_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	$outcome        = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ) );
+
+	if ( $existing_cp_id > 0 && 'unknown' !== $outcome ) {
+		return array(
+			'data' => array(
+				'id' => $existing_cp_id,
+			),
+		);
+	}
+
 	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
 
 	if ( is_wp_error( $response ) && mtuc_is_cp_transport_ambiguous_error( $response ) ) {
@@ -1982,11 +2059,28 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		? $cart_state['lines']
 		: mtuc_get_cart_line_entries();
 
-	$order = mtuc_create_cart_popup_pending_order( $customer, $calculation, $cart_lines );
-	if ( is_wp_error( $order ) ) {
+	$operation_token = mtuc_get_submitted_operation_token();
+	if ( is_wp_error( $operation_token ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
+		wp_send_json_error( array( 'message' => $operation_token->get_error_message() ), 400 );
 	}
+
+	$scope_key = mtuc_build_cart_operation_scope_key();
+	$resolved  = mtuc_resolve_popup_financing_order(
+		$operation_token,
+		$scope_key,
+		static function () use ( $customer, $calculation, $cart_lines ) {
+			return mtuc_create_cart_popup_pending_order( $customer, $calculation, $cart_lines );
+		}
+	);
+
+	if ( is_wp_error( $resolved ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		$status = 'mtuc_operation_contention' === $resolved->get_error_code() ? 429 : 500;
+		wp_send_json_error( array( 'message' => $resolved->get_error_message() ), $status );
+	}
+
+	$order = $resolved['order'];
 
 	// Recalculate from authoritative order total so snapshot/CP/SmartUCF stay aligned.
 	$order_total = mtuc_get_canonical_financeable_order_total( $order );
@@ -2029,7 +2123,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 	}
 
 	if ( empty( $submission['bank_unavailable'] ) ) {
-		mtuc_apply_payment_gateway_to_order( $order );
+		mtuc_accept_popup_financing_order( $order );
 	}
 
 	mtuc_release_popup_submit_lock( $lock_key );
@@ -2453,26 +2547,42 @@ function mtuc_ajax_popup_submit(): void {
 		wp_send_json_error( array( 'message' => $calculation->get_error_message() ), 400 );
 	}
 
-	$order = mtuc_create_popup_pending_order(
-		$customer,
-		$calculation,
-		$product,
-		$parent_id,
-		$variation_id,
-		$quantity,
-		$price
+	$operation_token = mtuc_get_submitted_operation_token();
+	if ( is_wp_error( $operation_token ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		wp_send_json_error( array( 'message' => $operation_token->get_error_message() ), 400 );
+	}
+
+	$scope_key = mtuc_build_product_operation_scope_key( $parent_id, $variation_id );
+	$resolved  = mtuc_resolve_popup_financing_order(
+		$operation_token,
+		$scope_key,
+		static function () use ( $customer, $calculation, $product, $parent_id, $variation_id, $quantity, $price ) {
+			return mtuc_create_popup_pending_order(
+				$customer,
+				$calculation,
+				$product,
+				$parent_id,
+				$variation_id,
+				$quantity,
+				$price
+			);
+		}
 	);
 
-	if ( is_wp_error( $order ) ) {
+	if ( is_wp_error( $resolved ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
-		wp_send_json_error( array( 'message' => $order->get_error_message() ), 500 );
+		$status = 'mtuc_operation_contention' === $resolved->get_error_code() ? 429 : 500;
+		wp_send_json_error( array( 'message' => $resolved->get_error_message() ), $status );
 	}
+
+	$order = $resolved['order'];
 
 	if ( $process2 ) {
 		mtuc_save_order_process2_customer_meta( $order, $customer );
 	}
 
-	$cp_result = mtuc_send_popup_order_to_cp(
+	$submission = mtuc_complete_product_popup_bank_submission(
 		$order,
 		$customer,
 		$calculation,
@@ -2480,71 +2590,38 @@ function mtuc_ajax_popup_submit(): void {
 		$parent_id,
 		$variation_id,
 		$quantity,
-		$shop
+		$shop,
+		$process2
 	);
 
-	if ( is_wp_error( $cp_result ) ) {
+	if ( is_wp_error( $submission ) ) {
+		mtuc_release_popup_submit_lock( $lock_key );
+		wp_send_json_error( array( 'message' => $submission->get_error_message() ), 500 );
+	}
+
+	if ( ! empty( $submission['bank_unavailable'] ) ) {
 		mtuc_release_popup_submit_lock( $lock_key );
 		mtuc_send_popup_bank_unavailable_response( $order );
 	}
 
-	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
-
-	if ( $process2 ) {
-		mtuc_apply_payment_gateway_to_order( $order );
-		mtuc_release_popup_submit_lock( $lock_key );
-
-		wp_send_json_success(
-			array(
-				'order_id'     => $order->get_id(),
-				'order_number' => $order->get_order_number(),
-				'cp_order_id'  => $cp_order_id,
-				'bank_status'  => MTUC_BANK_STATUS_SENT_PROCESS2,
-				'redirect_url' => mtuc_get_popup_order_thankyou_url( $order ),
-				'message'      => mtuc_get_process2_confirmation_message(),
-			)
-		);
-	}
-
-	$smartucf_result = mtuc_send_popup_order_to_smartucf(
-		$order,
-		$customer,
-		$calculation,
-		$product,
-		$parent_id,
-		$variation_id,
-		$quantity,
-		$shop
-	);
-
-	if ( is_wp_error( $smartucf_result ) ) {
-		mtuc_release_popup_submit_lock( $lock_key );
-		mtuc_send_popup_bank_unavailable_response( $order );
-	}
-
-	mtuc_record_order_bank_status(
-		$order,
-		MTUC_BANK_STATUS_SENT_PROCESS1,
-		array( 'sync_cp' => true )
-	);
-	$order->update_meta_data(
-		MTUC_ORDER_META_SMARTUCF_REDIRECT_URL,
-		esc_url_raw( (string) $smartucf_result['redirect_url'] )
-	);
-	$order->save();
-
-	mtuc_apply_payment_gateway_to_order( $order );
-
+	mtuc_accept_popup_financing_order( $order );
 	mtuc_release_popup_submit_lock( $lock_key );
+
+	$cp_order_id   = (int) ( $submission['cp_order_id'] ?? $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ) );
+	$is_process2   = ! empty( $submission['process2'] );
+	$bank_status   = $is_process2 ? MTUC_BANK_STATUS_SENT_PROCESS2 : MTUC_BANK_STATUS_SENT_PROCESS1;
+	$success_message = $is_process2
+		? mtuc_get_process2_confirmation_message()
+		: __( 'Пренасочване към UniCredit за довършване на заявката.', 'mtunicredit' );
 
 	wp_send_json_success(
 		array(
 			'order_id'     => $order->get_id(),
 			'order_number' => $order->get_order_number(),
 			'cp_order_id'  => $cp_order_id,
-			'bank_status'  => MTUC_BANK_STATUS_SENT_PROCESS1,
-			'redirect_url' => $smartucf_result['redirect_url'],
-			'message'      => __( 'Пренасочване към UniCredit за довършване на заявката.', 'mtunicredit' ),
+			'bank_status'  => $bank_status,
+			'redirect_url' => (string) $submission['redirect_url'],
+			'message'      => $success_message,
 		)
 	);
 }
@@ -2711,6 +2788,11 @@ function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 
 	if ( $cp_order_id > 0 ) {
 		$rows[ __( 'КП поръчка (ID)', 'mtunicredit' ) ] = (string) $cp_order_id;
+	}
+
+	$cp_shop_order_id = mtuc_get_cp_shop_order_id( $order );
+	if ( '' !== $cp_shop_order_id ) {
+		$rows[ __( 'КП shop order_id', 'mtunicredit' ) ] = $cp_shop_order_id;
 	}
 
 	if ( '' !== $outcome ) {

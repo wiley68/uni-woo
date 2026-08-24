@@ -52,6 +52,53 @@
 		let lastOpenTrigger = null;
 		let submitInFlight = false;
 		let redirectPending = false;
+		const OPERATION_TOKEN_KEY = "mtuc_popup_operation_token";
+
+		const generateOperationToken = () => {
+			if (
+				typeof crypto !== "undefined" &&
+				typeof crypto.randomUUID === "function"
+			) {
+				return crypto.randomUUID();
+			}
+
+			const bytes = new Uint8Array(16);
+			if (
+				typeof crypto !== "undefined" &&
+				typeof crypto.getRandomValues === "function"
+			) {
+				crypto.getRandomValues(bytes);
+			} else {
+				for (let i = 0; i < bytes.length; i += 1) {
+					bytes[i] = Math.floor(Math.random() * 256);
+				}
+			}
+
+			return Array.from(bytes, (byte) =>
+				byte.toString(16).padStart(2, "0"),
+			).join("");
+		};
+
+		const resetOperationToken = () => {
+			try {
+				sessionStorage.removeItem(OPERATION_TOKEN_KEY);
+			} catch (error) {
+				// Ignore storage failures.
+			}
+		};
+
+		const getOperationToken = () => {
+			try {
+				let token = sessionStorage.getItem(OPERATION_TOKEN_KEY);
+				if (!token) {
+					token = generateOperationToken();
+					sessionStorage.setItem(OPERATION_TOKEN_KEY, token);
+				}
+				return token;
+			} catch (error) {
+				return generateOperationToken();
+			}
+		};
 		const $processing = $popup.find(".mtuc-popup__processing");
 		const $processingText = $popup.find(".mtuc-popup__processing-text");
 
@@ -154,6 +201,7 @@
 			return {
 				action: "mtuc_popup_submit",
 				security: mtucPopup.nonce,
+				operation_token: getOperationToken(),
 				source: getPopupSource(),
 				product_id: lineContext.productId,
 				variation_id: lineContext.variationId,
@@ -677,6 +725,7 @@
 		const openPopup = (offerType) => {
 			movePopupToBody();
 			releaseSubmitUi();
+			resetOperationToken();
 			$offerType.val(offerType);
 			showStep(1);
 			resetParvaInput();
