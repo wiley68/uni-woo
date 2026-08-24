@@ -87,6 +87,7 @@ $mtuc_files = array(
 	'/admin.php',
 	'/functions.php',
 	'/mtuc-financial-integrity.php',
+	'/mtuc-financing-calculator.php',
 	'/mtuc-bank-lifecycle.php',
 	'/mtuc-product-popup.php',
 	'/mtuc-cart-calculator.php',

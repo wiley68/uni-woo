@@ -1276,17 +1276,18 @@ function mtuc_calculate_cart_popup_credit(
 	$parva_locked = $parva_state['parva_locked'];
 	$show_parva  = $parva_state['show_parva'];
 
-	$loan_amount = round( $cart_total - $parva, 2 );
-	if ( $loan_amount <= 0 ) {
-		return new WP_Error( 'mtuc_cart_invalid_loan', __( 'Общата сума на заема трябва да е положителна.', 'mtunicredit' ) );
+	$amounts = mtuc_compute_financing_amounts( $cart_total, $parva, $kimb, $months, 'mtuc_cart_invalid_loan' );
+	if ( is_wp_error( $amounts ) ) {
+		return $amounts;
 	}
 
-	$monthly_installment = round( $loan_amount * $kimb, 2 );
-	$total_payable       = round( $monthly_installment * $months, 2 );
-	$glp                 = isset( $coeff_entry['interestPercent'] ) ? (float) $coeff_entry['interestPercent'] : 0.0;
-	$gpr                 = mtuc_calculate_gpr( $months, $monthly_installment, $loan_amount );
-	$gpr                 = $gpr <= 0.1 ? 0.0 : round( $gpr, 2 );
-	$glp                 = round( abs( $glp ), 2 );
+	$loan_amount         = $amounts['loan_amount'];
+	$monthly_installment = $amounts['monthly_installment'];
+	$total_payable       = $amounts['total_payable'];
+	$glp_raw             = isset( $coeff_entry['interestPercent'] ) ? (float) $coeff_entry['interestPercent'] : 0.0;
+	$rates               = mtuc_finalize_financing_interest_rates( $months, $monthly_installment, $loan_amount, $glp_raw );
+	$glp                 = $rates['glp'];
+	$gpr                 = $rates['gpr'];
 
 	return array(
 		'months'              => $months,

@@ -178,6 +178,7 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 	}
 }
 
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-calculator.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-product-popup.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-cart-calculator.php';
 
@@ -232,6 +233,14 @@ foreach ( $rounding_cases as $idx => $case ) {
 	mtuc_aud015_assert( $exp_principal === $result['principal'], "AUD-014 case {$idx} principal" );
 	mtuc_aud015_assert( $exp_monthly === $result['monthly'], "AUD-014 case {$idx} monthly" );
 	mtuc_aud015_assert( $exp_total === $result['total'], "AUD-014 case {$idx} total_payable" );
+
+	if ( function_exists( 'mtuc_compute_financing_amounts' ) ) {
+		$extracted = mtuc_compute_financing_amounts( $price, $parva, $coeff, $months );
+		mtuc_aud015_assert( is_array( $extracted ), "AUD-014 case {$idx} extracted helper returns array" );
+		mtuc_aud015_assert( $exp_principal === $extracted['loan_amount'], "AUD-014 case {$idx} extracted principal" );
+		mtuc_aud015_assert( $exp_monthly === $extracted['monthly_installment'], "AUD-014 case {$idx} extracted monthly" );
+		mtuc_aud015_assert( $exp_total === $extracted['total_payable'], "AUD-014 case {$idx} extracted total" );
+	}
 }
 
 // Cart calculator path uses the same round points.
