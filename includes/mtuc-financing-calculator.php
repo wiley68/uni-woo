@@ -1,8 +1,10 @@
 <?php
 /**
- * Core financing calculation helpers (AUD-WOO-016 Step 1).
+ * Core financing calculation helpers (AUD-WOO-016 Steps 1–2).
  *
- * Pure installment math shared by product popup and cart calculators.
+ * Pure installment math shared by product popup and cart calculators:
+ * first-installment state → principal → monthly → total → GPR/GLP.
+ *
  * Does not perform remote calls, order mutation, or status transitions.
  *
  * @package MTUC
@@ -10,6 +12,47 @@
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
+}
+
+/**
+ * Resolve parva amount and display flags for popup/cart calculators.
+ *
+ * Filter-level `uni_parva` overrides shop `uni_first_vnoska` and locks the value.
+ *
+ * @param array<string, mixed>      $shop       Shop data.
+ * @param float                     $price      Product price or cart total.
+ * @param int                       $months     Installment count.
+ * @param float                     $user_parva User-entered initial payment.
+ * @param array<string, mixed>|null $filter     Matching schema filter row.
+ * @return array{parva:float,parva_locked:bool,show_parva:bool}
+ */
+function mtuc_resolve_parva_calculation_state(
+	array $shop,
+	float $price,
+	int $months,
+	float $user_parva,
+	?array $filter = null
+): array {
+	$show_parva   = mtuc_is_yes_flag( $shop['uni_first_vnoska'] ?? 0 );
+	$parva_locked = false;
+	$parva        = 0.0;
+
+	if ( null !== $filter && 1 === (int) ( $filter['uni_parva'] ?? 0 ) && $months > 0 ) {
+		$parva        = round( $price / $months, 2 );
+		$parva_locked = true;
+	} elseif ( $show_parva ) {
+		$parva = max( 0.0, min( round( $user_parva, 2 ), $price ) );
+	}
+
+	if ( $parva_locked ) {
+		$show_parva = true;
+	}
+
+	return array(
+		'parva'        => $parva,
+		'parva_locked' => $parva_locked,
+		'show_parva'   => $show_parva,
+	);
 }
 
 /**
