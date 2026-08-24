@@ -22,6 +22,12 @@ License URI: https://www.gnu.org/licenses/gpl-3.0.html
 3. Уверете се, че WooCommerce е активен.
 4. Конфигурирайте връзката с Контролния панел от настройките на модула.
 
+== Deployment (vendor) ==
+
+Production installation ZIP is prepared manually and uploaded to the Bank/CP portal.
+It contains Git source plus deployment-only files (certificates, `secrets/smartucf-key.php`).
+Merchants install the ZIP normally; they do not edit wp-config or environment variables for the SSL password.
+
 == Changelog ==
 
 = 2.0.1 =
@@ -35,7 +41,7 @@ License URI: https://www.gnu.org/licenses/gpl-3.0.html
 * Durable popup operation token prevents duplicate Woo/CP/SmartUCF orders on retry (AUD-WOO-006).
 * Collision-safe persisted CP shop order_id (max 13) and exact HPOS lookup (AUD-WOO-007).
 * Shop configuration stale-if-error fallback with refresh lock and stampede protection (AUD-WOO-010).
-* SmartUCF SSL private-key password resolved from wp-config/environment, not plugin source (AUD-WOO-011).
+* SmartUCF SSL private-key password from deployment secret file or dev overrides, not plugin source (AUD-WOO-011).
 * Customer-safe error normalization for AJAX, checkout and gateway flows (AUD-WOO-012).
 * Order-level financing diagnostics independent of WP_DEBUG (AUD-WOO-013).
 

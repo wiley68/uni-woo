@@ -40,6 +40,12 @@ coverage/
 !/keys/leases/index.php
 !/keys/leases/.htaccess
 
+# Deployment secrets (production ZIP only — never commit real password file)
+/secrets/*
+!/secrets/index.php
+!/secrets/.htaccess
+!/secrets/smartucf-key.example.php
+
 # Certificate test temp
 /tests/tmp/
 

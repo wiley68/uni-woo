@@ -444,13 +444,84 @@ mtuc_res_assert( 1 === $mtuc_res_cp_fetch_calls && ! is_wp_error( $after_lock ),
 $config_source = file_get_contents( MTUC_PLUGIN_DIR . '/includes/config.php' );
 mtuc_res_assert( is_string( $config_source ) && false === strpos( $config_source, "'1234'" ), 'plugin config must not contain hard-coded password 1234' );
 
+$gitignore_source = file_get_contents( MTUC_PLUGIN_DIR . '/.gitignore' );
+mtuc_res_assert(
+	is_string( $gitignore_source ) && false !== strpos( $gitignore_source, '/secrets/*' ),
+	'gitignore must exclude deployment secrets directory contents'
+);
+
+/**
+ * Write a temporary deployment secret file for isolated resolver tests.
+ *
+ * @param string               $dir     Temp directory.
+ * @param array<string, mixed> $payload Secret payload.
+ * @return string Absolute path.
+ */
+function mtuc_res_write_secret_file( string $dir, array $payload ): string {
+	$path    = $dir . '/smartucf-key.php';
+	$content = "<?php\ndefined('ABSPATH') || exit;\n\nreturn " . var_export( $payload, true ) . ";\n";
+	file_put_contents( $path, $content );
+	return $path;
+}
+
+$secrets_tmp = sys_get_temp_dir() . '/mtuc-secret-' . (string) getmypid();
+@mkdir( $secrets_tmp, 0700, true );
+
+unset( $GLOBALS['mtuc_test_secret_file_path'] );
 putenv( 'MTUC_SMARTUCF_KEY_PASSWORD=env-secret' );
-mtuc_res_assert( 'env-secret' === mtuc_get_smartucf_key_password(), 'password must resolve from environment variable when constant absent' );
+mtuc_res_assert( 'env-secret' === mtuc_get_smartucf_key_password(), 'environment must resolve when local file absent and constant undefined' );
 
 if ( ! defined( 'MTUC_SMARTUCF_KEY_PASSWORD' ) ) {
 	define( 'MTUC_SMARTUCF_KEY_PASSWORD', 'const-secret' );
 }
 mtuc_res_assert( 'const-secret' === mtuc_get_smartucf_key_password(), 'WordPress constant must take precedence over environment' );
+
+$GLOBALS['mtuc_test_secret_file_path'] = mtuc_res_write_secret_file(
+	$secrets_tmp,
+	array( 'smartucf_key_password' => 'file-secret' )
+);
+mtuc_res_assert( 'file-secret' === mtuc_get_smartucf_key_password(), 'local secret file must have highest precedence' );
+
+$bad_path = $secrets_tmp . '/bad-null.php';
+file_put_contents( $bad_path, "<?php\ndefined('ABSPATH') || exit;\nreturn null;\n" );
+$GLOBALS['mtuc_test_secret_file_path'] = $bad_path;
+mtuc_res_assert( 'const-secret' === mtuc_get_smartucf_key_password(), 'malformed local file must fall through to constant' );
+mtuc_res_assert( '' === mtuc_get_smartucf_key_password_diagnostic_code(), 'successful fallback must clear diagnostic code' );
+
+$GLOBALS['mtuc_test_secret_file_path'] = mtuc_res_write_secret_file( $secrets_tmp, array() );
+mtuc_res_assert( 'const-secret' === mtuc_get_smartucf_key_password(), 'missing key in local file must fall through' );
+
+$GLOBALS['mtuc_test_secret_file_path'] = mtuc_res_write_secret_file(
+	$secrets_tmp,
+	array( 'smartucf_key_password' => '' )
+);
+mtuc_res_assert( 'const-secret' === mtuc_get_smartucf_key_password(), 'empty local password must fall through' );
+
+$GLOBALS['mtuc_test_secret_file_path'] = $secrets_tmp . '/missing-file.php';
+mtuc_res_assert( 'const-secret' === mtuc_get_smartucf_key_password(), 'missing local file must fall through to constant' );
+
+if ( ! defined( 'MTUC_SSL_PASSWD' ) ) {
+	define( 'MTUC_SSL_PASSWD', 'legacy-secret' );
+}
+
+$admin_msg = mtuc_get_admin_missing_ssl_password_message();
+mtuc_res_assert(
+	false === stripos( $admin_msg, 'wp-config' )
+	&& false === stripos( $admin_msg, 'environment' )
+	&& false !== strpos( $admin_msg, 'доставчика' ),
+	'admin message must be merchant-friendly'
+);
+
+$GLOBALS['mtuc_test_secret_file_path'] = $bad_path;
+unset( $GLOBALS['mtuc_smartucf_key_password_diag'] );
+$loaded_null = mtuc_load_smartucf_key_password_from_file();
+mtuc_res_assert( null === $loaded_null, 'malformed local file load must return null' );
+mtuc_res_assert(
+	MTUC_SECRET_DIAG_FILE_MALFORMED === (string) ( $GLOBALS['mtuc_smartucf_key_password_diag'] ?? '' ),
+	'malformed local file must set internal diagnostic'
+);
+
+unset( $GLOBALS['mtuc_test_secret_file_path'] );
 putenv( 'MTUC_SMARTUCF_KEY_PASSWORD=1234' );
 
 // --- AUD-WOO-012: customer-safe errors ---
