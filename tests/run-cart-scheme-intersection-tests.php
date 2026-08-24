@@ -55,6 +55,7 @@ if ( ! function_exists( 'absint' ) ) {
 	}
 }
 
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-product-offer-selection.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-product-popup.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-cart-scheme-intersection.php';
 

@@ -88,6 +88,7 @@ $mtuc_files = array(
 	'/functions.php',
 	'/mtuc-financial-integrity.php',
 	'/mtuc-financing-calculator.php',
+	'/mtuc-product-offer-selection.php',
 	'/mtuc-bank-lifecycle.php',
 	'/mtuc-product-popup.php',
 	'/mtuc-cart-scheme-intersection.php',
