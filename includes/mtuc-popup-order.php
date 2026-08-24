@@ -27,6 +27,17 @@ const MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED = '_mtuc_bank_redirect_dispatched
 /** Order meta: leasing order emails dispatched manually (pending without status transition). */
 const MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT = '_mtuc_leasing_notifications_sent';
 
+/** Financing rows for customer emails / Thank You / order details (no EGN). */
+const MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER = 'customer';
+
+/** Financing rows for Woo admin order panel (no EGN; may include diagnostics). */
+const MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL = 'admin_panel';
+
+/**
+ * Financing rows for Process 2 merchant emails used in the manual bank workflow (EGN allowed).
+ */
+const MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL = 'admin_email';
+
 /** Order meta prefix for credit calculation snapshot. */
 const MTUC_ORDER_META_PREFIX = '_mtuc_';
 
@@ -2820,12 +2831,34 @@ function mtuc_render_orders_list_bank_status_column( string $column, $order_or_p
 }
 
 /**
- * Credit meta rows for admin order screen (label => value).
+ * Whether the audience may include Process 2 EGN in rendered financing rows.
  *
- * @param WC_Order $order Order instance.
+ * Only Process 2 administrator/merchant email retains EGN for the manual bank process.
+ *
+ * @param string $audience Audience constant.
+ * @return bool
+ */
+function mtuc_credit_rows_audience_includes_egn( string $audience ): bool {
+	return MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL === $audience;
+}
+
+/**
+ * Credit meta rows for a financing presentation audience (label => value).
+ *
+ * @param WC_Order $order    Order instance.
+ * @param string   $audience One of MTUC_CREDIT_ROWS_AUDIENCE_*.
  * @return array<string, string>
  */
-function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
+function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): array {
+	$allowed = array(
+		MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER,
+		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL,
+		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL,
+	);
+	if ( ! in_array( $audience, $allowed, true ) ) {
+		$audience = MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER;
+	}
+
 	$status_text = mtuc_get_order_bank_status_display( $order );
 	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
 	$months      = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'months' );
@@ -2894,24 +2927,39 @@ function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
 	}
 
 	if ( mtuc_is_process2_order( $order ) ) {
-		$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
-		if ( '' !== $egn ) {
-			$rows[ __( 'ЕГН', 'mtunicredit' ) ] = $egn;
+		if ( mtuc_credit_rows_audience_includes_egn( $audience ) ) {
+			$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
+			if ( '' !== $egn ) {
+				$rows[ __( 'ЕГН', 'mtunicredit' ) ] = $egn;
+			}
 		}
 
 		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
-		if ( '' !== $phone2 ) {
+		if ( '' !== $phone2 && MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER !== $audience ) {
 			$rows[ __( 'Втори телефон', 'mtunicredit' ) ] = $phone2;
 		}
 
 		$rows[ __( 'Съобщение', 'mtunicredit' ) ] = mtuc_get_process2_confirmation_message();
 	}
 
-	if ( function_exists( 'mtuc_get_order_diagnostic_admin_rows' ) ) {
+	if (
+		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL === $audience
+		&& function_exists( 'mtuc_get_order_diagnostic_admin_rows' )
+	) {
 		$rows = array_merge( $rows, mtuc_get_order_diagnostic_admin_rows( $order ) );
 	}
 
 	return $rows;
+}
+
+/**
+ * Credit meta rows for the Woo admin order financing panel (EGN excluded).
+ *
+ * @param WC_Order $order Order instance.
+ * @return array<string, string>
+ */
+function mtuc_get_admin_order_credit_meta_rows( WC_Order $order ): array {
+	return mtuc_get_order_credit_meta_rows( $order, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL );
 }
 
 /**
@@ -2974,14 +3022,15 @@ function mtuc_should_show_order_credit_in_email( WC_Order $order ): bool {
  *
  * @param WC_Order $order      Order instance.
  * @param bool     $plain_text Whether the email is plain text.
+ * @param string   $audience   Financing rows audience.
  * @return void
  */
-function mtuc_render_order_credit_email_section( WC_Order $order, bool $plain_text = false ): void {
+function mtuc_render_order_credit_email_section( WC_Order $order, bool $plain_text = false, string $audience = MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER ): void {
 	if ( ! mtuc_should_show_order_credit_in_email( $order ) ) {
 		return;
 	}
 
-	$rows = mtuc_get_admin_order_credit_meta_rows( $order );
+	$rows = mtuc_get_order_credit_meta_rows( $order, $audience );
 	if ( empty( $rows ) ) {
 		return;
 	}
@@ -3024,13 +3073,17 @@ function mtuc_render_order_credit_email_section( WC_Order $order, bool $plain_te
  * @return void
  */
 function mtuc_email_after_order_table_credit_details( $order, $sent_to_admin, $plain_text, $email ): void {
-	unset( $sent_to_admin, $email );
+	unset( $email );
 
 	if ( ! $order instanceof WC_Order ) {
 		return;
 	}
 
-	mtuc_render_order_credit_email_section( $order, (bool) $plain_text );
+	$audience = $sent_to_admin
+		? MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL
+		: MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER;
+
+	mtuc_render_order_credit_email_section( $order, (bool) $plain_text, $audience );
 }
 
 /**
@@ -3048,7 +3101,7 @@ function mtuc_render_thankyou_process2_credit_section( WC_Order $order ): void {
 		return;
 	}
 
-	$rows = mtuc_get_admin_order_credit_meta_rows( $order );
+	$rows = mtuc_get_order_credit_meta_rows( $order, MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER );
 	if ( empty( $rows ) ) {
 		return;
 	}
@@ -3113,7 +3166,7 @@ function mtuc_send_process2_uni_email_notifications( WC_Order $order ): void {
 		return;
 	}
 
-	$rows = mtuc_get_admin_order_credit_meta_rows( $order );
+	$rows = mtuc_get_order_credit_meta_rows( $order, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL );
 	if ( empty( $rows ) ) {
 		return;
 	}

@@ -95,6 +95,39 @@ if ( ! function_exists( 'is_email' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_html' ) ) {
+	/**
+	 * @param string $text Text.
+	 * @return string
+	 */
+	function esc_html( $text ) {
+		return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'esc_html_e' ) ) {
+	/**
+	 * @param string $text Text.
+	 * @param string $domain Domain.
+	 * @return void
+	 */
+	function esc_html_e( $text, $domain = 'default' ) {
+		unset( $domain );
+		echo esc_html( $text );
+	}
+}
+
+if ( ! function_exists( 'sanitize_key' ) ) {
+	/**
+	 * @param string $key Key.
+	 * @return string
+	 */
+	function sanitize_key( $key ) {
+		$key = strtolower( (string) $key );
+		return preg_replace( '/[^a-z0-9_\-]/', '', $key );
+	}
+}
+
 if ( ! defined( 'MTUC_VERSION' ) ) {
 	define( 'MTUC_VERSION', '2.0.1' );
 }
@@ -414,6 +447,8 @@ mtuc_aud015_assert( 24 === mtuc_lcm_int_list( array( 6, 8 ) ), 'LCM 6,8 = 24' );
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-idempotency.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-order-diagnostics.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-error-normalizer.php';
 
 mtuc_aud015_assert(
 	defined( 'MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED' ),
@@ -460,7 +495,7 @@ $gateway_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/class-mt
 mtuc_aud015_assert( false !== strpos( $gateway_src, 'mtuc_scheme_key' ), 'gateway validate/process reads mtuc_scheme_key' );
 
 // ---------------------------------------------------------------------------
-// Process 2 EGN privacy — admin may include; customer audience residual gap
+// AUD-WOO-015-PRIVACY-EGN — audience-specific EGN policy
 // ---------------------------------------------------------------------------
 
 $p2 = new WC_Order();
@@ -476,32 +511,72 @@ $p2->update_meta_data( MTUC_ORDER_META_PREFIX . 'total_payable', 1080 );
 $p2->update_meta_data( MTUC_ORDER_META_PREFIX . 'glp', 0 );
 $p2->update_meta_data( MTUC_ORDER_META_PREFIX . 'gpr', 0 );
 
-$admin_rows = mtuc_get_admin_order_credit_meta_rows( $p2 );
-mtuc_aud015_assert( isset( $admin_rows['ЕГН'] ) && '9001011234' === $admin_rows['ЕГН'], 'Process 2 admin rows may include EGN' );
+$admin_email_rows = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL );
+mtuc_aud015_assert( isset( $admin_email_rows['ЕГН'] ) && '9001011234' === $admin_email_rows['ЕГН'], 'Process 2 admin email may include EGN' );
+
+$admin_panel_rows = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL );
+mtuc_aud015_assert( ! isset( $admin_panel_rows['ЕГН'] ), 'Process 2 Woo admin panel must not include EGN' );
+mtuc_aud015_assert( ! isset( mtuc_get_admin_order_credit_meta_rows( $p2 )['ЕГН'] ), 'admin panel helper excludes EGN' );
+mtuc_aud015_assert( isset( $admin_panel_rows['Втори телефон'] ), 'admin panel retains other Process 2 fields' );
+
+$customer_rows = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER );
+mtuc_aud015_assert( ! isset( $customer_rows['ЕГН'] ), 'Process 2 customer rows must not include EGN' );
+mtuc_aud015_assert( false === strpos( wp_json_encode( $customer_rows ), '9001011234' ), 'customer rows must not embed EGN value' );
+mtuc_aud015_assert( isset( $customer_rows['Съобщение'] ), 'Process 2 customer still gets confirmation message' );
 
 $email_hook_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php' );
 mtuc_aud015_assert(
 	false !== strpos( $email_hook_src, 'function mtuc_email_after_order_table_credit_details' ),
 	'transactional email hook exists'
 );
-// Residual privacy gap (documented finding): customer emails reuse admin rows; $sent_to_admin is ignored.
 mtuc_aud015_assert(
-	false !== strpos( $email_hook_src, 'unset( $sent_to_admin, $email )' ),
-	'email hook currently ignores sent_to_admin audience flag (residual privacy gap documented)'
+	false === strpos( $email_hook_src, 'unset( $sent_to_admin' ),
+	'email hook must use sent_to_admin audience flag'
 );
 mtuc_aud015_assert(
-	false !== strpos( $email_hook_src, 'mtuc_render_order_credit_email_section' )
-	&& false !== strpos( $email_hook_src, 'mtuc_get_admin_order_credit_meta_rows( $order )' ),
-	'email/thank-you sections currently render admin credit rows including EGN for Process 2'
+	false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL' )
+	&& false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER' ),
+	'email/thank-you paths select audience-aware financing rows'
 );
+
+ob_start();
+mtuc_render_order_credit_email_section( $p2, false, MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER );
+$customer_email_html = (string) ob_get_clean();
+mtuc_aud015_assert( false === strpos( $customer_email_html, '9001011234' ), 'customer email HTML must not contain EGN' );
+mtuc_aud015_assert( false === stripos( $customer_email_html, 'ЕГН' ), 'customer email HTML must not contain EGN label' );
+
+ob_start();
+mtuc_render_order_credit_email_section( $p2, false, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL );
+$admin_email_html = (string) ob_get_clean();
+mtuc_aud015_assert( false !== strpos( $admin_email_html, '9001011234' ), 'admin email HTML must contain EGN' );
 
 $p1 = new WC_Order();
 $p1->update_meta_data( MTUC_ORDER_META_PROCESS2, 0 );
 $p1->update_meta_data( MTUC_ORDER_META_BANK_STATUS, MTUC_BANK_STATUS_SENT_PROCESS1 );
 $p1->update_meta_data( MTUC_ORDER_META_PREFIX . 'months', 12 );
 $p1->update_meta_data( MTUC_ORDER_META_PREFIX . 'egn', '9001011234' );
-$p1_rows = mtuc_get_admin_order_credit_meta_rows( $p1 );
-mtuc_aud015_assert( ! isset( $p1_rows['ЕГН'] ), 'Process 1 admin rows must not expose EGN' );
+foreach (
+	array(
+		MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER,
+		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL,
+		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL,
+	) as $audience
+) {
+	$p1_rows = mtuc_get_order_credit_meta_rows( $p1, $audience );
+	mtuc_aud015_assert( ! isset( $p1_rows['ЕГН'] ), 'Process 1 ' . $audience . ' must not expose EGN' );
+	mtuc_aud015_assert( false === strpos( wp_json_encode( $p1_rows ), '9001011234' ), 'Process 1 ' . $audience . ' must not embed EGN value' );
+}
+
+mtuc_aud015_assert( ! mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER ), 'customer audience excludes EGN' );
+mtuc_aud015_assert( ! mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL ), 'admin panel audience excludes EGN' );
+mtuc_aud015_assert( mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL ), 'admin email audience allows EGN' );
+
+// Diagnostics must not carry EGN.
+if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) && function_exists( 'mtuc_get_order_financing_diagnostic' ) ) {
+	mtuc_record_order_financing_diagnostic( $p2, new WP_Error( 'mtuc_test', 'fail' ), 'cp' );
+	$diag_json = wp_json_encode( mtuc_get_order_financing_diagnostic( $p2 ) );
+	mtuc_aud015_assert( is_string( $diag_json ) && false === strpos( $diag_json, '9001011234' ), 'diagnostics must not contain EGN' );
+}
 
 // ---------------------------------------------------------------------------
 // HPOS-oriented callback lookup remains meta-based (no posts-table assumption)
