@@ -458,6 +458,7 @@ mtuc_aud015_assert( 24 === mtuc_lcm_int_list( array( 6, 8 ) ), 'LCM 6,8 = 24' );
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-presentation.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-email.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-idempotency.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-order-diagnostics.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-error-normalizer.php';
@@ -583,23 +584,35 @@ mtuc_aud015_assert(
 	'customer financing row order is preserved'
 );
 
-$email_hook_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php' );
+$email_hook_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-financing-email.php' );
 mtuc_aud015_assert(
 	false !== strpos( $email_hook_src, 'function mtuc_email_after_order_table_credit_details' ),
-	'transactional email hook exists'
+	'transactional email hook handler exists in financing-email module'
 );
 mtuc_aud015_assert(
 	false === strpos( $email_hook_src, 'unset( $sent_to_admin' ),
 	'email hook must use sent_to_admin audience flag'
 );
 mtuc_aud015_assert(
-	false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL' )
-	&& false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER' ),
-	'email/thank-you paths select audience-aware financing rows'
+	false !== strpos( $email_hook_src, 'mtuc_resolve_financing_email_audience' )
+	&& false !== strpos( $email_hook_src, 'mtuc_get_order_credit_meta_rows' ),
+	'email orchestration delegates audience rows to presentation'
 );
 mtuc_aud015_assert(
-	false !== strpos( $email_hook_src, 'mtuc_render_thankyou_process2_credit_section' )
+	false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL' )
 	&& false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER' ),
+	'email paths select audience-aware financing rows'
+);
+
+$popup_order_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php' );
+mtuc_aud015_assert(
+	false !== strpos( $popup_order_src, 'mtuc_email_after_order_table_credit_details' )
+	&& false === strpos( $popup_order_src, 'function mtuc_email_after_order_table_credit_details' ),
+	'popup-order registers email hook; implementation lives in financing-email'
+);
+mtuc_aud015_assert(
+	false !== strpos( $popup_order_src, 'mtuc_render_thankyou_process2_credit_section' )
+	&& false !== strpos( $popup_order_src, 'MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER' ),
 	'Thank You Process 2 section uses customer audience'
 );
 

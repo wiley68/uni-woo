@@ -89,67 +89,7 @@ function mtuc_get_payment_gateway_status_note(): string {
 	return __( 'Поръчка за лизинг УниКредит — изпратена към банката.', 'mtunicredit' );
 }
 
-/**
- * WooCommerce transactional email handler, when available.
- *
- * @return WC_Emails|null
- */
-function mtuc_get_wc_mailer(): ?WC_Emails {
-	if ( ! function_exists( 'WC' ) ) {
-		return null;
-	}
-
-	$woocommerce = WC();
-
-	return $woocommerce->mailer();
-}
-
-/**
- * Send admin/customer emails for a leasing order when WC did not fire a status transition.
- *
- * WooCommerce sends transactional emails on status changes (e.g. pending → on-hold).
- * If the order stays on pending, no emails are sent unless we trigger them explicitly.
- *
- * @param WC_Order $order Order instance.
- * @return void
- */
-function mtuc_send_leasing_order_notifications_once( WC_Order $order ): void {
-	if ( (int) $order->get_meta( MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT ) ) {
-		return;
-	}
-
-	if ( MTUC_PAYMENT_GATEWAY_ID !== $order->get_payment_method() ) {
-		return;
-	}
-
-	$mailer = mtuc_get_wc_mailer();
-	if ( ! $mailer ) {
-		return;
-	}
-
-	$emails   = $mailer->get_emails();
-	$order_id = $order->get_id();
-
-	if ( ! empty( $emails['WC_Email_New_Order'] ) ) {
-		$emails['WC_Email_New_Order']->trigger( $order_id, $order );
-	}
-
-	$customer_email_map = array(
-		'processing' => 'WC_Email_Customer_Processing_Order',
-		'on-hold'    => 'WC_Email_Customer_On_Hold_Order',
-		'completed'  => 'WC_Email_Customer_Completed_Order',
-	);
-
-	$status = $order->get_status();
-	if ( isset( $customer_email_map[ $status ], $emails[ $customer_email_map[ $status ] ] ) ) {
-		$emails[ $customer_email_map[ $status ] ]->trigger( $order_id, $order );
-	}
-
-	$order->update_meta_data( MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT, 1 );
-	$order->save();
-
-	mtuc_send_process2_uni_email_notifications( $order );
-}
+// Financing email mailer + leasing notification dispatch live in includes/mtuc-financing-email.php.
 
 /**
  * Mark order as paid via mtunicredit and apply configured WC status.
