@@ -9,26 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/**
- * Register popup AJAX handlers (must run on admin-ajax requests too).
- *
- * @return void
- */
-function mtuc_register_product_popup_ajax_hooks(): void {
-	add_action( 'wp_ajax_mtuc_popup_calculate', 'mtuc_ajax_popup_calculate' );
-	add_action( 'wp_ajax_nopriv_mtuc_popup_calculate', 'mtuc_ajax_popup_calculate' );
-	add_action( 'wp_ajax_mtuc_product_calculator_refresh', 'mtuc_ajax_product_calculator_refresh' );
-	add_action( 'wp_ajax_nopriv_mtuc_product_calculator_refresh', 'mtuc_ajax_product_calculator_refresh' );
-}
-
-/**
- * Register popup frontend hooks (footer markup).
- *
- * @return void
- */
-function mtuc_register_product_popup_hooks(): void {
-	add_action( 'wp_footer', 'mtuc_render_credit_popup', 5 );
-}
+// Product popup AJAX/frontend hook registration + calculator refresh adapters live in
+// includes/mtuc-product-frontend.php (AUD-WOO-016 Step 8).
 
 // Scheme option identity/sort/default pick live in includes/mtuc-product-offer-selection.php (AUD-WOO-016 Step 5).
 
@@ -968,117 +950,7 @@ function mtuc_resolve_popup_scheme(
 	);
 }
 
-/**
- * Build AJAX payload for product calculator refresh after price/qty changes.
- *
- * @param WC_Product                $product    Product or variation instance.
- * @param float                     $line_price Total line price including tax.
- * @param array<string, mixed>|null $shop       Shop `data` object from CP.
- * @return array<string, mixed>
- */
-function mtuc_build_product_calculator_refresh_payload( WC_Product $product, float $line_price, ?array $shop = null ): array {
-	if ( null === $shop ) {
-		$shop = mtuc_get_shop_data();
-	}
-
-	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
-		return array(
-			'visible' => false,
-		);
-	}
-
-	if ( ! Mtuc_Settings::is_enabled() || ! mtuc_is_yes_flag( $shop['uni_status'] ?? 0 ) ) {
-		return array(
-			'visible' => false,
-		);
-	}
-
-	$line_price = round( max( 0.0, $line_price ), 2 );
-	if ( $line_price <= 0 || ! mtuc_is_product_price_in_shop_range( $shop, $line_price ) ) {
-		return array(
-			'visible' => false,
-		);
-	}
-
-	$offer = mtuc_get_product_calculator_offer( $shop, $product, $line_price );
-	if ( null === $offer ) {
-		return array(
-			'visible' => false,
-		);
-	}
-
-	$standard = $offer['standard'] ?? null;
-	$promo    = $offer['promo'] ?? null;
-	$popup    = mtuc_get_product_popup_context(
-		$shop,
-		array(
-			'standard' => $standard,
-			'promo'    => $promo,
-		),
-		$product,
-		$line_price
-	);
-
-	$parent_id    = mtuc_get_catalog_product_id( $product );
-	$variation_id = mtuc_get_product_variation_id( $product );
-
-	return array(
-		'visible'              => true,
-		'line_price'           => $line_price,
-		'product_id'           => $parent_id,
-		'variation_id'         => $variation_id,
-		'standard'             => is_array( $standard ) && ! empty( $standard['visible'] )
-			? array(
-				'visible'    => true,
-				'price_text' => (string) ( $standard['price_text'] ?? '' ),
-			)
-			: null,
-		'promo'                => is_array( $promo ) && ! empty( $promo['visible'] )
-			? array(
-				'visible'    => true,
-				'price_text' => (string) ( $promo['price_text'] ?? '' ),
-			)
-			: null,
-		'enabledMonthsByOffer' => isset( $popup['enabled_months_by_offer'] ) && is_array( $popup['enabled_months_by_offer'] )
-			? $popup['enabled_months_by_offer']
-			: array(),
-		'defaultSchemeByOffer' => isset( $popup['default_scheme_by_offer'] ) && is_array( $popup['default_scheme_by_offer'] )
-			? $popup['default_scheme_by_offer']
-			: array(),
-	);
-}
-
-/**
- * AJAX: refresh calculator buttons and popup scheme options for a new line price.
- *
- * @return void
- */
-function mtuc_ajax_product_calculator_refresh(): void {
-	check_ajax_referer( 'mtuc_popup', 'security' );
-
-	if ( ! Mtuc_Settings::is_enabled() ) {
-		wp_send_json_error(
-			array( 'message' => __( 'Модулът не е активен.', 'mtunicredit' ) ),
-			403
-		);
-	}
-
-	$product_id   = isset( $_POST['product_id'] ) ? absint( wp_unslash( $_POST['product_id'] ) ) : 0;
-	$variation_id = isset( $_POST['variation_id'] ) ? absint( wp_unslash( $_POST['variation_id'] ) ) : 0;
-	$quantity     = isset( $_POST['quantity'] ) ? (int) wp_unslash( $_POST['quantity'] ) : 1;
-	if ( $quantity <= 0 ) {
-		$quantity = 1;
-	}
-
-	$line = mtuc_resolve_authoritative_product_financing_line( $product_id, $variation_id, $quantity );
-	if ( is_wp_error( $line ) ) {
-		mtuc_send_customer_safe_json_error( $line, 400, 'general' );
-	}
-
-	wp_send_json_success(
-		mtuc_build_product_calculator_refresh_payload( $line['product'], (float) $line['line_total'] )
-	);
-}
+// Product calculator refresh AJAX/payload live in includes/mtuc-product-frontend.php (AUD-WOO-016 Step 8).
 
 /**
  * Calculate popup credit values for the selected scheme.
