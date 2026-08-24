@@ -456,6 +456,7 @@ mtuc_aud015_assert( 24 === mtuc_lcm_int_list( array( 6, 8 ) ), 'LCM 6,8 = 24' );
 // ---------------------------------------------------------------------------
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-presentation.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-idempotency.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-order-diagnostics.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-error-normalizer.php';
@@ -533,6 +534,35 @@ $customer_rows = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE
 mtuc_aud015_assert( ! isset( $customer_rows['ЕГН'] ), 'Process 2 customer rows must not include EGN' );
 mtuc_aud015_assert( false === strpos( wp_json_encode( $customer_rows ), '9001011234' ), 'customer rows must not embed EGN value' );
 mtuc_aud015_assert( isset( $customer_rows['Съобщение'] ), 'Process 2 customer still gets confirmation message' );
+mtuc_aud015_assert( ! isset( $customer_rows['Втори телефон'] ), 'Process 2 customer rows omit phone2' );
+
+// Presentation parity — representative non-EGN fields + stable ordering (keys).
+mtuc_aud015_assert( isset( $customer_rows['Срок (месеци)'] ) && '12' === $customer_rows['Срок (месеци)'], 'customer rows include months' );
+mtuc_aud015_assert( isset( $customer_rows['Първоначална вноска'] ) && '0.00' === $customer_rows['Първоначална вноска'], 'customer rows include parva' );
+mtuc_aud015_assert( isset( $customer_rows['Сума на заема'] ) && '1000.00' === $customer_rows['Сума на заема'], 'customer rows include loan amount' );
+mtuc_aud015_assert( isset( $customer_rows['Месечна вноска'] ) && '90.00' === $customer_rows['Месечна вноска'], 'customer rows include monthly' );
+mtuc_aud015_assert( isset( $customer_rows['Обща дължима сума'] ) && '1080.00' === $customer_rows['Обща дължима сума'], 'customer rows include total payable' );
+mtuc_aud015_assert( isset( $customer_rows['ГЛП / ГПР'] ) && '0.00% / 0.00%' === $customer_rows['ГЛП / ГПР'], 'customer rows include GLP/GPR' );
+
+$customer_labels = array_keys( $customer_rows );
+$months_pos      = array_search( 'Срок (месеци)', $customer_labels, true );
+$parva_pos       = array_search( 'Първоначална вноска', $customer_labels, true );
+$loan_pos        = array_search( 'Сума на заема', $customer_labels, true );
+$monthly_pos     = array_search( 'Месечна вноска', $customer_labels, true );
+$total_pos       = array_search( 'Обща дължима сума', $customer_labels, true );
+$glp_pos         = array_search( 'ГЛП / ГПР', $customer_labels, true );
+$msg_pos         = array_search( 'Съобщение', $customer_labels, true );
+mtuc_aud015_assert(
+	false !== $months_pos
+	&& false !== $parva_pos
+	&& $months_pos < $parva_pos
+	&& $parva_pos < $loan_pos
+	&& $loan_pos < $monthly_pos
+	&& $monthly_pos < $total_pos
+	&& $total_pos < $glp_pos
+	&& $glp_pos < $msg_pos,
+	'customer financing row order is preserved'
+);
 
 $email_hook_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php' );
 mtuc_aud015_assert(
@@ -547,6 +577,17 @@ mtuc_aud015_assert(
 	false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL' )
 	&& false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER' ),
 	'email/thank-you paths select audience-aware financing rows'
+);
+mtuc_aud015_assert(
+	false !== strpos( $email_hook_src, 'mtuc_render_thankyou_process2_credit_section' )
+	&& false !== strpos( $email_hook_src, 'MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER' ),
+	'Thank You Process 2 section uses customer audience'
+);
+
+$presentation_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-financing-presentation.php' );
+mtuc_aud015_assert(
+	false !== strpos( $presentation_src, 'function mtuc_get_order_credit_meta_rows' ),
+	'financing presentation module owns credit meta rows'
 );
 
 ob_start();

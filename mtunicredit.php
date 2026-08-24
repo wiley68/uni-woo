@@ -93,6 +93,7 @@ $mtuc_files = array(
 	'/mtuc-cart-scheme-intersection.php',
 	'/mtuc-cart-calculator.php',
 	'/mtuc-popup-order.php',
+	'/mtuc-financing-presentation.php',
 	'/mtuc-popup-idempotency.php',
 	'/mtuc-checkout-payment.php',
 );
