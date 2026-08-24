@@ -180,6 +180,7 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-calculator.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-product-popup.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-cart-scheme-intersection.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-cart-calculator.php';
 
 if ( ! function_exists( 'mtuc_get_process2_confirmation_message' ) ) {

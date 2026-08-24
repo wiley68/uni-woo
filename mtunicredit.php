@@ -90,6 +90,7 @@ $mtuc_files = array(
 	'/mtuc-financing-calculator.php',
 	'/mtuc-bank-lifecycle.php',
 	'/mtuc-product-popup.php',
+	'/mtuc-cart-scheme-intersection.php',
 	'/mtuc-cart-calculator.php',
 	'/mtuc-popup-order.php',
 	'/mtuc-popup-idempotency.php',
