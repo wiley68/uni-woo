@@ -38,6 +38,7 @@
     "pcre",
     "hash",
     "ctype",
-    "random"
+    "random",
+    "Reflection"
   ]
 }
