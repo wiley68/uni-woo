@@ -95,7 +95,11 @@ function mtuc_get_popup_schema_options_for_promo_flag(
 				$filter_id,
 				$kop_code,
 				isset( $filter['uni_kop_desc'] ) ? trim( (string) $filter['uni_kop_desc'] ) : '',
-				$scheme_type
+				$scheme_type,
+				array(
+					'presentation_category'       => mtuc_classify_popup_scheme_presentation( $shop, $coeff_list, $kop_code, $months, $uni_promo_filter ),
+					'automatic_first_installment' => 1 === (int) ( $filter['uni_parva'] ?? 0 ),
+				)
 			);
 		}
 	}
@@ -182,7 +186,17 @@ function mtuc_get_popup_promo_default_options(
 			continue;
 		}
 
-		$options[] = mtuc_build_popup_scheme_option_row( $months, 0, $kop_code, $kop_desc, 'promo' );
+		$options[] = mtuc_build_popup_scheme_option_row(
+			$months,
+			0,
+			$kop_code,
+			$kop_desc,
+			'promo',
+			array(
+				'presentation_category'       => 'zero_promo',
+				'automatic_first_installment' => false,
+			)
+		);
 	}
 
 	return mtuc_sort_popup_scheme_options( $options );
@@ -244,7 +258,11 @@ function mtuc_get_popup_standard_default_options(
 			0,
 			(string) ( $scheme['kop_code'] ?? '' ),
 			(string) ( $scheme['kop_desc'] ?? '' ),
-			'standard'
+			'standard',
+			array(
+				'presentation_category'       => 'standard',
+				'automatic_first_installment' => false,
+			)
 		);
 	}
 
@@ -309,7 +327,11 @@ function mtuc_get_popup_enabled_months(
 			$filter_id,
 			(string) ( $scheme['kop_code'] ?? '' ),
 			(string) ( $scheme['kop_desc'] ?? '' ),
-			'promo'
+			'promo',
+			array(
+				'presentation_category'       => 'zero_promo',
+				'automatic_first_installment' => isset( $scheme['filter'] ) && is_array( $scheme['filter'] ) && 1 === (int) ( $scheme['filter']['uni_parva'] ?? 0 ),
+			)
 		);
 	}
 

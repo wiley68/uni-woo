@@ -73,21 +73,81 @@ function mtuc_sort_popup_scheme_options( array $options ): array {
 			}
 
 			$type_order = array(
-				'standard' => 0,
-				'promo'    => 1,
+				'standard'      => 0,
+				'nonzero_promo' => 1,
+				'zero_promo'    => 2,
 			);
-			$a_type     = (string) ( $a['scheme_type'] ?? 'standard' );
-			$b_type     = (string) ( $b['scheme_type'] ?? 'standard' );
+			$a_type     = mtuc_get_popup_scheme_presentation_category( $a );
+			$b_type     = mtuc_get_popup_scheme_presentation_category( $b );
 
 			if ( ( $type_order[ $a_type ] ?? 99 ) !== ( $type_order[ $b_type ] ?? 99 ) ) {
 				return ( $type_order[ $a_type ] ?? 99 ) <=> ( $type_order[ $b_type ] ?? 99 );
 			}
 
-			return (int) ( $a['filter_id'] ?? 0 ) <=> (int) ( $b['filter_id'] ?? 0 );
+			$filter_order = (int) ( $a['filter_id'] ?? 0 ) <=> (int) ( $b['filter_id'] ?? 0 );
+			if ( 0 !== $filter_order ) {
+				return $filter_order;
+			}
+
+			$kop_order = strcmp( trim( (string) ( $a['kop_code'] ?? '' ) ), trim( (string) ( $b['kop_code'] ?? '' ) ) );
+			if ( 0 !== $kop_order ) {
+				return $kop_order;
+			}
+
+			return strcmp( (string) ( $a['key'] ?? '' ), (string) ( $b['key'] ?? '' ) );
 		}
 	);
 
 	return $options;
+}
+
+/**
+ * Presentation category for a normalized option without changing domain type.
+ *
+ * Older callers without explicit metadata retain the established two-flow
+ * behavior: standard rows are conservative standard, promo rows are 0% promo.
+ *
+ * @param array<string, mixed> $option Popup scheme option.
+ * @return string standard|nonzero_promo|zero_promo.
+ */
+function mtuc_get_popup_scheme_presentation_category( array $option ): string {
+	$category = (string) ( $option['presentation_category'] ?? '' );
+	if ( in_array( $category, array( 'standard', 'nonzero_promo', 'zero_promo' ), true ) ) {
+		return $category;
+	}
+
+	return 'promo' === (string) ( $option['scheme_type'] ?? 'standard' ) ? 'zero_promo' : 'standard';
+}
+
+/**
+ * Classify a CP option for UI presentation from explicit provenance + finance.
+ *
+ * @param array<string, mixed>             $shop Shop configuration.
+ * @param array<int, array<string, mixed>> $coeff_list Coefficient rows.
+ * @param string                           $kop_code Exact KOP.
+ * @param int                              $months Installment count.
+ * @param int                              $uni_promo CP promo-flow flag.
+ * @return string standard|nonzero_promo|zero_promo.
+ */
+function mtuc_classify_popup_scheme_presentation( array $shop, array $coeff_list, string $kop_code, int $months, int $uni_promo ): string {
+	$coeff_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $months );
+	$is_zero     = mtuc_is_zero_interest_coeff_entry( $coeff_entry );
+
+	if ( 1 === $uni_promo && $is_zero ) {
+		return 'zero_promo';
+	}
+
+	if ( 0 !== $uni_promo || $is_zero ) {
+		return 'standard';
+	}
+
+	$by_default   = $shop['kop']['by_default'] ?? null;
+	$baseline_kop = is_array( $by_default ) ? trim( (string) ( $by_default['uni_kop_default'] ?? '' ) ) : '';
+	if ( '' === $baseline_kop ) {
+		return 'standard';
+	}
+
+	return $baseline_kop === $kop_code ? 'standard' : 'nonzero_promo';
 }
 
 /**
@@ -97,23 +157,28 @@ function mtuc_sort_popup_scheme_options( array $options ): array {
  * @param int    $filter_id   Schema filter id (0 for default KOP).
  * @param string $kop_code    KOP code.
  * @param string $desc        Optional description label.
- * @param string $scheme_type standard|promo.
- * @return array{key:string,months:int,kop_code:string,desc:string,filter_id:int,scheme_type:string}
+ * @param string               $scheme_type standard|promo.
+ * @param array<string, mixed> $metadata    Internal presentation/intersection metadata.
+ * @return array<string, mixed>
  */
 function mtuc_build_popup_scheme_option_row(
 	int $months,
 	int $filter_id,
 	string $kop_code,
 	string $desc,
-	string $scheme_type
+	string $scheme_type,
+	array $metadata = array()
 ): array {
-	return array(
-		'key'         => mtuc_build_popup_scheme_option_key( $months, $filter_id, $scheme_type ),
-		'months'      => $months,
-		'kop_code'    => $kop_code,
-		'desc'        => $desc,
-		'filter_id'   => $filter_id,
-		'scheme_type' => $scheme_type,
+	return array_merge(
+		$metadata,
+		array(
+			'key'         => mtuc_build_popup_scheme_option_key( $months, $filter_id, $scheme_type ),
+			'months'      => $months,
+			'kop_code'    => $kop_code,
+			'desc'        => $desc,
+			'filter_id'   => $filter_id,
+			'scheme_type' => $scheme_type,
+		)
 	);
 }
 
@@ -212,13 +277,13 @@ function mtuc_is_zero_interest_coeff_entry( ?array $coeff_entry ): bool {
 }
 
 /**
- * Default scheme key for checkout: prefer longest 0% promo, else existing popup fallback.
+ * Default scheme key for checkout automatic selection.
  *
  * Prefill from product popup („Купи“) overrides this later via mtuc_apply_checkout_prefill_to_popup().
  *
  * @param array<string, mixed>                                                                              $shop            Shop `data` object from CP.
  * @param array<int, array{key:string,months:int,kop_code:string,desc:string,filter_id:int,scheme_type?:string}> $enabled_options Unified checkout schemes.
- * @param array<string, mixed>|null                                                                         $button_offer    Optional button offer for fallback.
+ * @param array<string, mixed>|null                                                                         $button_offer    Retained compatibility argument.
  * @return string
  */
 function mtuc_pick_default_checkout_scheme_key( array $shop, array $enabled_options, ?array $button_offer = null ): string {
@@ -226,41 +291,56 @@ function mtuc_pick_default_checkout_scheme_key( array $shop, array $enabled_opti
 		return '';
 	}
 
-	$coeff_list  = mtuc_get_shop_coeff_list( $shop );
-	$best_key    = '';
-	$best_months = -1;
+	$coeff_list = mtuc_get_shop_coeff_list( $shop );
+	$options    = mtuc_sort_popup_scheme_options( $enabled_options );
+	$priorities = array( 'zero_promo', 'nonzero_promo' );
 
-	foreach ( $enabled_options as $option ) {
-		if ( ! is_array( $option ) ) {
-			continue;
+	foreach ( $priorities as $category ) {
+		$best_key    = '';
+		$best_months = -1;
+		foreach ( $options as $option ) {
+			if ( ! is_array( $option ) || $category !== mtuc_get_popup_scheme_presentation_category( $option ) ) {
+				continue;
+			}
+
+			$months   = (int) ( $option['months'] ?? 0 );
+			$kop_code = trim( (string) ( $option['kop_code'] ?? '' ) );
+			if ( $months <= 0 || '' === $kop_code ) {
+				continue;
+			}
+
+			$coeff_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $months );
+			if ( null === $coeff_entry ) {
+				continue;
+			}
+			$is_zero = mtuc_is_zero_interest_coeff_entry( $coeff_entry );
+			if ( ( 'zero_promo' === $category && ! $is_zero ) || ( 'nonzero_promo' === $category && $is_zero ) ) {
+				continue;
+			}
+
+			if ( $months > $best_months ) {
+				$best_months = $months;
+				$best_key    = (string) ( $option['key'] ?? '' );
+			}
 		}
 
-		if ( 'promo' !== (string) ( $option['scheme_type'] ?? '' ) ) {
-			continue;
-		}
-
-		$months   = (int) ( $option['months'] ?? 0 );
-		$kop_code = trim( (string) ( $option['kop_code'] ?? '' ) );
-		if ( $months <= 0 || '' === $kop_code ) {
-			continue;
-		}
-
-		$coeff_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $months );
-		if ( ! mtuc_is_zero_interest_coeff_entry( $coeff_entry ) ) {
-			continue;
-		}
-
-		if ( $months > $best_months ) {
-			$best_months = $months;
-			$best_key    = (string) ( $option['key'] ?? mtuc_build_popup_scheme_option_key( $months, (int) ( $option['filter_id'] ?? 0 ), 'promo' ) );
+		if ( '' !== $best_key ) {
+			return $best_key;
 		}
 	}
 
-	if ( '' !== $best_key ) {
-		return $best_key;
+	$preferred = (int) ( $shop['uni_shema_current'] ?? 0 );
+	if ( $preferred > 0 ) {
+		foreach ( $options as $option ) {
+			if ( is_array( $option ) && 'standard' === mtuc_get_popup_scheme_presentation_category( $option ) && $preferred === (int) ( $option['months'] ?? 0 ) ) {
+				return (string) ( $option['key'] ?? '' );
+			}
+		}
 	}
 
-	return mtuc_pick_default_popup_scheme_key( $shop, $enabled_options, $button_offer );
+	unset( $button_offer );
+
+	return isset( $options[0] ) && is_array( $options[0] ) ? (string) ( $options[0]['key'] ?? '' ) : '';
 }
 
 /**

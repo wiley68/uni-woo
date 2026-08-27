@@ -368,6 +368,21 @@ mtuc_csi_assert(
 	'standard+promo unified and sorted by months/type'
 );
 
+$canonical_mixed = mtuc_build_checkout_unified_scheme_options(
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 2, 'PROMO', '', 'standard', array( 'presentation_category' => 'nonzero_promo' ) ),
+		mtuc_build_popup_scheme_option_row( 6, 1, 'BASE', '', 'standard', array( 'presentation_category' => 'standard' ) ),
+		mtuc_build_popup_scheme_option_row( 12, 1, 'BASE', '', 'standard', array( 'presentation_category' => 'standard' ) ),
+	),
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 3, 'ZERO', '', 'promo', array( 'presentation_category' => 'zero_promo' ) ),
+	)
+);
+mtuc_csi_assert(
+	array( '6:1', '12:1', '12:2', 'p:12:3' ) === array_column( $canonical_mixed, 'key' ),
+	'checkout unification uses canonical three-category ordering'
+);
+
 // Same KOP/month across standard vs promo — distinct match keys, both kept.
 $same_kop_month = mtuc_build_checkout_unified_scheme_options(
 	array( mtuc_build_popup_scheme_option_row( 12, 1, 'CAT', 'std', 'standard' ) ),

@@ -82,6 +82,51 @@ function mtuc_lcm_int_list( array $values ): int {
 }
 
 /**
+ * Record whether every contributing line agrees on locked first installment.
+ *
+ * Intersection membership remains type + KOP + months. This metadata is used
+ * only to prevent representative button calculation from depending on line order.
+ *
+ * @param array<int, array<string, mixed>>             $common Common options.
+ * @param array<int, array<int, array<string, mixed>>> $line_option_sets Options per line.
+ * @return array<int, array<string, mixed>>
+ */
+function mtuc_annotate_cart_parva_policy_consistency( array $common, array $line_option_sets ): array {
+	foreach ( $common as &$common_option ) {
+		if ( ! is_array( $common_option ) ) {
+			continue;
+		}
+
+		$match_key = mtuc_build_cart_scheme_match_key( $common_option );
+		$policies  = array();
+		foreach ( $line_option_sets as $line_set ) {
+			$line_policies = array();
+			foreach ( $line_set as $option ) {
+				if ( is_array( $option ) && $match_key === mtuc_build_cart_scheme_match_key( $option ) ) {
+					$line_policies[] = ! empty( $option['automatic_first_installment'] );
+				}
+			}
+
+			$line_policies = array_values( array_unique( $line_policies, SORT_REGULAR ) );
+			if ( 1 !== count( $line_policies ) ) {
+				$policies[] = 'ambiguous';
+				continue;
+			}
+			$policies[] = $line_policies[0];
+		}
+
+		$unique = array_values( array_unique( $policies, SORT_REGULAR ) );
+		$common_option['parva_policy_consistent'] = 1 === count( $unique ) && 'ambiguous' !== $unique[0];
+		if ( $common_option['parva_policy_consistent'] ) {
+			$common_option['automatic_first_installment'] = (bool) $unique[0];
+		}
+	}
+	unset( $common_option );
+
+	return $common;
+}
+
+/**
  * Intersect scheme options across all cart lines (common KOP + months).
  *
  * When multiple month sets exist per KOP across lines, also keeps LCM month if it is
@@ -242,12 +287,18 @@ function mtuc_intersect_cart_scheme_options( array $line_option_sets ): array {
 			(int) ( $template_option['filter_id'] ?? 0 ),
 			(string) ( $template_option['kop_code'] ?? '' ),
 			(string) ( $template_option['desc'] ?? '' ),
-			(string) ( $template_option['scheme_type'] ?? 'standard' )
+			(string) ( $template_option['scheme_type'] ?? 'standard' ),
+			array(
+				'presentation_category'       => mtuc_get_popup_scheme_presentation_category( $template_option ),
+				'automatic_first_installment' => ! empty( $template_option['automatic_first_installment'] ),
+			)
 		);
 
 		$common[] = $new_option;
 		$existing_keys[ mtuc_build_cart_scheme_match_key( $new_option ) ] = true;
 	}
+
+	$common = mtuc_annotate_cart_parva_policy_consistency( $common, $line_option_sets );
 
 	return mtuc_sort_popup_scheme_options( $common );
 }

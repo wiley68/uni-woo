@@ -369,6 +369,8 @@ function mtuc_apply_checkout_prefill_to_popup( array $popup ): array {
 	}
 
 	$popup['default_scheme_key'] = $scheme_key;
+	$popup['prefill_valid']      = true;
+	$popup['prefill_parva']      = isset( $prefill['parva'] ) ? (float) $prefill['parva'] : 0.0;
 
 	if ( ! empty( $prefill['offer_type'] ) ) {
 		$offer_type = sanitize_key( (string) $prefill['offer_type'] );
@@ -612,17 +614,9 @@ function mtuc_get_checkout_payment_script_config( ?array $context = null ): arra
 		'prefillParva'     => '',
 	);
 
-	$prefill = mtuc_get_checkout_prefill_session();
-	if ( is_array( $prefill ) ) {
-		if ( ! empty( $prefill['scheme_key'] ) ) {
-			$config['defaultSchemeKey'] = (string) $prefill['scheme_key'];
-		}
-		if ( ! empty( $prefill['offer_type'] ) ) {
-			$config['offerType'] = (string) $prefill['offer_type'];
-		}
-		if ( isset( $prefill['parva'] ) ) {
-			$config['prefillParva'] = number_format( (float) $prefill['parva'], 2, '.', '' );
-		}
+	if ( ! empty( $popup_context['prefill_valid'] ) ) {
+		$config['offerType']     = isset( $popup_context['prefill_offer_type'] ) ? (string) $popup_context['prefill_offer_type'] : 'standard';
+		$config['prefillParva']  = number_format( (float) ( $popup_context['prefill_parva'] ?? 0.0 ), 2, '.', '' );
 		$config['prefillActive'] = true;
 	}
 

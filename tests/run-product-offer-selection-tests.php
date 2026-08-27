@@ -106,6 +106,40 @@ mtuc_pos_assert(
 	'sort by months, then standard before promo, then filter_id'
 );
 
+// v2.0.2 canonical presentation ordering is independent of scheme_type labels.
+$canonical = mtuc_sort_popup_scheme_options(
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 3, 'ZERO', 'ignored', 'promo', array( 'presentation_category' => 'zero_promo' ) ),
+		mtuc_build_popup_scheme_option_row( 12, 2, 'PROMO', 'ignored', 'standard', array( 'presentation_category' => 'nonzero_promo' ) ),
+		mtuc_build_popup_scheme_option_row( 6, 1, 'BASE', 'ignored', 'standard', array( 'presentation_category' => 'standard' ) ),
+		mtuc_build_popup_scheme_option_row( 12, 1, 'BASE', 'ignored', 'standard', array( 'presentation_category' => 'standard' ) ),
+	)
+);
+mtuc_pos_assert(
+	array( '6:1', '12:1', '12:2', 'p:12:3' ) === array_column( $canonical, 'key' ),
+	'canonical order is months then standard, non-zero promo, zero promo'
+);
+
+$standard_only = mtuc_sort_popup_scheme_options(
+	array(
+		mtuc_build_popup_scheme_option_row( 12, 3, 'BASE', '', 'standard' ),
+		mtuc_build_popup_scheme_option_row( 4, 1, 'BASE', '', 'standard' ),
+		mtuc_build_popup_scheme_option_row( 6, 2, 'BASE', '', 'standard' ),
+	)
+);
+mtuc_pos_assert( array( 4, 6, 12 ) === array_column( $standard_only, 'months' ), 'standard-only months ascending' );
+
+$classification_shop = array( 'kop' => array( 'by_default' => array( 'uni_kop_default' => 'BASE' ) ) );
+$classification_coeff = array(
+	array( 'onlineProductCode' => 'BASE', 'installmentCount' => 12, 'interestPercent' => 30.0 ),
+	array( 'onlineProductCode' => 'PROMO', 'installmentCount' => 12, 'interestPercent' => 21.45 ),
+	array( 'onlineProductCode' => 'ZERO', 'installmentCount' => 12, 'interestPercent' => 0.0 ),
+);
+mtuc_pos_assert( 'standard' === mtuc_classify_popup_scheme_presentation( $classification_shop, $classification_coeff, 'BASE', 12, 0 ), 'default KOP is standard' );
+mtuc_pos_assert( 'nonzero_promo' === mtuc_classify_popup_scheme_presentation( $classification_shop, $classification_coeff, 'PROMO', 12, 0 ), 'non-default non-zero schema KOP is promotional' );
+mtuc_pos_assert( 'zero_promo' === mtuc_classify_popup_scheme_presentation( $classification_shop, $classification_coeff, 'ZERO', 12, 1 ), 'promo-flow zero coefficient is zero promo' );
+mtuc_pos_assert( 'standard' === mtuc_classify_popup_scheme_presentation( array(), $classification_coeff, 'PROMO', 12, 0 ), 'missing baseline is conservative standard' );
+
 // ---------------------------------------------------------------------------
 // Default / preferred pick
 // ---------------------------------------------------------------------------
@@ -188,6 +222,29 @@ mtuc_pos_assert(
 	'checkout prefers longest 0% promo'
 );
 
+$nonzero_shop = array(
+	'uni_shema_current' => 12,
+	'coeff_list'        => array(
+		array( 'onlineProductCode' => 'BASE', 'installmentCount' => 12, 'interestPercent' => 30.0 ),
+		array( 'onlineProductCode' => 'PROMO', 'installmentCount' => 6, 'interestPercent' => 21.45 ),
+		array( 'onlineProductCode' => 'PROMO', 'installmentCount' => 12, 'interestPercent' => 21.45 ),
+		array( 'onlineProductCode' => 'PROMO', 'installmentCount' => 18, 'interestPercent' => 21.45 ),
+	),
+);
+$nonzero_options = array(
+	mtuc_build_popup_scheme_option_row( 12, 1, 'BASE', '', 'standard', array( 'presentation_category' => 'standard' ) ),
+	mtuc_build_popup_scheme_option_row( 6, 2, 'PROMO', '', 'standard', array( 'presentation_category' => 'nonzero_promo' ) ),
+	mtuc_build_popup_scheme_option_row( 12, 3, 'PROMO', '', 'standard', array( 'presentation_category' => 'nonzero_promo' ) ),
+	mtuc_build_popup_scheme_option_row( 18, 4, 'PROMO', '', 'standard', array( 'presentation_category' => 'nonzero_promo' ) ),
+);
+mtuc_pos_assert( '18:4' === mtuc_pick_default_checkout_scheme_key( $nonzero_shop, $nonzero_options, null ), 'checkout prefers longest non-zero promo before CP standard' );
+
+$standard_fallback = array(
+	mtuc_build_popup_scheme_option_row( 6, 1, 'BASE', '', 'standard', array( 'presentation_category' => 'standard' ) ),
+	mtuc_build_popup_scheme_option_row( 12, 2, 'BASE', '', 'standard', array( 'presentation_category' => 'standard' ) ),
+);
+mtuc_pos_assert( '12:2' === mtuc_pick_default_checkout_scheme_key( $nonzero_shop, $standard_fallback, null ), 'checkout uses CP preferred standard after promo priorities' );
+
 // ---------------------------------------------------------------------------
 // Button preferred pick
 // ---------------------------------------------------------------------------
@@ -204,6 +261,14 @@ mtuc_pos_assert( is_array( $pref ) && 'C' === $pref['kop_code'], 'preferred mont
 
 $no_pref = mtuc_pick_preferred_button_offer( $candidates, array() );
 mtuc_pos_assert( is_array( $no_pref ) && 'D' === $no_pref['kop_code'], 'no preferred → highest months' );
+
+$nonzero_representatives = array(
+	array( 'installment_count' => 6, 'monthly_installment' => 180.0, 'kop_code' => 'P6' ),
+	array( 'installment_count' => 12, 'monthly_installment' => 95.0, 'kop_code' => 'P12' ),
+	array( 'installment_count' => 18, 'monthly_installment' => 70.0, 'kop_code' => 'P18' ),
+);
+$nonzero_representative = mtuc_pick_preferred_button_offer( $nonzero_representatives, array() );
+mtuc_pos_assert( is_array( $nonzero_representative ) && 'P18' === $nonzero_representative['kop_code'], 'multiple non-zero promos use longest representative without CP preference' );
 
 $lowest = mtuc_pick_lowest_monthly_button_offer( $candidates );
 mtuc_pos_assert( is_array( $lowest ) && 40.0 === (float) $lowest['monthly_installment'], 'lowest monthly helper' );

@@ -164,6 +164,12 @@ function mtuc_build_cart_button_offer_from_options(
 			continue;
 		}
 
+		// Conflicting contributing filter policies are unsupported for the
+		// representative preview; never let first cart-line order decide parva.
+		if ( array_key_exists( 'parva_policy_consistent', $option ) && empty( $option['parva_policy_consistent'] ) ) {
+			continue;
+		}
+
 		$coeff_entry = mtuc_find_coeff_entry( $coeff_list, $kop_code, $months );
 		if ( null === $coeff_entry ) {
 			continue;
@@ -176,11 +182,20 @@ function mtuc_build_cart_button_offer_from_options(
 			}
 		}
 
+		$filter      = (int) ( $option['filter_id'] ?? 0 ) > 0
+			? mtuc_get_shop_schema_filter_by_id( $shop, (int) $option['filter_id'] )
+			: null;
+		$parva_state = mtuc_resolve_parva_calculation_state( $shop, $cart_total, $months, 0.0, $filter );
+		$calc_price  = round( $cart_total - (float) $parva_state['parva'], 2 );
+		if ( $calc_price <= 0 ) {
+			continue;
+		}
+
 		$offer = mtuc_build_button_offer(
 			$offer_type,
 			$kop_code,
 			$months,
-			$cart_total,
+			$calc_price,
 			$coeff_entry,
 			$shop
 		);
