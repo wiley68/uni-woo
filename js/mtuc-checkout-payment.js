@@ -104,6 +104,32 @@
 		return normalizeSchemeList(config && config.enabledSchemes);
 	};
 
+	const getEnabledSchemeByKey = (config, schemeKey) => {
+		const key = String(schemeKey || "");
+		return (
+			getEnabledSchemes(config).find(
+				(entry) => getMonthOptionKey(entry) === key,
+			) || null
+		);
+	};
+
+	const resetFirstInstallmentForSchemeChange = (
+		config,
+		schemeKey,
+		$parva,
+		$parvaHidden,
+	) => {
+		const option = getEnabledSchemeByKey(config, schemeKey);
+		const automatic = !!(
+			option && option.automatic_first_installment
+		);
+
+		// A first installment belongs to the scheme that produced it. Start the
+		// new scheme from zero; its server calculation supplies any locked value.
+		$parva.val("0").prop("readonly", automatic);
+		$parvaHidden.val("0.00");
+	};
+
 	const getDefaultSchemeKey = (config) => {
 		if (config && config.defaultSchemeKey) {
 			return String(config.defaultSchemeKey);
@@ -672,7 +698,15 @@
 			calculateNow();
 		};
 
-		$months.off(NS).on("change" + NS, calculateNow);
+			$months.off(NS).on("change" + NS, function () {
+				resetFirstInstallmentForSchemeChange(
+					config,
+					String($months.val() || ""),
+					$parva,
+					$parvaHidden,
+				);
+				calculateNow();
+			});
 		$parva.off(NS).on("input" + NS + " change" + NS, scheduleCalculate);
 		$consentCheckboxes.off(NS).on("change" + NS, onCheckoutReadyChange);
 		$egn.add($phone2)

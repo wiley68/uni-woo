@@ -47,6 +47,7 @@ function WC() {
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-product-offer-selection.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-checkout-payment.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-calculator.php';
 
 $automatic_popup = array(
 	'enabled_schemes'   => array(
@@ -80,5 +81,23 @@ $config = mtuc_get_checkout_payment_script_config( array( 'cart_total' => 1000.0
 mtuc_v202_prefill_assert( '12:1' === $config['defaultSchemeKey'], 'valid exact shorter prefill overrides automatic longer 0%' );
 mtuc_v202_prefill_assert( true === $config['prefillActive'], 'valid exact prefill active' );
 mtuc_v202_prefill_assert( '55.50' === $config['prefillParva'], 'valid exact prefill carries parva' );
+
+// Scheme changes reset the old scheme's value before recalculation. The server
+// response then supplies the selected scheme's own locked amount, when any.
+$checkout_js = (string) file_get_contents( MTUC_PLUGIN_DIR . '/js/mtuc-checkout-payment.js' );
+mtuc_v202_prefill_assert( false !== strpos( $checkout_js, 'const resetFirstInstallmentForSchemeChange' ), 'Checkout owns an explicit scheme-change parva reset' );
+mtuc_v202_prefill_assert( false !== strpos( $checkout_js, '$parva.val("0").prop("readonly", automatic);' ), 'automatic to editable resets visible parva to zero and unlocks it' );
+mtuc_v202_prefill_assert( false !== strpos( $checkout_js, '$parvaHidden.val("0.00");' ), 'scheme change resets submitted parva to zero' );
+mtuc_v202_prefill_assert( false !== strpos( $checkout_js, 'option && option.automatic_first_installment' ), 'locked state comes from normalized scheme metadata' );
+mtuc_v202_prefill_assert( false !== strpos( $checkout_js, "resetFirstInstallmentForSchemeChange(\n\t\t\t\t\tconfig" ), 'months change invokes reset before recalculation' );
+
+$shop_parva = array( 'uni_first_vnoska' => 1 );
+$locked_a   = mtuc_resolve_parva_calculation_state( $shop_parva, 1000.0, 12, 0.0, array( 'uni_parva' => 1 ) );
+$editable_b = mtuc_resolve_parva_calculation_state( $shop_parva, 1000.0, 18, 0.0, array( 'uni_parva' => 0 ) );
+$locked_b   = mtuc_resolve_parva_calculation_state( $shop_parva, 1000.0, 6, 0.0, array( 'uni_parva' => 1 ) );
+mtuc_v202_prefill_assert( 83.33 === $locked_a['parva'], 'locked scheme A supplies 83.33' );
+mtuc_v202_prefill_assert( 0.0 === $editable_b['parva'] && false === $editable_b['parva_locked'], 'locked A to editable B resolves from reset zero' );
+mtuc_v202_prefill_assert( 83.33 === $locked_a['parva'] && true === $locked_a['parva_locked'], 'editable scheme to locked A supplies A amount' );
+mtuc_v202_prefill_assert( 166.67 === $locked_b['parva'] && true === $locked_b['parva_locked'], 'locked A to locked B supplies B amount' );
 
 fwrite( STDOUT, 'OK v202-checkout-prefill ' . $mtuc_v202_prefill_assert_count . " assertions\n" );
