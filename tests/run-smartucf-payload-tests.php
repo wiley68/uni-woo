@@ -36,7 +36,7 @@ function mtuc_su_assert_same( $expected, $actual, string $message ): void {
 }
 
 if ( ! defined( 'MTUC_VERSION' ) ) {
-	define( 'MTUC_VERSION', '2.0.1' );
+	define( 'MTUC_VERSION', '2.0.2' );
 }
 
 if ( ! function_exists( 'get_woocommerce_currency' ) ) {

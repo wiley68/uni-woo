@@ -285,7 +285,7 @@ final class Mtuc_Financial_Integrity_Test_Runner {
 	}
 
 	private function test_version_constant(): void {
-		$this->assert_true( defined( 'MTUC_VERSION' ) && '2.0.1' === MTUC_VERSION, 'MTUC_VERSION is 2.0.1' );
+		$this->assert_true( defined( 'MTUC_VERSION' ) && '2.0.2' === MTUC_VERSION, 'MTUC_VERSION is 2.0.2' );
 	}
 
 	/**
@@ -306,7 +306,7 @@ final class Mtuc_Financial_Integrity_Test_Runner {
 
 // Ensure version constant for isolated run.
 if ( ! defined( 'MTUC_VERSION' ) ) {
-	define( 'MTUC_VERSION', '2.0.1' );
+	define( 'MTUC_VERSION', '2.0.2' );
 }
 
 exit( ( new Mtuc_Financial_Integrity_Test_Runner() )->run() );

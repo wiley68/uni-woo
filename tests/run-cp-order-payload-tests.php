@@ -38,7 +38,7 @@ function mtuc_cp_assert_same( $expected, $actual, string $message ): void {
 }
 
 if ( ! defined( 'MTUC_VERSION' ) ) {
-	define( 'MTUC_VERSION', '2.0.1' );
+	define( 'MTUC_VERSION', '2.0.2' );
 }
 
 if ( ! function_exists( 'get_woocommerce_currency' ) ) {
@@ -415,7 +415,7 @@ $expected_p1 = array(
 	'products_q'    => '2',
 	'type_client'   => 1,
 	'currency'      => 'BGN',
-	'version'       => '2.0.1',
+	'version'       => '2.0.2',
 );
 
 mtuc_cp_assert_same( $expected_p1, $actual_p1, 'Process 1 product CP payload golden contract' );
@@ -595,7 +595,7 @@ $expected_cart = array(
 	'products_q'    => '1_3',
 	'type_client'   => 1,
 	'currency'      => 'BGN',
-	'version'       => '2.0.1',
+	'version'       => '2.0.2',
 );
 
 mtuc_cp_assert_same( $expected_cart, $cart_payload, 'cart/checkout multi-line CP payload golden contract' );

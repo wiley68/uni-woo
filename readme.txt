@@ -5,7 +5,7 @@ Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -29,6 +29,13 @@ Before creating the production installation ZIP, add `secrets/smartucf-key.php` 
 The ZIP is prepared manually and uploaded to the Bank/CP portal. It contains Git source plus deployment-only files (certificates, `secrets/smartucf-key.php`). Merchants install the ZIP normally; they do not edit wp-config or environment variables for the SSL password.
 
 == Changelog ==
+
+= 2.0.2 =
+* Canonical Product, Cart, and Checkout financing scheme ordering.
+* Cart automatic-first-installment preview and promotional representative parity.
+* Checkout promotional fallback priority and invalid prefill normalization.
+* Checkout first-installment reset when switching financing schemes.
+* Cross-line conflicting automatic-first-installment safety and regression coverage.
 
 = 2.0.1 =
 * Authoritative product price and quantity for product-popup financing (AUD-WOO-001).
