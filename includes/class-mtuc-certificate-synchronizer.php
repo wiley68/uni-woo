@@ -39,6 +39,19 @@ class Mtuc_Certificate_Synchronizer {
 			return null;
 		}
 
+		if ( function_exists( 'mtuc_require_armed_submission_lock_ownership' )
+			&& defined( 'MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP' )
+			&& defined( 'MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP' )
+		) {
+			$owned = mtuc_require_armed_submission_lock_ownership(
+				MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP,
+				MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP
+			);
+			if ( is_wp_error( $owned ) ) {
+				return $owned;
+			}
+		}
+
 		$metadata = is_callable( self::$metadata_fetcher )
 			? call_user_func( self::$metadata_fetcher )
 			: Mtuc_Cp_Api_Client::get_ssl_certificate_metadata();
@@ -69,6 +82,19 @@ class Mtuc_Certificate_Synchronizer {
 				'mtuc_ssl_metadata_invalid',
 				__( 'КП върна невалидни SHA-256 хешове за SSL сертификата.', 'mtunicredit' )
 			);
+		}
+
+		if ( function_exists( 'mtuc_require_armed_submission_lock_ownership' )
+			&& defined( 'MTUC_SUBMISSION_LOCK_RENEW_FS_LOCK' )
+			&& defined( 'MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP' )
+		) {
+			$owned = mtuc_require_armed_submission_lock_ownership(
+				MTUC_SUBMISSION_LOCK_RENEW_FS_LOCK,
+				MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP
+			);
+			if ( is_wp_error( $owned ) ) {
+				return $owned;
+			}
 		}
 
 		$lock = Mtuc_Certificate_Local_Store::acquire_lock( 10 );
@@ -103,6 +129,19 @@ class Mtuc_Certificate_Synchronizer {
 					'key_mismatch'  => ( $local['key_hash'] !== $key_hash ) ? 1 : 0,
 				)
 			);
+
+			if ( function_exists( 'mtuc_require_armed_submission_lock_ownership' )
+				&& defined( 'MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP' )
+				&& defined( 'MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP' )
+			) {
+				$owned = mtuc_require_armed_submission_lock_ownership(
+					MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP,
+					MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP
+				);
+				if ( is_wp_error( $owned ) ) {
+					return $owned;
+				}
+			}
 
 			$bundle = is_callable( self::$bundle_fetcher )
 				? call_user_func( self::$bundle_fetcher )

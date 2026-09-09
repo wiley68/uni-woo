@@ -67,6 +67,26 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
+	 * Renew armed submission ownership before a single CP HTTP attempt.
+	 *
+	 * @param string $stage Stage marker (cp_http or cert_http).
+	 * @return true|WP_Error
+	 */
+	private static function renew_submission_fence_before_http( string $stage = '' ) {
+		if ( ! function_exists( 'mtuc_require_armed_submission_lock_ownership' ) ) {
+			return true;
+		}
+
+		if ( '' === $stage ) {
+			$stage = defined( 'MTUC_SUBMISSION_LOCK_STAGE_CP_HTTP' ) ? MTUC_SUBMISSION_LOCK_STAGE_CP_HTTP : '';
+		}
+
+		$seconds = defined( 'MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP' ) ? MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP : 30;
+
+		return mtuc_require_armed_submission_lock_ownership( $seconds, $stage );
+	}
+
+	/**
 	 * Create an order in CP (POST /orders).
 	 *
 	 * @param array<string, mixed> $payload     Order fields for StoreOrderRequest.
@@ -74,9 +94,19 @@ class Mtuc_Cp_Api_Client {
 	 * @return array<string, mixed>|WP_Error Decoded JSON body on success.
 	 */
 	public static function create_order( array $payload, int $wc_order_id = 0 ) {
+		$owned = self::renew_submission_fence_before_http();
+		if ( is_wp_error( $owned ) ) {
+			return $owned;
+		}
+
 		$token = self::ensure_access_token();
 		if ( is_wp_error( $token ) ) {
 			return $token;
+		}
+
+		$owned = self::renew_submission_fence_before_http();
+		if ( is_wp_error( $owned ) ) {
+			return $owned;
 		}
 
 		$response = self::request( 'POST', 'orders', $payload, $token, true );
@@ -86,9 +116,17 @@ class Mtuc_Cp_Api_Client {
 
 		if ( 401 === (int) wp_remote_retrieve_response_code( $response ) ) {
 			self::clear_token();
+			$owned = self::renew_submission_fence_before_http();
+			if ( is_wp_error( $owned ) ) {
+				return $owned;
+			}
 			$token = self::ensure_access_token();
 			if ( is_wp_error( $token ) ) {
 				return $token;
+			}
+			$owned = self::renew_submission_fence_before_http();
+			if ( is_wp_error( $owned ) ) {
+				return $owned;
 			}
 			$response = self::request( 'POST', 'orders', $payload, $token, true );
 		}
@@ -178,9 +216,23 @@ class Mtuc_Cp_Api_Client {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	private static function request_ssl_endpoint( string $path, bool $expect_bundle = false ) {
+		$cert_stage = defined( 'MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP' )
+			? MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP
+			: '';
+
+		$owned = self::renew_submission_fence_before_http( $cert_stage );
+		if ( is_wp_error( $owned ) ) {
+			return $owned;
+		}
+
 		$token = self::ensure_access_token();
 		if ( is_wp_error( $token ) ) {
 			return $token;
+		}
+
+		$owned = self::renew_submission_fence_before_http( $cert_stage );
+		if ( is_wp_error( $owned ) ) {
+			return $owned;
 		}
 
 		$response = self::request( 'GET', $path, null, $token, true );
@@ -190,9 +242,17 @@ class Mtuc_Cp_Api_Client {
 
 		if ( 401 === (int) wp_remote_retrieve_response_code( $response ) ) {
 			self::clear_token();
+			$owned = self::renew_submission_fence_before_http( $cert_stage );
+			if ( is_wp_error( $owned ) ) {
+				return $owned;
+			}
 			$token = self::ensure_access_token();
 			if ( is_wp_error( $token ) ) {
 				return $token;
+			}
+			$owned = self::renew_submission_fence_before_http( $cert_stage );
+			if ( is_wp_error( $owned ) ) {
+				return $owned;
 			}
 			$response = self::request( 'GET', $path, null, $token, true );
 		}
@@ -488,6 +548,28 @@ class Mtuc_Cp_Api_Client {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	private static function request( string $method, string $path, $body = null, $token = null, bool $with_shop = false ) {
+		/*
+		 * Every CP transport (login, refresh, orders, SSL, …) renews under an armed
+		 * financing fence immediately before HTTP. No fence → no-op (non-financing OK).
+		 * Lease covers one plugin TIMEOUT attempt (+ margin); WP filter timeout inflation
+		 * is treated as external interference, not a multi-request lease problem.
+		 */
+		$stage = ( 0 === strpos( ltrim( $path, '/' ), 'ssl/' ) )
+			? ( defined( 'MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP' ) ? MTUC_SUBMISSION_LOCK_STAGE_CERT_HTTP : '' )
+			: ( defined( 'MTUC_SUBMISSION_LOCK_STAGE_CP_HTTP' ) ? MTUC_SUBMISSION_LOCK_STAGE_CP_HTTP : '' );
+		$owned = self::renew_submission_fence_before_http( $stage );
+		if ( is_wp_error( $owned ) ) {
+			return $owned;
+		}
+
+		if ( isset( $GLOBALS['mtuc_test_cp_http_checkpoints'] ) && is_array( $GLOBALS['mtuc_test_cp_http_checkpoints'] ) ) {
+			$GLOBALS['mtuc_test_cp_http_checkpoints'][] = array(
+				'method' => $method,
+				'path'   => $path,
+				'stage'  => $stage,
+			);
+		}
+
 		$headers = array(
 			'Accept' => 'application/json',
 		);

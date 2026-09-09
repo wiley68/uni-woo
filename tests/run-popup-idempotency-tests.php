@@ -121,12 +121,16 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		public $payment_method = 'mtunicredit';
 		/** @var string */
 		public $order_number = '';
+		/** @var string */
+		public $created_via = '';
 		/** @var array<string, mixed> */
 		public $meta = array();
 		/** @var int */
 		public $gateway_apply_count = 0;
 		/** @var int */
 		public $save_count = 0;
+		/** @var list<array<string, mixed>> */
+		public $line_items = array( array( 'id' => 1 ) );
 
 		public function __construct( int $id = 0 ) {
 			$this->id           = $id;
@@ -147,6 +151,36 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 
 		public function get_status(): string {
 			return $this->status;
+		}
+
+		public function get_created_via(): string {
+			return $this->created_via;
+		}
+
+		/**
+		 * @param string $via Created via.
+		 * @return void
+		 */
+		public function set_created_via( $via ): void {
+			$this->created_via = (string) $via;
+		}
+
+		/**
+		 * @param string $type Item type.
+		 * @return list<array<string, mixed>>
+		 */
+		public function get_items( $type = '' ) {
+			unset( $type );
+			return $this->line_items;
+		}
+
+		/**
+		 * @param int $item_id Item id.
+		 * @return void
+		 */
+		public function remove_item( $item_id ): void {
+			unset( $this->line_items[ (int) $item_id ], $item_id );
+			$this->line_items = array_values( $this->line_items );
 		}
 
 		/**
@@ -202,6 +236,12 @@ if ( ! function_exists( 'wc_get_orders' ) ) {
 				}
 			}
 
+			if ( isset( $args['created_via'] )
+				&& (string) $order->get_created_via() !== (string) $args['created_via']
+			) {
+				continue;
+			}
+
 			if ( isset( $args['search'] ) ) {
 				$needle = (string) $args['search'];
 				if ( false === strpos( (string) $order->get_order_number(), $needle )
@@ -231,12 +271,14 @@ function mtuc_pi_create_test_order(): WC_Order {
 
 	$id    = ++$next_order_id;
 	$order = new WC_Order( $id );
+	$order->update_meta_data( MTUC_ORDER_META_POPUP_INIT_STATE, MTUC_POPUP_INIT_COMPLETE );
 	$GLOBALS['mtuc_test_orders'][ $id ] = $order;
 	$GLOBALS['mtuc_created_orders'][]   = $order;
 	return $order;
 }
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-bank-lifecycle.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-submission-lock.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-idempotency.php';
 

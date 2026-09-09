@@ -754,6 +754,9 @@ class WP_Screen
 class wpdb
 {
 	public string $prefix = '';
+	public string $options = '';
+	public string $posts = '';
+	public string $postmeta = '';
 	public int $insert_id = 0;
 	public string $last_error = '';
 

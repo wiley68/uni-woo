@@ -232,6 +232,19 @@ class Mtuc_Smartucf_Api_Client {
 
 			$curl_options = self::build_session_curl_options( $url, $body, $lease );
 
+			if ( function_exists( 'mtuc_require_armed_submission_lock_ownership' )
+				&& defined( 'MTUC_SUBMISSION_LOCK_RENEW_HTTP_SMARTUCF' )
+				&& defined( 'MTUC_SUBMISSION_LOCK_STAGE_SMARTUCF_HTTP' )
+			) {
+				$owned = mtuc_require_armed_submission_lock_ownership(
+					MTUC_SUBMISSION_LOCK_RENEW_HTTP_SMARTUCF,
+					MTUC_SUBMISSION_LOCK_STAGE_SMARTUCF_HTTP
+				);
+				if ( is_wp_error( $owned ) ) {
+					return $owned;
+				}
+			}
+
 			if ( is_callable( self::$http_transport ) ) {
 				$transport = call_user_func( self::$http_transport, $curl_options );
 				$response_body = isset( $transport['body'] ) ? (string) $transport['body'] : '';
