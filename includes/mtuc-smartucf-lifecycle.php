@@ -457,6 +457,244 @@ function mtuc_release_smartucf_p1_claim_after_presend_failure( WC_Order $order )
 }
 
 /**
+ * Whether the order has an unresolved SmartUCF Process 1 ambiguity (AUD-WOO-013).
+ *
+ * Remains unresolved while claim=sent_unknown or outcome=unknown unless
+ * source-backed confirmed Process 1 success evidence safely supersedes it.
+ * Generic later bank statuses alone do not resolve start ambiguity.
+ *
+ * @param WC_Order $order Order instance.
+ * @return bool
+ */
+function mtuc_order_has_unresolved_smartucf_ambiguity( WC_Order $order ): bool {
+	if ( mtuc_order_smartucf_start_ambiguity_safely_resolved( $order ) ) {
+		return false;
+	}
+
+	$outcome = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ) );
+	if ( 'unknown' === $outcome ) {
+		return true;
+	}
+
+	$claim = mtuc_get_smartucf_p1_claim( (int) $order->get_id() );
+	return is_array( $claim ) && MTUC_SMARTUCF_P1_CLAIM_SENT_UNKNOWN === (string) $claim['state'];
+}
+
+/**
+ * Whether SmartUCF start ambiguity is safely resolved as confirmed Process 1 success.
+ *
+ * @param WC_Order $order Order instance.
+ * @return bool
+ */
+function mtuc_order_smartucf_start_ambiguity_safely_resolved( WC_Order $order ): bool {
+	if ( ! mtuc_order_has_process1_smartucf_success_evidence( $order ) ) {
+		return false;
+	}
+
+	$bank = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+	return defined( 'MTUC_BANK_STATUS_SENT_PROCESS1' ) && MTUC_BANK_STATUS_SENT_PROCESS1 === $bank;
+}
+
+/**
+ * Resolve shop data for SmartUCF trust checks (fail closed when unavailable).
+ *
+ * @param array<string, mixed> $shop Optional preloaded shop data.
+ * @return array<string, mixed>|null
+ */
+function mtuc_resolve_smartucf_trust_shop( array $shop = array() ) {
+	if ( ! empty( $shop ) ) {
+		return $shop;
+	}
+
+	if ( ! function_exists( 'mtuc_get_shop_data' ) ) {
+		return null;
+	}
+
+	$resolved = mtuc_get_shop_data();
+	if ( is_wp_error( $resolved ) || ! is_array( $resolved ) || empty( $resolved ) ) {
+		return null;
+	}
+
+	return $resolved;
+}
+
+/**
+ * Whether the order has a trusted redirect that corresponds to the stored session.
+ *
+ * Persisted redirect (when present) must match the exact trusted URL derived from
+ * the stored session ID — host-trust alone is insufficient (AUD-WOO-013 Pass 3).
+ * Empty redirect may pass when the expected URL is deterministically recoverable.
+ *
+ * @param WC_Order             $order Order instance.
+ * @param array<string, mixed> $shop  Optional shop data.
+ * @return bool
+ */
+function mtuc_order_has_trusted_or_recoverable_smartucf_redirect( WC_Order $order, array $shop = array() ): bool {
+	$session = trim( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_SESSION_ID ) );
+	if ( '' === $session ) {
+		$session = trim( (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'smartucf_session_id' ) );
+	}
+	if ( '' === $session ) {
+		return false;
+	}
+
+	if ( ! class_exists( 'Mtuc_Smartucf_Endpoint_Policy', false )
+		|| is_wp_error( Mtuc_Smartucf_Endpoint_Policy::validate_session_id( $session ) )
+	) {
+		return false;
+	}
+
+	$shop = mtuc_resolve_smartucf_trust_shop( $shop );
+	if ( null === $shop || ! class_exists( 'Mtuc_Smartucf_Api_Client', false ) ) {
+		return false;
+	}
+
+	$expected = Mtuc_Smartucf_Api_Client::get_application_redirect_url( $shop, $session );
+	$expected = trim( (string) $expected );
+	if ( '' === $expected || ! Mtuc_Smartucf_Api_Client::is_trusted_redirect_url( $expected, $shop ) ) {
+		return false;
+	}
+
+	$redirect = '';
+	if ( defined( 'MTUC_ORDER_META_SMARTUCF_REDIRECT_URL' ) ) {
+		$redirect = trim( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_REDIRECT_URL ) );
+	}
+
+	if ( '' === $redirect ) {
+		// Missing redirect: trusted reconstruction from the stored session is enough.
+		return true;
+	}
+
+	if ( ! Mtuc_Smartucf_Api_Client::is_trusted_redirect_url( $redirect, $shop ) ) {
+		return false;
+	}
+
+	$expected_cmp = function_exists( 'esc_url_raw' ) ? esc_url_raw( $expected ) : $expected;
+	$redirect_cmp = function_exists( 'esc_url_raw' ) ? esc_url_raw( $redirect ) : $redirect;
+
+	if ( function_exists( 'hash_equals' ) ) {
+		return hash_equals( (string) $expected_cmp, (string) $redirect_cmp );
+	}
+
+	return (string) $expected_cmp === (string) $redirect_cmp;
+}
+
+/**
+ * Whether local Process 1 SmartUCF success evidence is durable enough for bank_sent_process1.
+ *
+ * Requires CP success, confirmed outcome, valid stored session, and a trusted
+ * redirect that corresponds to that same session (persisted or recoverable).
+ * Does not require bank_sent_process1 itself (that is what a guarded callback may write).
+ *
+ * @param WC_Order             $order Order instance.
+ * @param array<string, mixed> $shop  Optional shop data for redirect trust.
+ * @return bool
+ */
+function mtuc_order_has_process1_smartucf_success_evidence( WC_Order $order, array $shop = array() ): bool {
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	if ( $cp_order_id <= 0 ) {
+		return false;
+	}
+
+	$outcome = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ) );
+	if ( 'confirmed' !== $outcome ) {
+		return false;
+	}
+
+	$session = trim( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_SESSION_ID ) );
+	if ( '' === $session ) {
+		$session = trim( (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'smartucf_session_id' ) );
+	}
+	if ( '' === $session ) {
+		return false;
+	}
+
+	if ( ! class_exists( 'Mtuc_Smartucf_Endpoint_Policy', false )
+		|| is_wp_error( Mtuc_Smartucf_Endpoint_Policy::validate_session_id( $session ) )
+	) {
+		return false;
+	}
+
+	return mtuc_order_has_trusted_or_recoverable_smartucf_redirect( $order, $shop );
+}
+
+/**
+ * Whether local source-backed evidence proves definitive SmartUCF start failure.
+ *
+ * Callback identity alone is never sufficient. Ambiguity markers block conversion.
+ *
+ * @param WC_Order $order Order instance.
+ * @return bool
+ */
+function mtuc_order_has_definitive_smartucf_failure_evidence( WC_Order $order ): bool {
+	$outcome = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ) );
+	if ( 'unknown' === $outcome ) {
+		return false;
+	}
+
+	$claim = mtuc_get_smartucf_p1_claim( (int) $order->get_id() );
+	if ( is_array( $claim ) && MTUC_SMARTUCF_P1_CLAIM_SENT_UNKNOWN === (string) $claim['state'] ) {
+		return false;
+	}
+
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	if ( $cp_order_id <= 0 ) {
+		return false;
+	}
+
+	if ( 'missing' !== $outcome ) {
+		return false;
+	}
+
+	$bank = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+	if ( defined( 'MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF' ) && MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === $bank ) {
+		return true;
+	}
+
+	return is_array( $claim ) && MTUC_SMARTUCF_P1_CLAIM_DEFINITIVE_FAILED === (string) $claim['state'];
+}
+
+/**
+ * Admin rows explaining unresolved SmartUCF ambiguity (AUD-WOO-013-F03).
+ *
+ * @param WC_Order $order Order instance.
+ * @return array<string, string>
+ */
+function mtuc_get_smartucf_ambiguity_admin_rows( WC_Order $order ): array {
+	if ( ! mtuc_order_has_unresolved_smartucf_ambiguity( $order ) ) {
+		return array();
+	}
+
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	$session     = trim( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_SESSION_ID ) );
+	if ( '' === $session ) {
+		$session = trim( (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'smartucf_session_id' ) );
+	}
+
+	$rows = array(
+		__( 'SmartUCF резултат', 'mtunicredit' )                 => __( 'Неизвестен', 'mtunicredit' ),
+		__( 'SmartUCF lifecycle', 'mtunicredit' )                => __( 'Неясен / очаква ръчна резолюция', 'mtunicredit' ),
+		__( 'КП поръчка', 'mtunicredit' )                        => $cp_order_id > 0 ? __( 'Да', 'mtunicredit' ) : __( 'Не', 'mtunicredit' ),
+		__( 'SmartUCF сесия', 'mtunicredit' )                    => '' !== $session ? __( 'Налична', 'mtunicredit' ) : __( 'Липсва', 'mtunicredit' ),
+		__( 'Автоматично повторно изпращане (SmartUCF)', 'mtunicredit' ) => __( 'Забранено', 'mtunicredit' ),
+	);
+
+	if ( '' !== $session ) {
+		$rows[ __( 'Локално възстановяване', 'mtunicredit' ) ] = __(
+			'Сесията може да се преизползва локално; не изпращайте отново финансирането.',
+			'mtunicredit'
+		);
+	}
+
+	$rows[ __( 'Препоръчано действие', 'mtunicredit' ) ] = __(
+		'Не изпращайте отново финансирането. Сверете с поддръжка/банка преди ръчна намеса.',
+		'mtunicredit'
+	);
+
+	return $rows;
+}
+
+/**
  * Whether an automatic SmartUCF start is prohibited by durable claim/outcome.
  *
  * @param WC_Order $order Order instance.
@@ -671,6 +909,9 @@ function mtuc_finalize_smartucf_p1_success( WC_Order $order, string $session_id,
 	}
 
 	$order->update_meta_data( MTUC_ORDER_META_SMARTUCF_START_OUTCOME, 'confirmed' );
+	if ( defined( 'MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE' ) ) {
+		$order->delete_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE );
+	}
 	$order->save();
 
 	if ( function_exists( 'mtuc_clear_order_financing_diagnostic' ) ) {

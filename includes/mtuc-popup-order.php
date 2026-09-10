@@ -996,6 +996,39 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
 		);
 	}
 
+	// AUD-WOO-013-F02: protect SmartUCF start lifecycle markers without local evidence.
+	if ( defined( 'MTUC_BANK_STATUS_SENT_PROCESS1' ) && MTUC_BANK_STATUS_SENT_PROCESS1 === $status_id ) {
+		$has_evidence = function_exists( 'mtuc_order_has_process1_smartucf_success_evidence' )
+			&& mtuc_order_has_process1_smartucf_success_evidence( $order );
+		if ( ! $has_evidence ) {
+			mtuc_maybe_add_callback_guard_note(
+				$order,
+				$status_id,
+				__( 'КП callback bank_sent_process1 не е приложен: липсват локални SmartUCF success доказателства.', 'mtunicredit' )
+			);
+			return new WP_Error(
+				'mtuc_callback_smartucf_evidence_missing',
+				__( 'bank_sent_process1 изисква локални SmartUCF success доказателства.', 'mtunicredit' )
+			);
+		}
+	}
+
+	if ( defined( 'MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF' ) && MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === $status_id ) {
+		$has_definitive = function_exists( 'mtuc_order_has_definitive_smartucf_failure_evidence' )
+			&& mtuc_order_has_definitive_smartucf_failure_evidence( $order );
+		if ( ! $has_definitive ) {
+			mtuc_maybe_add_callback_guard_note(
+				$order,
+				$status_id,
+				__( 'КП callback bank_send_failed_smartucf не е приложен: липсват локални definitive SmartUCF failure доказателства.', 'mtunicredit' )
+			);
+			return new WP_Error(
+				'mtuc_callback_smartucf_failure_evidence_missing',
+				__( 'bank_send_failed_smartucf изисква локални definitive SmartUCF failure доказателства.', 'mtunicredit' )
+			);
+		}
+	}
+
 	// Unknown authentic SmartUCF/CP statuses are stored as delivered — no invented mapping.
 	$label = '' !== trim( $status_label ) ? trim( $status_label ) : $status_id;
 
@@ -1003,6 +1036,30 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
 	$order->save();
 
 	return true;
+}
+
+/**
+ * Add a protected-callback diagnostic note at most once per status_id (AUD-WOO-013 Pass 2).
+ *
+ * @param WC_Order $order     Order instance.
+ * @param string   $status_id Guarded status key.
+ * @param string   $note      Support-oriented note.
+ * @return void
+ */
+function mtuc_maybe_add_callback_guard_note( WC_Order $order, string $status_id, string $note ): void {
+	$status_id = sanitize_key( $status_id );
+	if ( '' === $status_id || '' === trim( $note ) ) {
+		return;
+	}
+
+	$meta_key = MTUC_ORDER_META_PREFIX . 'cb_guard_noted_' . $status_id;
+	if ( 1 === (int) $order->get_meta( $meta_key ) ) {
+		return;
+	}
+
+	$order->add_order_note( $note );
+	$order->update_meta_data( $meta_key, 1 );
+	$order->save();
 }
 
 /**
@@ -1598,18 +1655,43 @@ function mtuc_filter_thankyou_text_bank_unavailable( string $text, $order ): str
 		return $text;
 	}
 
-	if ( 1 !== (int) $order->get_meta( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE ) ) {
+	$unresolved_ambiguity = function_exists( 'mtuc_order_has_unresolved_smartucf_ambiguity' )
+		&& mtuc_order_has_unresolved_smartucf_ambiguity( $order );
+
+	$has_notice = 1 === (int) $order->get_meta( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE );
+
+	if ( ! $unresolved_ambiguity && ! $has_notice ) {
 		return $text;
 	}
-
-	$order->delete_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE );
-	$order->save();
 
 	$intro = sprintf(
 		/* translators: %s: order number */
 		__( 'Благодарим Ви. Поръчка №%s е регистрирана в магазина.', 'mtunicredit' ),
 		$order->get_order_number()
 	);
+
+	if ( $unresolved_ambiguity ) {
+		// Persistent ambiguity UX (AUD-WOO-013-F01): do not consume the notice on render.
+		if ( ! $has_notice ) {
+			$order->update_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE, 1 );
+			$order->save();
+		}
+
+		$bank_notice = __(
+			'Резултатът от заявката за финансиране в момента е неясен. Моля не подавайте отново заявка за финансиране. Поръчката е записана. Свържете се с магазина/поддръжката за съдействие.',
+			'mtunicredit'
+		);
+
+		return sprintf(
+			'%s<br><span class="mtuc-thankyou-bank-unavailable mtuc-thankyou-smartucf-ambiguous">%s</span>',
+			esc_html( $intro ),
+			esc_html( $bank_notice )
+		);
+	}
+
+	// Definitive bank-unavailable path: one-shot notice (unchanged semantics).
+	$order->delete_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE );
+	$order->save();
 
 	$bank_notice = __( 'В момента Банката не може да обработи Вашата заявка. Моля опитайте по-късно.', 'mtunicredit' );
 

@@ -162,6 +162,14 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		}
 
 		/**
+		 * @param string $key Meta key.
+		 * @return void
+		 */
+		public function delete_meta_data( $key ): void {
+			unset( $this->meta[ $key ] );
+		}
+
+		/**
 		 * @param string $note Note.
 		 * @return void
 		 */

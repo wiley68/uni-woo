@@ -138,6 +138,13 @@ function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): a
 
 	if (
 		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL === $audience
+		&& function_exists( 'mtuc_get_smartucf_ambiguity_admin_rows' )
+	) {
+		$rows = array_merge( $rows, mtuc_get_smartucf_ambiguity_admin_rows( $order ) );
+	}
+
+	if (
+		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL === $audience
 		&& function_exists( 'mtuc_get_order_diagnostic_admin_rows' )
 	) {
 		$rows = array_merge( $rows, mtuc_get_order_diagnostic_admin_rows( $order ) );

@@ -155,7 +155,17 @@ function mtuc_get_order_diagnostic_admin_rows( WC_Order $order ): array {
 	}
 
 	if ( isset( $diag['retryable'] ) ) {
-		$rows[ __( 'Повторение възможно', 'mtunicredit' ) ] = (int) $diag['retryable'] ? __( 'Да', 'mtunicredit' ) : __( 'Не', 'mtunicredit' );
+		$smartucf_ambiguity = function_exists( 'mtuc_order_has_unresolved_smartucf_ambiguity' )
+			&& mtuc_order_has_unresolved_smartucf_ambiguity( $order );
+		$subsystem          = isset( $diag['subsystem'] ) ? (string) $diag['subsystem'] : '';
+		$category           = isset( $diag['category'] ) ? (string) $diag['category'] : '';
+		$is_smartucf_diag   = ( 'smartucf' === $subsystem )
+			|| 0 === strpos( $category, 'smartucf_' );
+
+		// AUD-WOO-013-F03: do not present generic retryable as SmartUCF resend permission.
+		if ( ! ( $smartucf_ambiguity && $is_smartucf_diag ) ) {
+			$rows[ __( 'Повторение възможно', 'mtunicredit' ) ] = (int) $diag['retryable'] ? __( 'Да', 'mtunicredit' ) : __( 'Не', 'mtunicredit' );
+		}
 	}
 
 	if ( ! empty( $diag['correlation_id'] ) ) {
