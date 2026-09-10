@@ -198,6 +198,31 @@ class Mtuc_Rest_Api {
 		);
 	}
 
+	/** Maximum sanitized length for callback status_id. */
+	public const BANK_STATUS_ID_MAX_LEN = 64;
+
+	/** Maximum sanitized length for callback status label. */
+	public const BANK_STATUS_LABEL_MAX_LEN = 255;
+
+	/**
+	 * Whether a callback field value is an accepted scalar for bank status fields.
+	 *
+	 * Rejects arrays/objects/resources/bools before string casting (AUD-WOO-015-F05).
+	 *
+	 * @param mixed $value Raw payload value.
+	 * @return bool
+	 */
+	public static function is_bank_status_field_scalar( $value ): bool {
+		if ( is_string( $value ) || is_int( $value ) ) {
+			return true;
+		}
+		if ( is_float( $value ) && is_finite( $value ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
 	/**
 	 * POST /order-bank-status — CP pushes bank status update for a shop order.
 	 *
@@ -210,10 +235,49 @@ class Mtuc_Rest_Api {
 			return self::error_from_wp_error( $auth );
 		}
 
-		$params    = self::decode_payload( $request );
+		$params = self::decode_payload( $request );
+
+		if ( array_key_exists( 'status_id', $params ) && ! self::is_bank_status_field_scalar( $params['status_id'] ) ) {
+			return self::error_response(
+				__( 'Невалиден тип на status_id в заявката.', 'mtunicredit' ),
+				400
+			);
+		}
+
+		if ( array_key_exists( 'status', $params ) && ! self::is_bank_status_field_scalar( $params['status'] ) ) {
+			return self::error_response(
+				__( 'Невалиден тип на status в заявката.', 'mtunicredit' ),
+				400
+			);
+		}
+
+		if ( array_key_exists( 'status_label', $params ) && ! self::is_bank_status_field_scalar( $params['status_label'] ) ) {
+			return self::error_response(
+				__( 'Невалиден тип на status_label в заявката.', 'mtunicredit' ),
+				400
+			);
+		}
+
 		$order_id  = isset( $params['order_id'] ) ? sanitize_text_field( (string) $params['order_id'] ) : '';
 		$status    = isset( $params['status'] ) ? sanitize_text_field( (string) $params['status'] ) : '';
+		if ( '' === $status && isset( $params['status_label'] ) ) {
+			$status = sanitize_text_field( (string) $params['status_label'] );
+		}
 		$status_id = isset( $params['status_id'] ) ? sanitize_key( (string) $params['status_id'] ) : '';
+
+		if ( strlen( $status_id ) > self::BANK_STATUS_ID_MAX_LEN ) {
+			return self::error_response(
+				__( 'status_id надвишава допустимата дължина.', 'mtunicredit' ),
+				400
+			);
+		}
+
+		if ( strlen( $status ) > self::BANK_STATUS_LABEL_MAX_LEN ) {
+			return self::error_response(
+				__( 'status_label надвишава допустимата дължина.', 'mtunicredit' ),
+				400
+			);
+		}
 
 		if ( '' === $order_id ) {
 			return self::error_response(

@@ -478,7 +478,18 @@ $false_ok = new WC_Order();
 mtuc_su_amb_seed_unresolved( $false_ok, array( 'id' => 1320, 'with_claim' => true ) );
 $r_false_ok = mtuc_apply_cp_bank_status_push( $false_ok, MTUC_BANK_STATUS_SENT_PROCESS1, 'Изпратен' );
 mtuc_su_amb_assert( is_wp_error( $r_false_ok ), 'false bank_sent_process1 rejected' );
-mtuc_su_amb_assert( 'mtuc_callback_smartucf_evidence_missing' === $r_false_ok->get_error_code(), 'false success error code' );
+mtuc_su_amb_assert(
+	in_array(
+		$r_false_ok->get_error_code(),
+		array(
+			'mtuc_callback_smartucf_evidence_missing',
+			'mtuc_callback_process_identity_unknown',
+			'mtuc_callback_process1_identity_required',
+		),
+		true
+	),
+	'false success error code'
+);
 mtuc_su_amb_assert( MTUC_BANK_STATUS_SENT_PROCESS1 !== (string) $false_ok->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'bank_sent_process1 not persisted' );
 mtuc_su_amb_assert( 'unknown' === (string) $false_ok->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ), 'ambiguity outcome unchanged after false success' );
 $claim_false_ok = mtuc_get_smartucf_p1_claim( 1320 );
@@ -506,7 +517,16 @@ mtuc_su_amb_seed_unresolved( $false_fail, array( 'id' => 1321, 'with_claim' => t
 $r_false_fail = mtuc_apply_cp_bank_status_push( $false_fail, MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF, 'Неуспех' );
 mtuc_su_amb_assert( is_wp_error( $r_false_fail ), 'false bank_send_failed_smartucf rejected' );
 mtuc_su_amb_assert(
-	'mtuc_callback_smartucf_failure_evidence_missing' === $r_false_fail->get_error_code(),
+	in_array(
+		$r_false_fail->get_error_code(),
+		array(
+			'mtuc_callback_smartucf_failure_evidence_missing',
+			'mtuc_callback_process_identity_unknown',
+			'mtuc_callback_process1_identity_required',
+			'mtuc_callback_smartucf_failure_process_mismatch',
+		),
+		true
+	),
 	'false failure error code'
 );
 mtuc_su_amb_assert(

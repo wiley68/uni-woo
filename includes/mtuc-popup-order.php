@@ -927,6 +927,30 @@ function mtuc_save_order_credit_meta( WC_Order $order, array $calculation, array
  * @return void
  */
 function mtuc_update_order_bank_status( WC_Order $order, string $status_key, string $extra_note = '', ?string $status_label = null ): void {
+	$status_key = sanitize_key( $status_key );
+	if ( '' === $status_key ) {
+		return;
+	}
+
+	/*
+	 * AUD-WOO-015: do not invent protected markers without evidence when a different
+	 * canonical status is already present (e.g. generic callback then local recovery).
+	 * Empty/current-same writes used by local lifecycle remain evidence-gated only when
+	 * overwriting a distinct status without proof.
+	 */
+	if ( function_exists( 'mtuc_is_protected_local_bank_status' )
+		&& mtuc_is_protected_local_bank_status( $status_key )
+		&& function_exists( 'mtuc_assert_protected_bank_status_evidence' )
+	) {
+		$current = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+		if ( '' !== $current && $current !== $status_key ) {
+			$allowed = mtuc_assert_protected_bank_status_evidence( $order, $status_key );
+			if ( is_wp_error( $allowed ) ) {
+				return;
+			}
+		}
+	}
+
 	$label = null !== $status_label && '' !== trim( $status_label )
 		? trim( $status_label )
 		: mtuc_get_bank_status_label( $status_key );
@@ -935,7 +959,7 @@ function mtuc_update_order_bank_status( WC_Order $order, string $status_key, str
 	$current_label = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' );
 
 	// Identical duplicate updates are idempotent (no extra order note).
-	if ( $current_key === sanitize_key( $status_key ) && $current_label === $label && '' === trim( $extra_note ) ) {
+	if ( $current_key === $status_key && $current_label === $label && '' === trim( $extra_note ) ) {
 		return;
 	}
 
@@ -980,6 +1004,24 @@ function mtuc_record_order_bank_status( WC_Order $order, string $status_key, arr
 	);
 	$options  = array_merge( $defaults, $options );
 
+	$status_key = sanitize_key( $status_key );
+	if ( '' === $status_key ) {
+		return;
+	}
+
+	if ( function_exists( 'mtuc_is_protected_local_bank_status' )
+		&& mtuc_is_protected_local_bank_status( $status_key )
+		&& function_exists( 'mtuc_assert_protected_bank_status_evidence' )
+	) {
+		$current = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+		if ( '' !== $current && $current !== $status_key ) {
+			$allowed = mtuc_assert_protected_bank_status_evidence( $order, $status_key );
+			if ( is_wp_error( $allowed ) ) {
+				return;
+			}
+		}
+	}
+
 	$label = null !== $options['status_label'] && '' !== trim( (string) $options['status_label'] )
 		? trim( (string) $options['status_label'] )
 		: mtuc_get_bank_status_label( $status_key );
@@ -1010,6 +1052,232 @@ function mtuc_record_order_bank_status( WC_Order $order, string $status_key, arr
 }
 
 /**
+ * Whether a bank status key is a protected local technical marker (AUD-WOO-015).
+ *
+ * @param string $status_key Status key.
+ * @return bool
+ */
+function mtuc_is_protected_local_bank_status( string $status_key ): bool {
+	$status_key = sanitize_key( $status_key );
+	if ( '' === $status_key ) {
+		return false;
+	}
+
+	$protected = array(
+		MTUC_BANK_STATUS_SENT_PROCESS1,
+		MTUC_BANK_STATUS_SENT_PROCESS2,
+		MTUC_BANK_STATUS_SEND_FAILED_CP,
+		MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF,
+	);
+
+	return in_array( $status_key, $protected, true );
+}
+
+/**
+ * Local definitive CP registration failure evidence (outcome=missing only).
+ *
+ * Ambiguous `unknown` is never definitive (AUD-WOO-011).
+ *
+ * @param WC_Order $order Order instance.
+ * @return bool
+ */
+function mtuc_order_has_definitive_cp_failure_evidence( WC_Order $order ): bool {
+	if ( ! defined( 'MTUC_ORDER_META_CP_CREATE_OUTCOME' ) ) {
+		return false;
+	}
+
+	return 'missing' === sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ) );
+}
+
+/**
+ * Evidence gate for writing a protected local bank status (shared local + callback).
+ *
+ * Does not invent identity; callback path applies identity/transition rules separately.
+ *
+ * @param WC_Order $order      Order instance.
+ * @param string   $status_key Target status key.
+ * @return true|WP_Error
+ */
+function mtuc_assert_protected_bank_status_evidence( WC_Order $order, string $status_key ) {
+	$status_key = sanitize_key( $status_key );
+	if ( ! mtuc_is_protected_local_bank_status( $status_key ) ) {
+		return true;
+	}
+
+	if ( MTUC_BANK_STATUS_SENT_PROCESS1 === $status_key ) {
+		$has_evidence = function_exists( 'mtuc_order_has_process1_smartucf_success_evidence' )
+			&& mtuc_order_has_process1_smartucf_success_evidence( $order );
+		if ( ! $has_evidence ) {
+			return new WP_Error(
+				'mtuc_callback_smartucf_evidence_missing',
+				__( 'bank_sent_process1 изисква локални SmartUCF success доказателства.', 'mtunicredit' )
+			);
+		}
+
+		return true;
+	}
+
+	if ( MTUC_BANK_STATUS_SENT_PROCESS2 === $status_key ) {
+		$has_p2 = function_exists( 'mtuc_order_has_process2_completion_evidence' )
+			&& mtuc_order_has_process2_completion_evidence( $order );
+		if ( ! $has_p2 ) {
+			return new WP_Error(
+				'mtuc_callback_process2_evidence_missing',
+				__( 'bank_sent_process2 изисква Process 2 идентичност и локални CP completion доказателства.', 'mtunicredit' )
+			);
+		}
+
+		return true;
+	}
+
+	if ( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === $status_key ) {
+		$has_definitive = function_exists( 'mtuc_order_has_definitive_smartucf_failure_evidence' )
+			&& mtuc_order_has_definitive_smartucf_failure_evidence( $order );
+		if ( ! $has_definitive ) {
+			return new WP_Error(
+				'mtuc_callback_smartucf_failure_evidence_missing',
+				__( 'bank_send_failed_smartucf изисква локални definitive SmartUCF failure доказателства.', 'mtunicredit' )
+			);
+		}
+
+		return true;
+	}
+
+	if ( MTUC_BANK_STATUS_SEND_FAILED_CP === $status_key ) {
+		if ( ! mtuc_order_has_definitive_cp_failure_evidence( $order ) ) {
+			return new WP_Error(
+				'mtuc_callback_cp_failure_evidence_missing',
+				__( 'bank_send_failed_cp изисква локални definitive CP failure доказателства.', 'mtunicredit' )
+			);
+		}
+
+		return true;
+	}
+
+	return true;
+}
+
+/**
+ * Callback-only transition / identity validation (AUD-WOO-015 F01–F04).
+ *
+ * @param WC_Order $order     Order instance.
+ * @param string   $status_id Incoming sanitized status key.
+ * @return true|WP_Error
+ */
+function mtuc_validate_cp_bank_status_callback( WC_Order $order, string $status_id ) {
+	$status_id = sanitize_key( $status_id );
+	$current   = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+
+	$identity_status = null;
+	$identity_proc   = 0;
+	if ( function_exists( 'mtuc_classify_order_process_identity' ) ) {
+		$classified      = mtuc_classify_order_process_identity( $order );
+		$identity_status = isset( $classified['status'] ) ? (string) $classified['status'] : 'fresh';
+		$identity_proc   = isset( $classified['process'] ) ? (int) $classified['process'] : 0;
+
+		// F04: identity conflict rejects every callback mutation.
+		if ( 'conflict' === $identity_status ) {
+			return new WP_Error(
+				'mtuc_callback_process_identity_conflict',
+				__( 'Банковата процес идентичност на поръчката е противоречива; callback статусите са блокирани.', 'mtunicredit' )
+			);
+		}
+	}
+
+	/*
+	 * F02: success markers must not regress to local failure markers via callback.
+	 * Legitimate recovery is failure → later proven success (handled below).
+	 */
+	if ( in_array( $current, array( MTUC_BANK_STATUS_SENT_PROCESS1, MTUC_BANK_STATUS_SENT_PROCESS2 ), true )
+		&& in_array( $status_id, array( MTUC_BANK_STATUS_SEND_FAILED_CP, MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF ), true )
+	) {
+		return new WP_Error(
+			'mtuc_callback_status_transition_forbidden',
+			__( 'Callback не може да регресира защитен bank success статус към local failure маркер.', 'mtunicredit' )
+		);
+	}
+
+	// Protected markers: fail closed on unknown identity when classifier is available.
+	if ( null !== $identity_status
+		&& mtuc_is_protected_local_bank_status( $status_id )
+		&& 'unknown' === $identity_status
+	) {
+		return new WP_Error(
+			'mtuc_callback_process_identity_unknown',
+			__( 'Защитен bank status не може да бъде приложен при неустановена процес идентичност.', 'mtunicredit' )
+		);
+	}
+
+	if ( null !== $identity_status && MTUC_BANK_STATUS_SENT_PROCESS1 === $status_id ) {
+		// F03: clean P1 required in addition to SmartUCF evidence.
+		if ( 'clean' !== $identity_status || 1 !== $identity_proc ) {
+			return new WP_Error(
+				'mtuc_callback_process1_identity_required',
+				__( 'bank_sent_process1 изисква чиста Process 1 идентичност.', 'mtunicredit' )
+			);
+		}
+	}
+
+	if ( null !== $identity_status && MTUC_BANK_STATUS_SENT_PROCESS2 === $status_id ) {
+		if ( 'clean' !== $identity_status || 2 !== $identity_proc ) {
+			return new WP_Error(
+				'mtuc_callback_process2_identity_required',
+				__( 'bank_sent_process2 изисква чиста Process 2 идентичност.', 'mtunicredit' )
+			);
+		}
+	}
+
+	if ( null !== $identity_status && MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === $status_id ) {
+		// SmartUCF is Process 1 only.
+		if ( 'clean' === $identity_status && 2 === $identity_proc ) {
+			return new WP_Error(
+				'mtuc_callback_smartucf_failure_process_mismatch',
+				__( 'bank_send_failed_smartucf не е валиден за Process 2 поръчка.', 'mtunicredit' )
+			);
+		}
+		if ( 'clean' !== $identity_status || 1 !== $identity_proc ) {
+			return new WP_Error(
+				'mtuc_callback_process1_identity_required',
+				__( 'bank_send_failed_smartucf изисква чиста Process 1 идентичност.', 'mtunicredit' )
+			);
+		}
+	}
+
+	if ( MTUC_BANK_STATUS_SEND_FAILED_CP === $status_id ) {
+		/*
+		 * F01: signed callback alone never proves CP registration failure.
+		 * Prefer reject unless local definitive outcome=missing evidence exists.
+		 * Marker is Process 1 local technical status (P2 uses bank_send_failed).
+		 */
+		if ( null !== $identity_status && 'clean' === $identity_status && 2 === $identity_proc ) {
+			return new WP_Error(
+				'mtuc_callback_cp_failure_process_mismatch',
+				__( 'bank_send_failed_cp не е валиден за Process 2 поръчка.', 'mtunicredit' )
+			);
+		}
+		if ( ! mtuc_order_has_definitive_cp_failure_evidence( $order ) ) {
+			return new WP_Error(
+				'mtuc_callback_cp_failure_evidence_missing',
+				__( 'bank_send_failed_cp изисква локални definitive CP failure доказателства.', 'mtunicredit' )
+			);
+		}
+		if ( null !== $identity_status && ( 'clean' !== $identity_status || 1 !== $identity_proc ) ) {
+			return new WP_Error(
+				'mtuc_callback_process1_identity_required',
+				__( 'bank_send_failed_cp изисква чиста Process 1 идентичност.', 'mtunicredit' )
+			);
+		}
+	}
+
+	$evidence = mtuc_assert_protected_bank_status_evidence( $order, $status_id );
+	if ( is_wp_error( $evidence ) ) {
+		return $evidence;
+	}
+
+	return true;
+}
+
+/**
  * Apply bank status pushed from CP to a WooCommerce order.
  *
  * @param WC_Order $order        Order instance.
@@ -1033,54 +1301,19 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
 		);
 	}
 
-	// AUD-WOO-013-F02: protect SmartUCF start lifecycle markers without local evidence.
-	if ( defined( 'MTUC_BANK_STATUS_SENT_PROCESS1' ) && MTUC_BANK_STATUS_SENT_PROCESS1 === $status_id ) {
-		$has_evidence = function_exists( 'mtuc_order_has_process1_smartucf_success_evidence' )
-			&& mtuc_order_has_process1_smartucf_success_evidence( $order );
-		if ( ! $has_evidence ) {
-			mtuc_maybe_add_callback_guard_note(
-				$order,
+	$validated = mtuc_validate_cp_bank_status_callback( $order, $status_id );
+	if ( is_wp_error( $validated ) ) {
+		mtuc_maybe_add_callback_guard_note(
+			$order,
+			$status_id,
+			sprintf(
+				/* translators: 1: status key, 2: reason */
+				__( 'КП callback %1$s не е приложен: %2$s', 'mtunicredit' ),
 				$status_id,
-				__( 'КП callback bank_sent_process1 не е приложен: липсват локални SmartUCF success доказателства.', 'mtunicredit' )
-			);
-			return new WP_Error(
-				'mtuc_callback_smartucf_evidence_missing',
-				__( 'bank_sent_process1 изисква локални SmartUCF success доказателства.', 'mtunicredit' )
-			);
-		}
-	}
-
-	if ( defined( 'MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF' ) && MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === $status_id ) {
-		$has_definitive = function_exists( 'mtuc_order_has_definitive_smartucf_failure_evidence' )
-			&& mtuc_order_has_definitive_smartucf_failure_evidence( $order );
-		if ( ! $has_definitive ) {
-			mtuc_maybe_add_callback_guard_note(
-				$order,
-				$status_id,
-				__( 'КП callback bank_send_failed_smartucf не е приложен: липсват локални definitive SmartUCF failure доказателства.', 'mtunicredit' )
-			);
-			return new WP_Error(
-				'mtuc_callback_smartucf_failure_evidence_missing',
-				__( 'bank_send_failed_smartucf изисква локални definitive SmartUCF failure доказателства.', 'mtunicredit' )
-			);
-		}
-	}
-
-	// AUD-WOO-014-F02: bank_sent_process2 requires durable P2 identity + CP completion evidence.
-	if ( defined( 'MTUC_BANK_STATUS_SENT_PROCESS2' ) && MTUC_BANK_STATUS_SENT_PROCESS2 === $status_id ) {
-		$has_p2 = function_exists( 'mtuc_order_has_process2_completion_evidence' )
-			&& mtuc_order_has_process2_completion_evidence( $order );
-		if ( ! $has_p2 ) {
-			mtuc_maybe_add_callback_guard_note(
-				$order,
-				$status_id,
-				__( 'КП callback bank_sent_process2 не е приложен: липсват Process 2 идентичност и/или локални CP completion доказателства.', 'mtunicredit' )
-			);
-			return new WP_Error(
-				'mtuc_callback_process2_evidence_missing',
-				__( 'bank_sent_process2 изисква Process 2 идентичност и локални CP completion доказателства.', 'mtunicredit' )
-			);
-		}
+				$validated->get_error_message()
+			)
+		);
+		return $validated;
 	}
 
 	// Unknown authentic SmartUCF/CP statuses are stored as delivered — no invented mapping.
