@@ -59,6 +59,30 @@ function mtuc_is_cp_transport_ambiguous_error( WP_Error $error ): bool {
 }
 
 /**
+ * Whether a CP create result is ambiguous and eligible for same-identity replay.
+ *
+ * Includes transport ambiguity plus decoded 2xx responses that cannot prove
+ * success identity (missing/invalid data.id or mismatched order/shop identity).
+ *
+ * @param WP_Error $error API or normalization error.
+ * @return bool
+ */
+function mtuc_is_cp_create_ambiguous_error( WP_Error $error ): bool {
+	if ( mtuc_is_cp_transport_ambiguous_error( $error ) ) {
+		return true;
+	}
+
+	return in_array(
+		$error->get_error_code(),
+		array(
+			'mtuc_cp_unusable_success',
+			'mtuc_cp_identity_mismatch',
+		),
+		true
+	);
+}
+
+/**
  * Whether a CP create error is a definitive idempotency conflict (409).
  *
  * @param WP_Error $error API error.

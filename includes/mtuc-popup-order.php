@@ -1054,14 +1054,49 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, $error_or_reason =
 }
 
 /**
- * Persist ambiguous CP create outcome (timeout / transport) without claiming non-creation.
+ * Clear a stale definitive CP-create failure bank status when outcome is unknown.
+ *
+ * Legacy orders may retain bank_send_failed_cp / bank_send_failed alongside
+ * _mtuc_cp_create_outcome=unknown. Those statuses contradict the frozen
+ * invariant that unknown != definitive CP-create failure (AUD-WOO-011-F01).
+ * Unrelated lifecycle statuses are preserved.
+ *
+ * @param WC_Order $order Order instance.
+ * @return void
+ */
+function mtuc_clear_stale_cp_create_failure_bank_status( WC_Order $order ): void {
+	$current = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+	if ( ! in_array(
+		$current,
+		array(
+			MTUC_BANK_STATUS_SEND_FAILED_CP,
+			MTUC_BANK_STATUS_SEND_FAILED,
+		),
+		true
+	) ) {
+		return;
+	}
+
+	$order->delete_meta_data( MTUC_ORDER_META_BANK_STATUS );
+	$order->delete_meta_data( MTUC_ORDER_META_PREFIX . 'bank_status_label' );
+}
+
+/**
+ * Persist ambiguous CP create outcome (timeout / transport / unusable 2xx).
+ *
+ * Does NOT write bank_send_failed_cp / bank_send_failed — those mean definitive
+ * CP rejection. Clears only those stale CP-create failure statuses if present.
+ * Ambiguity remains recoverable via same-identity replay (AUD-WOO-011).
+ * Thank-you may still show temporary bank unavailability.
  *
  * @param WC_Order             $order  Order instance.
  * @param WP_Error|string      $error_or_reason Optional debug detail.
- * @param array<string, mixed> $shop   Shop data.
+ * @param array<string, mixed> $shop   Shop data (unused; kept for call-site compatibility).
  * @return void
  */
 function mtuc_record_cp_create_outcome_unknown( WC_Order $order, $error_or_reason = '', array $shop = array() ): void {
+	unset( $shop );
+
 	$reason = '';
 	if ( $error_or_reason instanceof WP_Error ) {
 		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
@@ -1085,19 +1120,14 @@ function mtuc_record_cp_create_outcome_unknown( WC_Order $order, $error_or_reaso
 	}
 
 	mtuc_set_cp_create_outcome( $order, 'unknown' );
+	mtuc_clear_stale_cp_create_failure_bank_status( $order );
 
-	$status_key = mtuc_is_shop_process_2( $shop )
-		? MTUC_BANK_STATUS_SEND_FAILED
-		: MTUC_BANK_STATUS_SEND_FAILED_CP;
-
-	mtuc_record_order_bank_status(
-		$order,
-		$status_key,
-		array(
-			'bank_unavailable' => true,
-			'extra_note'       => __( 'Резултатът от създаването в КП е технически неясен; не се твърди, че поръчката липсва в КП.', 'mtunicredit' ),
-		)
+	// UX: temporary bank unavailability without claiming definitive CP failure.
+	$order->update_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE, 1 );
+	$order->add_order_note(
+		__( 'Създаването в КП е технически неясно; не се твърди, че поръчката липсва в КП. Възможно е повторно изпращане със същата идентичност.', 'mtunicredit' )
 	);
+	$order->save();
 }
 
 /**
@@ -2543,6 +2573,182 @@ function mtuc_create_cart_popup_pending_order(
 	return $order;
 }
 
+/**
+ * Normalize a CP response identity scalar (order_id / unicid) for comparison.
+ *
+ * Accepts string/int (and numeric string) forms used by CP JSON without treating
+ * "123" and 123 as different identities. Non-scalar / empty → null (unusable).
+ *
+ * @param mixed $value Raw response or request value.
+ * @return string|null Normalized non-empty string, or null if unusable.
+ */
+function mtuc_normalize_cp_identity_scalar( $value ) {
+	if ( is_int( $value ) || is_float( $value ) ) {
+		$normalized = (string) $value;
+	} elseif ( is_string( $value ) ) {
+		$normalized = trim( $value );
+	} else {
+		return null;
+	}
+
+	return '' !== $normalized ? $normalized : null;
+}
+
+/**
+ * Validate CP create success identity against the request payload (AUD-WOO-011-F03).
+ *
+ * CP create/replay success guarantees data.order_id and data.unicid. Missing or
+ * empty values are unusable success (ambiguous). Present-but-wrong values are
+ * identity mismatch. data.shop_id is CP-internal and is not compared to Woo.
+ *
+ * @param array<string, mixed> $response Decoded CP create response.
+ * @param array<string, mixed> $payload  Request payload sent to CP.
+ * @return true|WP_Error
+ */
+function mtuc_validate_cp_create_response_identity( array $response, array $payload ) {
+	$data = isset( $response['data'] ) && is_array( $response['data'] )
+		? $response['data']
+		: array();
+
+	$requested_order_id = mtuc_normalize_cp_identity_scalar( $payload['order_id'] ?? null );
+	if ( null === $requested_order_id ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'Липсва заявен order_id за проверка на КП идентичност.', 'mtunicredit' )
+		);
+	}
+
+	if ( ! array_key_exists( 'order_id', $data ) ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'КП успешен отговор без гарантираното поле order_id.', 'mtunicredit' ),
+			array(
+				'response' => $response,
+			)
+		);
+	}
+
+	$returned_order_id = mtuc_normalize_cp_identity_scalar( $data['order_id'] );
+	if ( null === $returned_order_id ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'КП върна празен или невалиден order_id.', 'mtunicredit' ),
+			array(
+				'response' => $response,
+			)
+		);
+	}
+
+	if ( $returned_order_id !== $requested_order_id ) {
+		return new WP_Error(
+			'mtuc_cp_identity_mismatch',
+			__( 'КП върна поръчка с различна идентичност от заявената.', 'mtunicredit' ),
+			array(
+				'requested_order_id' => $requested_order_id,
+				'returned_order_id'  => $returned_order_id,
+			)
+		);
+	}
+
+	$expected_unicid = '';
+	if ( class_exists( 'Mtuc_Settings', false ) ) {
+		$expected_unicid = trim( (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID ) );
+	}
+	if ( '' === $expected_unicid ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'Липсва конфигуриран unicid за проверка на КП идентичност.', 'mtunicredit' )
+		);
+	}
+
+	if ( ! array_key_exists( 'unicid', $data ) ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'КП успешен отговор без гарантираното поле unicid.', 'mtunicredit' ),
+			array(
+				'response' => $response,
+			)
+		);
+	}
+
+	$returned_unicid = mtuc_normalize_cp_identity_scalar( $data['unicid'] );
+	if ( null === $returned_unicid ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'КП върна празен или невалиден unicid.', 'mtunicredit' ),
+			array(
+				'response' => $response,
+			)
+		);
+	}
+
+	if ( $returned_unicid !== $expected_unicid ) {
+		return new WP_Error(
+			'mtuc_cp_identity_mismatch',
+			__( 'КП върна поръчка за друг магазин (unicid).', 'mtunicredit' ),
+			array(
+				'expected_unicid' => $expected_unicid,
+				'returned_unicid' => $returned_unicid,
+			)
+		);
+	}
+
+	return true;
+}
+
+/**
+ * Normalize a CP create HTTP success body into a validated response or ambiguous error.
+ *
+ * Decoded HTTP 2xx without a usable positive data.id is ambiguous (CP may have
+ * committed). Identity mismatches are also ambiguous/fail-safe (AUD-WOO-011-F02/F03).
+ *
+ * @param array<string, mixed>|WP_Error $response Decoded client response.
+ * @param array<string, mixed>          $payload  Request payload.
+ * @return array<string, mixed>|WP_Error
+ */
+function mtuc_normalize_cp_create_response( $response, array $payload ) {
+	if ( is_wp_error( $response ) ) {
+		return $response;
+	}
+
+	if ( ! is_array( $response ) ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'КП върна неразпознаваем успешен отговор.', 'mtunicredit' )
+		);
+	}
+
+	$cp_order_id = 0;
+	if ( isset( $response['data']['id'] ) ) {
+		$cp_order_id = (int) $response['data']['id'];
+	}
+
+	if ( $cp_order_id <= 0 ) {
+		return new WP_Error(
+			'mtuc_cp_unusable_success',
+			__( 'КП не върна валиден идентификатор на поръчката.', 'mtunicredit' ),
+			array(
+				'response' => $response,
+			)
+		);
+	}
+
+	$identity = mtuc_validate_cp_create_response_identity( $response, $payload );
+	if ( is_wp_error( $identity ) ) {
+		return $identity;
+	}
+
+	return $response;
+}
+
+/**
+ * Create CP order with idempotent retry on ambiguous transport/success outcomes (AUD-WOO-005/011).
+ *
+ * @param WC_Order             $order   WooCommerce order.
+ * @param array<string, mixed> $payload CP create payload (stable order_id).
+ * @param array<string, mixed> $shop    Shop data.
+ * @return array<string, mixed>|WP_Error
+ */
 function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, array $shop ) {
 	$existing_cp_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
 	$outcome        = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ) );
@@ -2572,9 +2778,18 @@ function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, ar
 		return $owned;
 	}
 
-	$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
+	$response = mtuc_normalize_cp_create_response(
+		Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() ),
+		$payload
+	);
 
-	if ( is_wp_error( $response ) && mtuc_is_cp_transport_ambiguous_error( $response ) ) {
+	$is_ambiguous = is_wp_error( $response )
+		&& (
+			( function_exists( 'mtuc_is_cp_create_ambiguous_error' ) && mtuc_is_cp_create_ambiguous_error( $response ) )
+			|| ( ! function_exists( 'mtuc_is_cp_create_ambiguous_error' ) && mtuc_is_cp_transport_ambiguous_error( $response ) )
+		);
+
+	if ( $is_ambiguous ) {
 		$owned = function_exists( 'mtuc_require_armed_submission_lock_ownership' )
 			? mtuc_require_armed_submission_lock_ownership(
 				MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP,
@@ -2585,11 +2800,17 @@ function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, ar
 			return $owned;
 		}
 		// Same shop_id + order_id — CP idempotent replay; do not mint a new identity.
-		$response = Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() );
+		$response = mtuc_normalize_cp_create_response(
+			Mtuc_Cp_Api_Client::create_order( $payload, $order->get_id() ),
+			$payload
+		);
 	}
 
 	if ( is_wp_error( $response ) ) {
-		if ( mtuc_is_cp_transport_ambiguous_error( $response ) ) {
+		$still_ambiguous = ( function_exists( 'mtuc_is_cp_create_ambiguous_error' ) && mtuc_is_cp_create_ambiguous_error( $response ) )
+			|| ( ! function_exists( 'mtuc_is_cp_create_ambiguous_error' ) && mtuc_is_cp_transport_ambiguous_error( $response ) );
+
+		if ( $still_ambiguous ) {
 			mtuc_record_cp_create_outcome_unknown( $order, $response, $shop );
 			return $response;
 		}
@@ -2598,17 +2819,7 @@ function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, ar
 		return $response;
 	}
 
-	$cp_order_id = 0;
-	if ( isset( $response['data']['id'] ) ) {
-		$cp_order_id = (int) $response['data']['id'];
-	}
-
-	if ( $cp_order_id <= 0 ) {
-		$message = __( 'КП не върна идентификатор на поръчката.', 'mtunicredit' );
-		mtuc_fail_order_on_cp_create_error( $order, $message, $shop );
-
-		return new WP_Error( 'mtuc_cp_no_order_id', $message );
-	}
+	$cp_order_id = (int) $response['data']['id'];
 
 	mtuc_clear_cp_create_outcome_unknown( $order );
 	if ( function_exists( 'mtuc_clear_order_financing_diagnostic' ) ) {
