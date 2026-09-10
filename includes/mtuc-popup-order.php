@@ -140,10 +140,37 @@ function mtuc_get_cp_order_status_payload( string $bank_status_key, ?string $sta
  * Process 1: omit shop-claimed success — CP defaults to cp_sent; Woo patches
  * bank_sent_process1 only after SmartUCF success (AUD-WOO-008).
  *
- * @param array<string, mixed> $shop Shop `data` object from CP.
+ * When $order is provided, durable order process identity is authoritative
+ * (AUD-WOO-014). Shop config is used only when identity is not yet established.
+ *
+ * @param array<string, mixed> $shop  Shop `data` object from CP.
+ * @param WC_Order|null        $order Optional Woo order for durable identity.
  * @return array{status: string, status_id: string}|null Null when Process 1 (omit fields).
  */
-function mtuc_get_cp_order_create_status_payload( array $shop ): ?array {
+function mtuc_get_cp_order_create_status_payload( array $shop, $order = null ): ?array {
+	if ( $order instanceof WC_Order && function_exists( 'mtuc_classify_order_process_identity' ) ) {
+		$classified = mtuc_classify_order_process_identity( $order );
+		// Never consult shop for existing unknown/conflict orders (AUD-WOO-014 Pass 2).
+		if ( in_array( $classified['status'], array( 'unknown', 'conflict' ), true ) ) {
+			return null;
+		}
+		if ( 'clean' === $classified['status'] ) {
+			if ( 2 === (int) $classified['process'] ) {
+				return mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_SENT_PROCESS2 );
+			}
+			return null;
+		}
+		// fresh: shop may choose below.
+	} elseif ( $order instanceof WC_Order && function_exists( 'mtuc_get_order_process_identity' ) ) {
+		$identity = mtuc_get_order_process_identity( $order );
+		if ( 2 === $identity ) {
+			return mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_SENT_PROCESS2 );
+		}
+		if ( 1 === $identity ) {
+			return null;
+		}
+	}
+
 	if ( mtuc_is_shop_process_2( $shop ) ) {
 		return mtuc_get_cp_order_status_payload( MTUC_BANK_STATUS_SENT_PROCESS2 );
 	}
@@ -310,10 +337,16 @@ function mtuc_enqueue_thankyou_styles(): void {
 /**
  * Whether a WooCommerce order was submitted via Process 2.
  *
+ * Uses durable order process identity (AUD-WOO-014). Does not consult live shop config.
+ *
  * @param WC_Order $order Order instance.
  * @return bool
  */
 function mtuc_is_process2_order( WC_Order $order ): bool {
+	if ( function_exists( 'mtuc_order_has_process2_identity' ) ) {
+		return mtuc_order_has_process2_identity( $order );
+	}
+
 	return 1 === (int) $order->get_meta( MTUC_ORDER_META_PROCESS2 );
 }
 
@@ -417,7 +450,11 @@ function mtuc_validate_process2_fields_from_post( array $post ) {
  * @return void
  */
 function mtuc_save_order_process2_customer_meta( WC_Order $order, array $customer ): void {
-	$order->update_meta_data( MTUC_ORDER_META_PROCESS2, 1 );
+	if ( function_exists( 'mtuc_persist_order_process_identity' ) ) {
+		mtuc_persist_order_process_identity( $order, 2 );
+	} else {
+		$order->update_meta_data( MTUC_ORDER_META_PROCESS2, 1 );
+	}
 
 	if ( isset( $customer['egn'] ) && '' !== $customer['egn'] ) {
 		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'egn', (string) $customer['egn'] );
@@ -1029,6 +1066,23 @@ function mtuc_apply_cp_bank_status_push( WC_Order $order, string $status_id, str
 		}
 	}
 
+	// AUD-WOO-014-F02: bank_sent_process2 requires durable P2 identity + CP completion evidence.
+	if ( defined( 'MTUC_BANK_STATUS_SENT_PROCESS2' ) && MTUC_BANK_STATUS_SENT_PROCESS2 === $status_id ) {
+		$has_p2 = function_exists( 'mtuc_order_has_process2_completion_evidence' )
+			&& mtuc_order_has_process2_completion_evidence( $order );
+		if ( ! $has_p2 ) {
+			mtuc_maybe_add_callback_guard_note(
+				$order,
+				$status_id,
+				__( 'КП callback bank_sent_process2 не е приложен: липсват Process 2 идентичност и/или локални CP completion доказателства.', 'mtunicredit' )
+			);
+			return new WP_Error(
+				'mtuc_callback_process2_evidence_missing',
+				__( 'bank_sent_process2 изисква Process 2 идентичност и локални CP completion доказателства.', 'mtunicredit' )
+			);
+		}
+	}
+
 	// Unknown authentic SmartUCF/CP statuses are stored as delivered — no invented mapping.
 	$label = '' !== trim( $status_label ) ? trim( $status_label ) : $status_id;
 
@@ -1097,7 +1151,11 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, $error_or_reason =
 
 	mtuc_set_cp_create_outcome( $order, 'missing' );
 
-	$status_key = mtuc_is_shop_process_2( $shop )
+	$is_process2 = function_exists( 'mtuc_is_process2_order' )
+		? mtuc_is_process2_order( $order )
+		: mtuc_is_shop_process_2( $shop );
+
+	$status_key = $is_process2
 		? MTUC_BANK_STATUS_SEND_FAILED
 		: MTUC_BANK_STATUS_SEND_FAILED_CP;
 
@@ -1388,7 +1446,15 @@ function mtuc_complete_order_bank_submission(
 	array $calculation,
 	array $shop
 ) {
-	$process2 = mtuc_is_shop_process_2( $shop );
+	$process_id = function_exists( 'mtuc_resolve_order_process_for_banking' )
+		? mtuc_resolve_order_process_for_banking( $order, $shop )
+		: ( mtuc_is_shop_process_2( $shop ) ? 2 : 1 );
+	if ( is_wp_error( $process_id ) ) {
+		return $process_id;
+	}
+	$order->save();
+
+	$process2 = ( 2 === (int) $process_id );
 
 	if ( function_exists( 'mtuc_popup_order_has_successful_bank_submission' )
 		&& mtuc_popup_order_has_successful_bank_submission( $order, $process2 )
@@ -1531,6 +1597,15 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $shop;
 	}
 
+	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {
+		$process_id = mtuc_resolve_order_process_for_banking( $order, $shop );
+		if ( is_wp_error( $process_id ) ) {
+			mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+			return $process_id;
+		}
+		$order->save();
+	}
+
 	$currency = mtuc_resolve_transaction_currency( $shop, $order->get_currency() );
 	if ( is_wp_error( $currency ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
@@ -1543,7 +1618,7 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $cart_state;
 	}
 
-	if ( mtuc_is_shop_process_2( $shop ) ) {
+	if ( mtuc_is_process2_order( $order ) ) {
 		$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
 		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
 		if ( '' === $egn || ! mtuc_validate_bulgarian_egn( $egn ) || ! mtuc_validate_customer_phone( $phone2 ) ) {
@@ -2854,6 +2929,14 @@ function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, ar
 		);
 	}
 
+	// AUD-WOO-014: durable process identity before irreversible CP create.
+	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {
+		$process_id = mtuc_resolve_order_process_for_banking( $order, $shop );
+		if ( is_wp_error( $process_id ) ) {
+			return $process_id;
+		}
+	}
+
 	if ( function_exists( 'mtuc_assert_popup_order_ready_for_remote' ) ) {
 		$ready = mtuc_assert_popup_order_ready_for_remote( $order );
 		if ( is_wp_error( $ready ) ) {
@@ -2920,7 +3003,7 @@ function mtuc_create_cp_order_with_recovery( WC_Order $order, array $payload, ar
 	}
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', $cp_order_id );
 
-	if ( mtuc_is_shop_process_2( $shop ) ) {
+	if ( mtuc_is_process2_order( $order ) ) {
 		mtuc_record_order_bank_status( $order, MTUC_BANK_STATUS_SENT_PROCESS2 );
 	}
 
@@ -2964,6 +3047,31 @@ function mtuc_send_cart_popup_order_to_smartucf(
 	array $calculation,
 	array $shop
 ) {
+	if ( function_exists( 'mtuc_classify_order_process_identity' ) ) {
+		$classified = mtuc_classify_order_process_identity( $order );
+		if ( 'conflict' === $classified['status'] ) {
+			return mtuc_fail_closed_process_identity(
+				$order,
+				'mtuc_process_identity_conflict',
+				__( 'Банковата процес идентичност на поръчката е противоречива. Автоматичното банково продължение е спряно. Свържете се с поддръжката и не подавайте отново заявка за финансиране.', 'mtunicredit' )
+			);
+		}
+		if ( 'unknown' === $classified['status'] ) {
+			return mtuc_fail_closed_process_identity(
+				$order,
+				'mtuc_process_identity_unknown',
+				__( 'Банковата процес идентичност на поръчката не може да бъде установена безопасно. Автоматичното банково продължение е спряно. Свържете се с поддръжката и не подавайте отново заявка за финансиране.', 'mtunicredit' )
+			);
+		}
+	}
+
+	if ( mtuc_is_process2_order( $order ) ) {
+		return new WP_Error(
+			'mtuc_process2_no_smartucf',
+			__( 'Process 2 поръчките не се изпращат към SmartUCF.', 'mtunicredit' )
+		);
+	}
+
 	if ( function_exists( 'mtuc_try_recover_smartucf_p1_session' ) ) {
 		$recovered = mtuc_try_recover_smartucf_p1_session( $order, $shop );
 		if ( is_array( $recovered ) ) {
@@ -3203,7 +3311,17 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		}
 	}
 
-	if ( mtuc_is_shop_process_2( $shop ) ) {
+	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {
+		$process_id = mtuc_resolve_order_process_for_banking( $order, $shop );
+		if ( is_wp_error( $process_id ) ) {
+			mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+			mtuc_send_customer_safe_json_error( $process_id, 500, 'general' );
+		}
+		if ( 2 === (int) $process_id ) {
+			mtuc_save_order_process2_customer_meta( $order, $customer );
+		}
+		$order->save();
+	} elseif ( mtuc_is_shop_process_2( $shop ) ) {
 		mtuc_save_order_process2_customer_meta( $order, $customer );
 	}
 
@@ -3299,6 +3417,31 @@ function mtuc_send_popup_order_to_smartucf(
 	int $quantity,
 	array $shop
 ) {
+	if ( function_exists( 'mtuc_classify_order_process_identity' ) ) {
+		$classified = mtuc_classify_order_process_identity( $order );
+		if ( 'conflict' === $classified['status'] ) {
+			return mtuc_fail_closed_process_identity(
+				$order,
+				'mtuc_process_identity_conflict',
+				__( 'Банковата процес идентичност на поръчката е противоречива. Автоматичното банково продължение е спряно. Свържете се с поддръжката и не подавайте отново заявка за финансиране.', 'mtunicredit' )
+			);
+		}
+		if ( 'unknown' === $classified['status'] ) {
+			return mtuc_fail_closed_process_identity(
+				$order,
+				'mtuc_process_identity_unknown',
+				__( 'Банковата процес идентичност на поръчката не може да бъде установена безопасно. Автоматичното банково продължение е спряно. Свържете се с поддръжката и не подавайте отново заявка за финансиране.', 'mtunicredit' )
+			);
+		}
+	}
+
+	if ( mtuc_is_process2_order( $order ) ) {
+		return new WP_Error(
+			'mtuc_process2_no_smartucf',
+			__( 'Process 2 поръчките не се изпращат към SmartUCF.', 'mtunicredit' )
+		);
+	}
+
 	if ( function_exists( 'mtuc_try_recover_smartucf_p1_session' ) ) {
 		$recovered = mtuc_try_recover_smartucf_p1_session( $order, $shop );
 		if ( is_array( $recovered ) ) {
@@ -3558,9 +3701,19 @@ function mtuc_ajax_popup_submit(): void {
 		}
 	}
 
+	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {
+		$process_id = mtuc_resolve_order_process_for_banking( $order, is_array( $shop ) ? $shop : array() );
+		if ( is_wp_error( $process_id ) ) {
+			mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+			mtuc_send_customer_safe_json_error( $process_id, 500, 'general' );
+		}
+		$process2 = ( 2 === (int) $process_id );
+	}
+
 	if ( $process2 ) {
 		mtuc_save_order_process2_customer_meta( $order, $customer );
 	}
+	$order->save();
 
 	$submission = mtuc_complete_product_popup_bank_submission(
 		$order,

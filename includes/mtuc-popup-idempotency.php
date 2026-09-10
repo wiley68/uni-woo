@@ -862,6 +862,18 @@ function mtuc_commit_financing_operation( string $option_key, WC_Order $order, s
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'operation_scope', $scope_key );
 	$order->save();
 
+	/*
+	 * AUD-WOO-014 Pass 3: canonical process identity must exist before CP shop-order
+	 * lifecycle evidence is written, otherwise a brand-new popup order classifies as
+	 * unknown and fail-closes on first banking resolve.
+	 */
+	if ( function_exists( 'mtuc_initialize_order_process_before_financing_commit' ) ) {
+		$process_ready = mtuc_initialize_order_process_before_financing_commit( $order );
+		if ( is_wp_error( $process_ready ) ) {
+			return $process_ready;
+		}
+	}
+
 	$created_at = time();
 	$stored     = mtuc_read_financing_operation_reservation( $option_key );
 	if ( null !== $stored && (int) $stored['created_at'] > 0 ) {
@@ -1109,6 +1121,15 @@ function mtuc_complete_product_popup_bank_submission(
 	array $shop,
 	bool $process2
 ) {
+	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {
+		$process_id = mtuc_resolve_order_process_for_banking( $order, $shop );
+		if ( is_wp_error( $process_id ) ) {
+			return $process_id;
+		}
+		$process2 = ( 2 === (int) $process_id );
+		$order->save();
+	}
+
 	if ( mtuc_popup_order_has_successful_bank_submission( $order, $process2 ) ) {
 		$existing = mtuc_build_existing_popup_submission_result( $order, $shop, $process2 );
 		if ( ! is_wp_error( $existing ) ) {

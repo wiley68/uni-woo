@@ -175,7 +175,7 @@ function mtuc_assemble_cp_order_payload(
 	}
 
 	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
-	$cp_status    = mtuc_get_cp_order_create_status_payload( $shop );
+	$cp_status    = mtuc_get_cp_order_create_status_payload( $shop, $order );
 
 	$payload = array(
 		'order_id'      => $order_number,

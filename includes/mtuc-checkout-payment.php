@@ -196,6 +196,16 @@ function mtuc_checkout_maybe_redirect_to_bank_on_thankyou(): void {
 		return;
 	}
 
+	// AUD-WOO-014: only clean Process 1 may SmartUCF-redirect (blocks P2 / unknown / conflict).
+	if ( function_exists( 'mtuc_classify_order_process_identity' ) ) {
+		$classified = mtuc_classify_order_process_identity( $order );
+		if ( 'clean' !== $classified['status'] || 1 !== (int) $classified['process'] ) {
+			return;
+		}
+	} elseif ( function_exists( 'mtuc_is_process2_order' ) && mtuc_is_process2_order( $order ) ) {
+		return;
+	}
+
 	if ( (int) $order->get_meta( MTUC_ORDER_META_BANK_REDIRECT_DISPATCHED ) ) {
 		return;
 	}
@@ -765,7 +775,7 @@ function mtuc_checkout_validate_process2_fields(): void {
 }
 
 /**
- * Persist Process 2 fields on the WooCommerce order during checkout.
+ * Persist durable process identity and Process 2 fields on checkout create.
  *
  * @param WC_Order             $order Order instance.
  * @param array<string, mixed> $data  Checkout posted data.
@@ -783,16 +793,22 @@ function mtuc_checkout_save_process2_order_meta( $order, array $data ): void {
 	}
 
 	$shop = mtuc_get_shop_data();
-	if ( is_wp_error( $shop ) || ! is_array( $shop ) || ! mtuc_is_shop_process_2( $shop ) ) {
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
 		return;
 	}
 
-	$validated = mtuc_validate_process2_fields_from_post( $_POST );
-	if ( is_wp_error( $validated ) ) {
+	if ( mtuc_is_shop_process_2( $shop ) ) {
+		$validated = mtuc_validate_process2_fields_from_post( $_POST );
+		if ( is_wp_error( $validated ) ) {
+			return;
+		}
+		mtuc_save_order_process2_customer_meta( $order, $validated );
 		return;
 	}
 
-	mtuc_save_order_process2_customer_meta( $order, $validated );
+	if ( function_exists( 'mtuc_persist_order_process_identity' ) ) {
+		mtuc_persist_order_process_identity( $order, 1 );
+	}
 }
 
 /**

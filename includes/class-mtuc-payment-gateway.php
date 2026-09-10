@@ -232,11 +232,71 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 		}
 
 		$shop = mtuc_get_shop_data();
-		if ( ! is_wp_error( $shop ) && is_array( $shop ) && mtuc_is_shop_process_2( $shop ) ) {
-			$validated = mtuc_validate_process2_fields_from_post( $_POST );
-			if ( ! is_wp_error( $validated ) ) {
-				mtuc_save_order_process2_customer_meta( $order, $validated );
+
+		if ( function_exists( 'mtuc_classify_order_process_identity' )
+			&& function_exists( 'mtuc_resolve_order_process_for_banking' )
+			&& ! is_wp_error( $shop )
+			&& is_array( $shop )
+		) {
+			$classified = mtuc_classify_order_process_identity( $order );
+			if ( in_array( $classified['status'], array( 'unknown', 'conflict' ), true ) ) {
+				$blocked = mtuc_resolve_order_process_for_banking( $order, $shop );
+				if ( is_wp_error( $blocked ) ) {
+					mtuc_add_customer_safe_notice( $blocked, 'general' );
+					return array(
+						'result'   => 'fail',
+						'redirect' => '',
+					);
+				}
+			}
+
+			$identity = ( 'clean' === $classified['status'] ) ? (int) $classified['process'] : null;
+			if ( null === $identity && 'fresh' === $classified['status'] ) {
+				$resolved = mtuc_resolve_order_process_for_banking( $order, $shop );
+				if ( is_wp_error( $resolved ) ) {
+					mtuc_add_customer_safe_notice( $resolved, 'general' );
+					return array(
+						'result'   => 'fail',
+						'redirect' => '',
+					);
+				}
+				$identity = (int) $resolved;
 				$order->save();
+			} elseif ( null === $identity ) {
+				$identity = function_exists( 'mtuc_get_order_process_identity' )
+					? mtuc_get_order_process_identity( $order )
+					: null;
+			}
+
+			if ( 2 === $identity ) {
+				$validated = mtuc_validate_process2_fields_from_post( $_POST );
+				if ( ! is_wp_error( $validated ) ) {
+					mtuc_save_order_process2_customer_meta( $order, $validated );
+					$order->save();
+				}
+			}
+		} else {
+			$identity = function_exists( 'mtuc_get_order_process_identity' )
+				? mtuc_get_order_process_identity( $order )
+				: null;
+
+			if ( null === $identity ) {
+				if ( ! is_wp_error( $shop ) && is_array( $shop ) && mtuc_is_shop_process_2( $shop ) ) {
+					$validated = mtuc_validate_process2_fields_from_post( $_POST );
+					if ( ! is_wp_error( $validated ) ) {
+						mtuc_save_order_process2_customer_meta( $order, $validated );
+						$order->save();
+					}
+				} elseif ( ! is_wp_error( $shop ) && is_array( $shop ) && function_exists( 'mtuc_persist_order_process_identity' ) ) {
+					mtuc_persist_order_process_identity( $order, 1 );
+					$order->save();
+				}
+			} elseif ( 2 === $identity ) {
+				$validated = mtuc_validate_process2_fields_from_post( $_POST );
+				if ( ! is_wp_error( $validated ) ) {
+					mtuc_save_order_process2_customer_meta( $order, $validated );
+					$order->save();
+				}
 			}
 		}
 

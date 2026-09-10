@@ -46,6 +46,8 @@ function mtuc_get_customer_safe_error_codes(): array {
 		'mtuc_operation_contention',
 		'mtuc_missing_operation_token',
 		'mtuc_invalid_operation_token',
+		'mtuc_process_identity_unknown',
+		'mtuc_process_identity_conflict',
 	);
 }
 

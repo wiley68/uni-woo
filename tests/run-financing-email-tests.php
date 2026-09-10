@@ -94,6 +94,17 @@ if ( ! function_exists( 'sanitize_email' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_key' ) ) {
+	/**
+	 * @param string $key Key.
+	 * @return string
+	 */
+	function sanitize_key( $key ) {
+		$key = strtolower( (string) $key );
+		return preg_replace( '/[^a-z0-9_\-]/', '', $key );
+	}
+}
+
 if ( ! function_exists( 'is_email' ) ) {
 	/**
 	 * @param string $email Email.
@@ -251,6 +262,7 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 	}
 }
 
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-process-identity.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-presentation.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financing-email.php';
@@ -402,19 +414,29 @@ $p1_customer_html = (string) ob_get_clean();
 mtuc_fe_assert( false === strpos( $p1_customer_html, $fake_egn ), 'Process 1 customer email omits EGN' );
 
 // ---------------------------------------------------------------------------
-// Leasing notifications once — send-once meta
+// Leasing notifications once — Woo vs Process 2 merchant markers (AUD-WOO-014-F04)
 // ---------------------------------------------------------------------------
 
 $p_once = new WC_Order();
 mtuc_fe_seed_order( $p_once, 1 );
 $p_once->update_meta_data( MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT, 1 );
+$p_once->update_meta_data( MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT, 1 );
 $mtuc_fe_mail_log = array();
 mtuc_send_leasing_order_notifications_once( $p_once );
-mtuc_fe_assert( 0 === count( $mtuc_fe_mail_log ), 'leasing notifications send-once meta blocks re-entry' );
+mtuc_fe_assert( 0 === count( $mtuc_fe_mail_log ), 'both send-once markers block re-entry' );
+
+$p_retry = new WC_Order();
+mtuc_fe_seed_order( $p_retry, 1 );
+$p_retry->update_meta_data( MTUC_ORDER_META_LEASING_NOTIFICATIONS_SENT, 1 );
+$mtuc_fe_mail_log = array();
+mtuc_send_leasing_order_notifications_once( $p_retry );
+mtuc_fe_assert( 1 === count( $mtuc_fe_mail_log ), 'Woo marker alone still retries Process 2 merchant email' );
+mtuc_fe_assert( 1 === (int) $p_retry->get_meta( MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT ), 'merchant retry marks Process 2 uni_email sent' );
 
 $p_wrong_pm = new WC_Order();
 mtuc_fe_seed_order( $p_wrong_pm, 1 );
 $p_wrong_pm->payment_method = 'cod';
+$mtuc_fe_mail_log           = array();
 mtuc_send_leasing_order_notifications_once( $p_wrong_pm );
 mtuc_fe_assert( 0 === count( $mtuc_fe_mail_log ), 'non-mtunicredit payment method skips leasing notifications' );
 

@@ -281,7 +281,30 @@ function mtuc_so_create_test_order( bool $initialized = true ): WC_Order {
 }
 
 if ( ! defined( 'MTUC_ORDER_META_PREFIX' ) ) {
+	if ( ! function_exists( 'mtuc_get_shop_data' ) ) {
+		/**
+		 * @param mixed $unicid Unused.
+		 * @return array<string, mixed>
+		 */
+		function mtuc_get_shop_data( $unicid = null ) {
+			unset( $unicid );
+			return isset( $GLOBALS['mtuc_so_shop'] ) && is_array( $GLOBALS['mtuc_so_shop'] )
+				? $GLOBALS['mtuc_so_shop']
+				: array( 'uni_proces' => 0 );
+		}
+	}
+	if ( ! function_exists( 'mtuc_is_shop_process_2' ) ) {
+		/**
+		 * @param array<string, mixed> $shop Shop.
+		 * @return bool
+		 */
+		function mtuc_is_shop_process_2( array $shop ): bool {
+			return 1 === (int) ( $shop['uni_proces'] ?? 0 );
+		}
+	}
+	$GLOBALS['mtuc_so_shop'] = array( 'uni_proces' => 0 );
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-bank-lifecycle.php';
+	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-process-identity.php';
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-submission-lock.php';
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-idempotency.php';
