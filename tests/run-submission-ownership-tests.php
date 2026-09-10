@@ -1233,6 +1233,141 @@ mtuc_release_submission_lock( $stage_key, $stage_a );
 mtuc_so_assert( false === mtuc_release_submission_lock( $armed_key, $armed_a ), 'create-armed: release refused while armed' );
 
 // ---------------------------------------------------------------------------
+// Pass 4b — identical-value CAS no-op (false mtuc_submit_locked remediation)
+// ---------------------------------------------------------------------------
+
+// T1 — identical renew succeeds
+$noop_key = 'cas-noop-identical';
+$noop_a   = mtuc_claim_submission_lock( $noop_key );
+mtuc_so_assert( is_string( $noop_a ), 'cas-T1: claim' );
+$noop_opt = mtuc_submission_lock_option_key( $noop_key );
+$claimed  = time();
+$expires  = $claimed + 86400;
+$armed_payload = mtuc_encode_submission_lock_payload(
+	$noop_a,
+	$claimed,
+	$expires,
+	MTUC_SUBMISSION_LOCK_STAGE_CREATE_ARMED
+);
+mtuc_so_assert( '' !== $armed_payload, 'cas-T1: encode' );
+$noop_raw = mtuc_get_option_raw_value( $noop_opt );
+mtuc_so_assert(
+	mtuc_options_cas_update( $noop_opt, $noop_raw, $armed_payload ),
+	'cas-T1: first write create_armed'
+);
+mtuc_so_assert(
+	mtuc_options_cas_update( $noop_opt, $armed_payload, $armed_payload ),
+	'cas-T1: identical renew CAS succeeds'
+);
+mtuc_so_assert(
+	mtuc_renew_submission_lock( $noop_key, $noop_a, MTUC_SUBMISSION_LOCK_RENEW_CREATE, MTUC_SUBMISSION_LOCK_STAGE_CREATE_ARMED ),
+	'cas-T1: renew helper with identical payload path succeeds'
+);
+
+// T2 — identical renew with owner replaced fails
+$t2_key = 'cas-noop-replaced';
+$t2_a   = mtuc_claim_submission_lock( $t2_key );
+$t2_opt = mtuc_submission_lock_option_key( $t2_key );
+$t2_raw_a = mtuc_get_option_raw_value( $t2_opt );
+$t2_b_payload = mtuc_encode_submission_lock_payload( 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', time(), time() + 100, MTUC_SUBMISSION_LOCK_STAGE_CREATE_ARMED );
+mtuc_so_assert( mtuc_options_cas_update( $t2_opt, $t2_raw_a, $t2_b_payload ), 'cas-T2: replace with B' );
+mtuc_so_assert(
+	false === mtuc_options_cas_update( $t2_opt, $t2_raw_a, $t2_raw_a ),
+	'cas-T2: stale A identical CAS fails'
+);
+
+// T3 — identical renew with missing row fails
+$t3_opt = 'mtuc_slock_cas_noop_missing_row';
+mtuc_so_assert(
+	false === mtuc_options_cas_update( $t3_opt, '{"owner":"x","claimed_at":1,"expires_at":2,"stage":"create_armed"}', '{"owner":"x","claimed_at":1,"expires_at":2,"stage":"create_armed"}' ),
+	'cas-T3: missing row identical CAS fails'
+);
+
+// T4 — changed expiry renew succeeds
+$t4_key = 'cas-noop-expiry';
+$t4_a   = mtuc_claim_submission_lock( $t4_key );
+$t4_opt = mtuc_submission_lock_option_key( $t4_key );
+$t4_raw = mtuc_get_option_raw_value( $t4_opt );
+$t4_dec = mtuc_decode_submission_lock_payload( (string) $t4_raw );
+mtuc_so_assert( null !== $t4_dec, 'cas-T4: decode' );
+$t4_new = mtuc_encode_submission_lock_payload(
+	$t4_a,
+	(int) $t4_dec['claimed_at'],
+	(int) $t4_dec['expires_at'] + 60,
+	(string) ( $t4_dec['stage'] ?? '' )
+);
+mtuc_so_assert( $t4_raw !== $t4_new, 'cas-T4: payload changed' );
+mtuc_so_assert( mtuc_options_cas_update( $t4_opt, $t4_raw, $t4_new ), 'cas-T4: changed expiry CAS succeeds' );
+
+// T5 — changed stage renew succeeds
+$t5_key = 'cas-noop-stage';
+$t5_a   = mtuc_claim_submission_lock( $t5_key );
+mtuc_so_assert(
+	mtuc_renew_submission_lock( $t5_key, $t5_a, MTUC_SUBMISSION_LOCK_RENEW_CREATE, MTUC_SUBMISSION_LOCK_STAGE_CREATE_ARMED ),
+	'cas-T5: arm create_armed'
+);
+mtuc_so_assert(
+	mtuc_renew_submission_lock( $t5_key, $t5_a, MTUC_SUBMISSION_LOCK_RENEW_HTTP_CP, MTUC_SUBMISSION_LOCK_STAGE_CP_HTTP ),
+	'cas-T5: create_armed → cp_http succeeds'
+);
+$t5_lock = mtuc_read_submission_lock( mtuc_submission_lock_option_key( $t5_key ) );
+mtuc_so_assert( null !== $t5_lock && MTUC_SUBMISSION_LOCK_STAGE_CP_HTTP === $t5_lock['stage'], 'cas-T5: stage cp_http' );
+
+// T6 — stale expected value fails
+$t6_key = 'cas-noop-stale-expected';
+$t6_a   = mtuc_claim_submission_lock( $t6_key );
+$t6_opt = mtuc_submission_lock_option_key( $t6_key );
+$t6_raw = mtuc_get_option_raw_value( $t6_opt );
+$t6_newer = mtuc_encode_submission_lock_payload( $t6_a, time(), time() + 200, '' );
+mtuc_so_assert( mtuc_options_cas_update( $t6_opt, $t6_raw, $t6_newer ), 'cas-T6: advance stored' );
+$t6_other = mtuc_encode_submission_lock_payload( $t6_a, time(), time() + 400, 'cp_http' );
+mtuc_so_assert(
+	false === mtuc_options_cas_update( $t6_opt, $t6_raw, $t6_other ),
+	'cas-T6: stale expected fails'
+);
+
+// Product/Cart same-second identical create_armed renew must reach create (not mtuc_submit_locked).
+$token_ss = 'b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2';
+$scope_ss = mtuc_build_product_operation_scope_key( 902, 0 );
+$ss_lock  = 'same-second-create-armed-lock';
+$ss_owner = mtuc_claim_submission_lock( $ss_lock );
+mtuc_so_assert( is_string( $ss_owner ), 'same-second: lock claimed' );
+mtuc_arm_submission_lock_fence( $ss_lock, $ss_owner );
+
+$creates_ss      = 0;
+$ownership_calls = 0;
+$resolved_ss     = mtuc_resolve_popup_financing_order(
+	$token_ss,
+	$scope_ss,
+	static function ( $early_bind = null, $existing = null, $bind_context = array() ) use ( &$creates_ss, &$ownership_calls ) {
+		// Mirrors Product/Cart create: second create_armed ownership renew in the same request.
+		++$ownership_calls;
+		$owned = mtuc_require_armed_submission_lock_ownership(
+			MTUC_SUBMISSION_LOCK_RENEW_CREATE,
+			MTUC_SUBMISSION_LOCK_STAGE_CREATE_ARMED
+		);
+		if ( is_wp_error( $owned ) ) {
+			return $owned;
+		}
+		++$creates_ss;
+		$order = mtuc_so_create_test_order();
+		if ( is_callable( $early_bind ) ) {
+			$early_bind( $order );
+		}
+		return $order;
+	}
+);
+mtuc_so_assert( ! is_wp_error( $resolved_ss ), 'same-second: resolve succeeds (no false mtuc_submit_locked)' );
+mtuc_so_assert( 1 === $ownership_calls, 'same-second: create ownership checkpoint ran once' );
+mtuc_so_assert( 1 === $creates_ss, 'same-second: create reached after identical renew' );
+mtuc_so_assert( is_array( $resolved_ss ) && $resolved_ss['order'] instanceof WC_Order, 'same-second: order bound' );
+mtuc_so_assert(
+	! ( is_wp_error( $resolved_ss ) && 'mtuc_submit_locked' === $resolved_ss->get_error_code() ),
+	'same-second: error is not mtuc_submit_locked'
+);
+mtuc_release_popup_submit_lock( $ss_lock, $ss_owner );
+
+// ---------------------------------------------------------------------------
 // Pass 5 — ambiguous wc_create_order failure retains reservation + create_armed
 // ---------------------------------------------------------------------------
 

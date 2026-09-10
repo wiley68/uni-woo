@@ -258,10 +258,14 @@ function mtuc_invalidate_option_cache( string $option_name ): void {
 /**
  * Conditionally replace an option value (compare-and-set).
  *
+ * When expected_value === new_value the intended write is a no-op. MySQL/InnoDB may
+ * report 0 changed rows for such UPDATEs; treat that as success only after a durable
+ * raw read proves stored still equals expected (owner not replaced / row not deleted).
+ *
  * @param string $option_name    Option name.
  * @param string $expected_value Exact current option_value.
  * @param string $new_value      Replacement option_value.
- * @return bool True when exactly one row was updated.
+ * @return bool True when the CAS succeeds (row updated, or proven no-op match).
  */
 function mtuc_options_cas_update( string $option_name, string $expected_value, string $new_value ): bool {
 	if ( isset( $GLOBALS['mtuc_test_options'] ) && is_array( $GLOBALS['mtuc_test_options'] ) ) {
@@ -274,6 +278,10 @@ function mtuc_options_cas_update( string $option_name, string $expected_value, s
 		if ( (string) $GLOBALS['mtuc_test_options'][ $option_name ] !== $expected_value ) {
 			return false;
 		}
+		if ( $expected_value === $new_value ) {
+			// Proven no-op: row exists and still matches; do not rewrite.
+			return true;
+		}
 		$GLOBALS['mtuc_test_options'][ $option_name ] = $new_value;
 
 		return true;
@@ -282,6 +290,16 @@ function mtuc_options_cas_update( string $option_name, string $expected_value, s
 	global $wpdb;
 	if ( ! ( $wpdb instanceof wpdb ) || '' === (string) $wpdb->options ) {
 		return false;
+	}
+
+	/*
+	 * Identical write: skip UPDATE (avoids false 0-changed-row failure) and prove the
+	 * durable row still matches expected. No cache mutation — value did not change.
+	 */
+	if ( $expected_value === $new_value ) {
+		$stored = mtuc_get_option_raw_value( $option_name );
+
+		return is_string( $stored ) && $stored === $expected_value;
 	}
 
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
