@@ -368,6 +368,7 @@ if ( ! function_exists( 'wc_get_order' ) ) {
 }
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-submission-lock.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-smartucf-lifecycle.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 
 // ---------------------------------------------------------------------------

@@ -245,6 +245,18 @@ class Mtuc_Smartucf_Api_Client {
 				}
 			}
 
+			$wc_order_id = isset( $payload['orderNo'] ) ? (int) $payload['orderNo'] : 0;
+
+			// Durable one-shot claim: only CAS + post-CAS fence ownership may authorize transport.
+			if ( function_exists( 'mtuc_mark_smartucf_p1_transport_boundary' ) ) {
+				if ( $wc_order_id <= 0 || ! mtuc_mark_smartucf_p1_transport_boundary( $wc_order_id ) ) {
+					return new WP_Error(
+						'mtuc_smartucf_transport_not_authorized',
+						__( 'SmartUCF transport не е разрешен за тази поръчка.', 'mtunicredit' )
+					);
+				}
+			}
+
 			if ( is_callable( self::$http_transport ) ) {
 				$transport = call_user_func( self::$http_transport, $curl_options );
 				$response_body = isset( $transport['body'] ) ? (string) $transport['body'] : '';
@@ -266,8 +278,7 @@ class Mtuc_Smartucf_Api_Client {
 				curl_close( $handle );
 			}
 
-			$wc_order_id = isset( $payload['orderNo'] ) ? (int) $payload['orderNo'] : 0;
-			$log_body    = is_string( $response_body ) && '' !== $response_body
+			$log_body = is_string( $response_body ) && '' !== $response_body
 				? $response_body
 				: wp_json_encode(
 					array(
@@ -296,7 +307,22 @@ class Mtuc_Smartucf_Api_Client {
 			if ( ! is_string( $response_body ) || '' === $response_body ) {
 				return new WP_Error(
 					'mtuc_smartucf_empty_response',
-					__( 'SmartUCF върна празен отговор.', 'mtunicredit' )
+					__( 'SmartUCF върна празен отговор.', 'mtunicredit' ),
+					array(
+						'http_code' => $http_code,
+					)
+				);
+			}
+
+			// Confirmed success requires HTTP 2xx (AUD-WOO-012-F03). Non-2xx is ambiguous.
+			if ( $http_code < 200 || $http_code >= 300 ) {
+				return new WP_Error(
+					'mtuc_smartucf_http_status',
+					__( 'SmartUCF върна неуспешен HTTP статус.', 'mtunicredit' ),
+					array(
+						'http_code' => $http_code,
+						'body'      => $response_body,
+					)
 				);
 			}
 
@@ -304,7 +330,10 @@ class Mtuc_Smartucf_Api_Client {
 			if ( ! is_object( $decoded ) ) {
 				return new WP_Error(
 					'mtuc_smartucf_invalid_json',
-					__( 'Невалиден отговор от SmartUCF.', 'mtunicredit' )
+					__( 'Невалиден отговор от SmartUCF.', 'mtunicredit' ),
+					array(
+						'http_code' => $http_code,
+					)
 				);
 			}
 
@@ -312,7 +341,10 @@ class Mtuc_Smartucf_Api_Client {
 			if ( '' === $session_id ) {
 				return new WP_Error(
 					'mtuc_smartucf_no_session',
-					__( 'SmartUCF не върна идентификатор на сесия.', 'mtunicredit' )
+					__( 'SmartUCF не върна идентификатор на сесия.', 'mtunicredit' ),
+					array(
+						'http_code' => $http_code,
+					)
 				);
 			}
 

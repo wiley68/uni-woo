@@ -279,6 +279,7 @@ function mtuc_pi_create_test_order(): WC_Order {
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-bank-lifecycle.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-submission-lock.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-smartucf-lifecycle.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-idempotency.php';
 

@@ -1189,19 +1189,26 @@ function mtuc_complete_product_popup_bank_submission(
 		);
 	}
 
-	mtuc_record_order_bank_status(
-		$order,
-		MTUC_BANK_STATUS_SENT_PROCESS1,
-		array( 'sync_cp' => true )
-	);
-	$order->update_meta_data(
-		MTUC_ORDER_META_SMARTUCF_REDIRECT_URL,
-		esc_url_raw( (string) $smartucf_result['redirect_url'] )
-	);
-	$order->save();
+	// Session + redirect + bank_sent_process1 are finalized inside the send helper (AUD-WOO-012-F04).
+	if ( MTUC_BANK_STATUS_SENT_PROCESS1 !== sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) ) ) {
+		if ( function_exists( 'mtuc_finalize_smartucf_p1_success' ) ) {
+			$finalized = mtuc_finalize_smartucf_p1_success(
+				$order,
+				(string) ( $smartucf_result['session_id'] ?? '' ),
+				(string) ( $smartucf_result['redirect_url'] ?? '' ),
+				$shop
+			);
+			if ( is_wp_error( $finalized ) ) {
+				return array(
+					'bank_unavailable' => true,
+					'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
+				);
+			}
+		}
+	}
 
 	return array(
-		'redirect_url' => $smartucf_result['redirect_url'],
+		'redirect_url' => (string) ( $smartucf_result['redirect_url'] ?? mtuc_get_popup_order_thankyou_url( $order ) ),
 		'cp_order_id'  => $cp_order_id,
 	);
 }
@@ -1216,6 +1223,13 @@ function mtuc_order_financing_is_terminal_failure( WC_Order $order ): bool {
 	$outcome = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ) );
 	if ( 'unknown' === $outcome ) {
 		return false;
+	}
+
+	if ( defined( 'MTUC_ORDER_META_SMARTUCF_START_OUTCOME' ) ) {
+		$smartucf_outcome = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ) );
+		if ( 'unknown' === $smartucf_outcome ) {
+			return false;
+		}
 	}
 
 	$bank_status = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
@@ -1261,6 +1275,13 @@ function mtuc_popup_order_needs_smartucf_submission( WC_Order $order ): bool {
 	}
 
 	if ( mtuc_order_financing_is_terminal_failure( $order ) ) {
+		return false;
+	}
+
+	// Existing session or ambiguous/sent-unknown claim: recover or fail closed — never a second start.
+	if ( function_exists( 'mtuc_smartucf_p1_second_start_prohibited' )
+		&& mtuc_smartucf_p1_second_start_prohibited( $order )
+	) {
 		return false;
 	}
 
@@ -1331,6 +1352,12 @@ function mtuc_build_existing_popup_submission_result( WC_Order $order, array $sh
 		}
 
 		$redirect = (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_REDIRECT_URL );
+		if ( '' === $redirect && function_exists( 'mtuc_try_recover_smartucf_p1_session' ) ) {
+			$recovered = mtuc_try_recover_smartucf_p1_session( $order, $shop );
+			if ( is_array( $recovered ) ) {
+				$redirect = (string) $recovered['redirect_url'];
+			}
+		}
 		if ( '' === $redirect ) {
 			$redirect = mtuc_get_popup_order_thankyou_url( $order );
 		}
@@ -1338,6 +1365,26 @@ function mtuc_build_existing_popup_submission_result( WC_Order $order, array $sh
 		return array(
 			'redirect_url' => $redirect,
 			'cp_order_id'  => (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ),
+		);
+	}
+
+	// Process 1: session present but bank_sent incomplete — recover without second SmartUCF.
+	if ( ! $process2 && function_exists( 'mtuc_try_recover_smartucf_p1_session' ) ) {
+		$recovered = mtuc_try_recover_smartucf_p1_session( $order, $shop );
+		if ( is_array( $recovered ) ) {
+			return array(
+				'redirect_url' => (string) $recovered['redirect_url'],
+				'cp_order_id'  => (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ),
+			);
+		}
+	}
+
+	if ( ! $process2 && function_exists( 'mtuc_smartucf_p1_second_start_prohibited' )
+		&& mtuc_smartucf_p1_second_start_prohibited( $order )
+	) {
+		return array(
+			'bank_unavailable' => true,
+			'redirect_url'     => mtuc_get_popup_order_thankyou_url( $order ),
 		);
 	}
 
