@@ -121,16 +121,17 @@ function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): a
 	}
 
 	if ( mtuc_is_process2_order( $order ) ) {
+		// Presentation order matches Process 2 UI: phone2, then EGN.
+		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
+		if ( '' !== $phone2 && MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER !== $audience ) {
+			$rows[ __( 'Втори телефон', 'mtunicredit' ) ] = $phone2;
+		}
+
 		if ( mtuc_credit_rows_audience_includes_egn( $audience ) ) {
 			$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
 			if ( '' !== $egn ) {
 				$rows[ __( 'ЕГН', 'mtunicredit' ) ] = $egn;
 			}
-		}
-
-		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
-		if ( '' !== $phone2 && MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER !== $audience ) {
-			$rows[ __( 'Втори телефон', 'mtunicredit' ) ] = $phone2;
 		}
 
 		$rows[ __( 'Съобщение', 'mtunicredit' ) ] = mtuc_get_process2_confirmation_message();

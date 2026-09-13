@@ -109,28 +109,11 @@ class Mtuc_Cp_Api_Client {
 			return $owned;
 		}
 
+		/*
+		 * AUD-WOO-019-F01: exactly one POST /orders per call. A 401 after send is
+		 * ambiguous (CP may have committed), so no re-auth replay happens here.
+		 */
 		$response = self::request( 'POST', 'orders', $payload, $token, true );
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		if ( 401 === (int) wp_remote_retrieve_response_code( $response ) ) {
-			self::clear_token();
-			$owned = self::renew_submission_fence_before_http();
-			if ( is_wp_error( $owned ) ) {
-				return $owned;
-			}
-			$token = self::ensure_access_token();
-			if ( is_wp_error( $token ) ) {
-				return $token;
-			}
-			$owned = self::renew_submission_fence_before_http();
-			if ( is_wp_error( $owned ) ) {
-				return $owned;
-			}
-			$response = self::request( 'POST', 'orders', $payload, $token, true );
-		}
-
 		if ( is_wp_error( $response ) ) {
 			return $response;
 		}
@@ -161,10 +144,11 @@ class Mtuc_Cp_Api_Client {
 			return $token;
 		}
 
+		// F08 canonical PATCH request contract: order_id, status_id, status.
 		$body = array(
 			'order_id'  => $order_id,
-			'status'    => $status,
 			'status_id' => $status_id,
+			'status'    => $status,
 		);
 
 		$response = self::request( 'PATCH', 'orders/status', $body, $token, true );
@@ -270,61 +254,25 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
-	 * Decode SSL endpoint JSON and map explicit unavailable errors.
+	 * Decode SSL endpoint response through the canonical envelope and map
+	 * the explicit `ssl_certificate_unavailable` semantic failure (F02).
 	 *
 	 * @param array<string, mixed> $response wp_remote_request response.
-	 * @return array<string, mixed>|WP_Error
+	 * @return array<string, mixed>|WP_Error Validated envelope on success.
 	 */
 	private static function decode_ssl_response( array $response ) {
-		$code = (int) wp_remote_retrieve_response_code( $response );
-		$raw  = wp_remote_retrieve_body( $response );
-		$data = json_decode( $raw, true );
+		$decoded = self::decode_response( $response );
 
-		if ( ! is_array( $data ) ) {
-			return new WP_Error(
-				'mtuc_api_invalid_json',
-				__( 'Невалиден JSON отговор от Контролния панел.', 'mtunicredit' )
-			);
-		}
-
-		$error_code = '';
-		if ( isset( $data['error'] ) && is_string( $data['error'] ) ) {
-			$error_code = $data['error'];
-		} elseif ( isset( $data['code'] ) && is_string( $data['code'] ) ) {
-			$error_code = $data['code'];
-		}
-
-		if ( 'ssl_certificate_unavailable' === $error_code ) {
+		if ( is_wp_error( $decoded )
+			&& 'ssl_certificate_unavailable' === mtuc_cp_error_envelope_code( $decoded )
+		) {
 			return new WP_Error(
 				'mtuc_ssl_certificate_unavailable',
-				isset( $data['message'] ) && is_string( $data['message'] )
-					? $data['message']
-					: __( 'Контролният панел няма наличен SSL сертификат за магазина.', 'mtunicredit' )
+				$decoded->get_error_message()
 			);
 		}
 
-		if ( $code < 200 || $code >= 300 ) {
-			$message = '';
-			if ( isset( $data['message'] ) && is_string( $data['message'] ) ) {
-				$message = $data['message'];
-			} else {
-				$message = sprintf(
-					/* translators: %d: HTTP status code */
-					__( 'КП върна HTTP грешка %d.', 'mtunicredit' ),
-					$code
-				);
-			}
-
-			return new WP_Error(
-				'mtuc_api_http_error',
-				$message,
-				array(
-					'status' => $code,
-				)
-			);
-		}
-
-		return $data;
+		return $decoded;
 	}
 
 	/**
@@ -335,9 +283,10 @@ class Mtuc_Cp_Api_Client {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	private static function normalize_ssl_payload( array $payload, bool $expect_bundle ) {
+		// Canonical envelope guarantees `data` is an object (F02).
 		$data = isset( $payload['data'] ) && is_array( $payload['data'] )
 			? $payload['data']
-			: $payload;
+			: array();
 
 		if ( array_key_exists( 'available', $data ) && empty( $data['available'] ) ) {
 			return new WP_Error(
@@ -402,7 +351,11 @@ class Mtuc_Cp_Api_Client {
 	public static function logout() {
 		$token = get_option( self::OPTION_ACCESS_TOKEN, '' );
 		if ( is_string( $token ) && '' !== $token ) {
-			self::request( 'POST', 'auth/logout', null, $token );
+			$response = self::request( 'POST', 'auth/logout', null, $token );
+			if ( ! is_wp_error( $response ) ) {
+				// Decoded through the canonical envelope; local revocation happens regardless.
+				self::decode_response( $response );
+			}
 		}
 		self::clear_token();
 	}
@@ -502,29 +455,36 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
-	 * Persist token from login/refresh response.
+	 * Persist token from a validated login/refresh envelope.
 	 *
-	 * @param array<string, mixed> $payload API JSON.
+	 * Tokens are read ONLY from `data.access_token` / `data.expires_in`; the
+	 * legacy top-level fallback is removed (AUD-WOO-019-F02).
+	 *
+	 * @param array<string, mixed> $envelope Validated canonical envelope.
 	 * @return string|WP_Error
 	 */
-	private static function store_token_from_payload( array $payload ) {
-		if ( empty( $payload['access_token'] ) || ! is_string( $payload['access_token'] ) ) {
-			$message = isset( $payload['message'] ) && is_string( $payload['message'] )
-				? $payload['message']
+	private static function store_token_from_payload( array $envelope ) {
+		$data = isset( $envelope['data'] ) && is_array( $envelope['data'] ) ? $envelope['data'] : array();
+
+		if ( ! isset( $data['access_token'] ) || ! is_string( $data['access_token'] ) || '' === $data['access_token'] ) {
+			$message = isset( $envelope['message'] ) && is_string( $envelope['message'] ) && '' !== $envelope['message']
+				? $envelope['message']
 				: __( 'КП не върна access token.', 'mtunicredit' );
 
 			return new WP_Error( 'mtuc_api_no_access_token', $message );
 		}
 
-		$expires_in = isset( $payload['expires_in'] ) ? (int) $payload['expires_in'] : DAY_IN_SECONDS;
+		$expires_in = isset( $data['expires_in'] ) && is_int( $data['expires_in'] )
+			? $data['expires_in']
+			: DAY_IN_SECONDS;
 		if ( $expires_in < 60 ) {
 			$expires_in = DAY_IN_SECONDS;
 		}
 
-		update_option( self::OPTION_ACCESS_TOKEN, $payload['access_token'], false );
+		update_option( self::OPTION_ACCESS_TOKEN, $data['access_token'], false );
 		update_option( self::OPTION_TOKEN_EXPIRES, time() + $expires_in, false );
 
-		return $payload['access_token'];
+		return $data['access_token'];
 	}
 
 	/**
@@ -608,48 +568,15 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
-	 * Decode JSON API response.
+	 * Decode a CP response through the canonical envelope contract (F02).
 	 *
 	 * @param array<string, mixed> $response wp_remote_request response.
-	 * @return array<string, mixed>|WP_Error
+	 * @return array<string, mixed>|WP_Error Full validated envelope on success.
 	 */
 	private static function decode_response( array $response ) {
-		$code = (int) wp_remote_retrieve_response_code( $response );
-		$raw  = wp_remote_retrieve_body( $response );
-		$data = json_decode( $raw, true );
-
-		if ( ! is_array( $data ) ) {
-			return new WP_Error(
-				'mtuc_api_invalid_json',
-				__( 'Невалиден JSON отговор от Контролния панел.', 'mtunicredit' )
-			);
-		}
-
-		if ( $code < 200 || $code >= 300 ) {
-			$message = '';
-			if ( isset( $data['message'] ) && is_string( $data['message'] ) ) {
-				$message = $data['message'];
-			} elseif ( isset( $data['error'] ) && is_string( $data['error'] ) ) {
-				$message = $data['error'];
-			} else {
-				$message = sprintf(
-					/* translators: %d: HTTP status code */
-					__( 'КП върна HTTP грешка %d.', 'mtunicredit' ),
-					$code
-				);
-			}
-
-			return new WP_Error(
-				'mtuc_api_http_error',
-				$message,
-				array(
-					'status'   => $code,
-					'response' => $data,
-					'raw'      => $raw,
-				)
-			);
-		}
-
-		return $data;
+		return mtuc_decode_cp_envelope(
+			(string) wp_remote_retrieve_body( $response ),
+			(int) wp_remote_retrieve_response_code( $response )
+		);
 	}
 }

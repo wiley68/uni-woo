@@ -148,9 +148,15 @@ final class Mtuc_Module_Request_Authenticator {
 		return abs( self::now() - $request_timestamp ) <= Mtuc_Module_Request_Signature_Protocol::TIMESTAMP_TOLERANCE_SECONDS;
 	}
 
+	/**
+	 * Canonical nonce form is lowercase hex only (AUD-WOO-019-F10).
+	 *
+	 * Uppercase variants are a different byte string and would otherwise let the
+	 * same logical nonce be replayed under a second store key.
+	 */
 	private static function is_valid_nonce_format( string $nonce ): bool {
 		return 1 === preg_match(
-			'/\A[0-9a-fA-F]{' . Mtuc_Module_Request_Signature_Protocol::NONCE_HEX_LENGTH . '}\z/',
+			'/\A[0-9a-f]{' . Mtuc_Module_Request_Signature_Protocol::NONCE_HEX_LENGTH . '}\z/',
 			$nonce
 		);
 	}

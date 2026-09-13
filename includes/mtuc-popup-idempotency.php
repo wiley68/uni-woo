@@ -981,6 +981,18 @@ function mtuc_assign_cp_shop_order_id( WC_Order $order ) {
 		);
 	}
 
+	/*
+	 * AUD-WOO-019-F05: the durable CP order_id and its immutable ownership
+	 * binding are written together. An order that can be addressed by CP must
+	 * always carry proof of which shop and which installation minted it.
+	 */
+	if ( function_exists( 'mtuc_persist_financing_order_ownership' ) ) {
+		$owned = mtuc_persist_financing_order_ownership( $order );
+		if ( is_wp_error( $owned ) ) {
+			return $owned;
+		}
+	}
+
 	$order->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, $cp_id );
 
 	return $cp_id;

@@ -189,6 +189,13 @@ class Mtuc_Smartucf_Api_Client {
 			return $url;
 		}
 
+		$cred_ok = function_exists( 'mtuc_smartucf_payload_credentials_are_strings' )
+			? mtuc_smartucf_payload_credentials_are_strings( $payload )
+			: true;
+		if ( is_wp_error( $cred_ok ) ) {
+			return $cred_ok;
+		}
+
 		$use_certificate = mtuc_is_yes_flag( $shop['uni_sertificat'] ?? 0 );
 		$lease           = null;
 
@@ -231,6 +238,14 @@ class Mtuc_Smartucf_Api_Client {
 			}
 
 			$curl_options = self::build_session_curl_options( $url, $body, $lease );
+
+			// Final defense-in-depth credential guard immediately before transport boundary / cURL.
+			$cred_ok = function_exists( 'mtuc_smartucf_payload_credentials_are_strings' )
+				? mtuc_smartucf_payload_credentials_are_strings( $payload )
+				: true;
+			if ( is_wp_error( $cred_ok ) ) {
+				return $cred_ok;
+			}
 
 			if ( function_exists( 'mtuc_require_armed_submission_lock_ownership' )
 				&& defined( 'MTUC_SUBMISSION_LOCK_RENEW_HTTP_SMARTUCF' )

@@ -229,18 +229,23 @@ if ( ! defined( 'MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF' ) ) {
 
 if ( ! function_exists( 'mtuc_record_order_bank_status' ) ) {
 	/**
+	 * Mirrors the REVIEW-02 contract: true when the local fact is durable,
+	 * WP_Error when it was never claimed.
+	 *
 	 * @param WC_Order             $order Order.
 	 * @param string               $status_key Status.
 	 * @param array<string, mixed> $options Options.
-	 * @return void
+	 * @return true|WP_Error
 	 */
-	function mtuc_record_order_bank_status( WC_Order $order, string $status_key, array $options = array() ): void {
+	function mtuc_record_order_bank_status( WC_Order $order, string $status_key, array $options = array() ) {
 		unset( $options );
 		if ( ! empty( $GLOBALS['mtuc_test_block_bank_status'] ) ) {
-			return;
+			return new WP_Error( 'mtuc_bank_status_not_durable', 'blocked' );
 		}
 		$order->update_meta_data( MTUC_ORDER_META_BANK_STATUS, $status_key );
 		$order->save();
+
+		return true;
 	}
 }
 
@@ -373,6 +378,19 @@ $c['state'] = MTUC_SMARTUCF_P1_CLAIM_CONFIRMED;
 mtuc_store_smartucf_p1_claim( 502, $c, $raw );
 mtuc_su_lc_assert( false === mtuc_mark_smartucf_p1_transport_boundary( 502 ), 'confirmed denies transport' );
 
+/**
+ * @param string|int $order_no Order number for SmartUCF payload.
+ * @return array<string, string>
+ */
+function mtuc_su_lc_session_payload( $order_no ): array {
+	return array(
+		'orderNo' => (string) $order_no,
+		'user'    => 'demo-user',
+		'pass'    => 'demo-pass',
+	);
+}
+
+
 // missing claim must deny + curl not called.
 mtuc_su_lc_reset();
 mtuc_su_lc_arm_fence( 'lock-503', 'exec-A' );
@@ -386,7 +404,7 @@ Mtuc_Smartucf_Api_Client::$http_transport = function () use ( &$http_calls ) {
 		'http_code'  => 200,
 	);
 };
-$r_miss = Mtuc_Smartucf_Api_Client::start_session( array( 'orderNo' => '503' ), mtuc_su_lc_shop() );
+$r_miss = Mtuc_Smartucf_Api_Client::start_session( mtuc_su_lc_session_payload( '503' ), mtuc_su_lc_shop() );
 mtuc_su_lc_assert( is_wp_error( $r_miss ), 'missing claim denies start_session' );
 mtuc_su_lc_assert( 'mtuc_smartucf_transport_not_authorized' === $r_miss->get_error_code(), 'missing claim denied code' );
 mtuc_su_lc_assert( 0 === $http_calls, 'missing claim must not call transport' );
@@ -418,7 +436,7 @@ Mtuc_Smartucf_Api_Client::$http_transport = function () use ( &$http_calls ) {
 		'http_code'  => 200,
 	);
 };
-$r_mal = Mtuc_Smartucf_Api_Client::start_session( array( 'orderNo' => '5031' ), mtuc_su_lc_shop() );
+$r_mal = Mtuc_Smartucf_Api_Client::start_session( mtuc_su_lc_session_payload( '5031'  ), mtuc_su_lc_shop() );
 mtuc_su_lc_assert( is_wp_error( $r_mal ), 'malformed claim denies start_session' );
 mtuc_su_lc_assert( 'mtuc_smartucf_transport_not_authorized' === $r_mal->get_error_code(), 'malformed claim client denial code' );
 mtuc_su_lc_assert( 0 === $http_calls, 'malformed claim transport count = 0' );
@@ -445,7 +463,7 @@ Mtuc_Smartucf_Api_Client::$http_transport = function () use ( &$http_calls ) {
 	++$http_calls;
 	return array( 'body' => '{}', 'curl_error' => '', 'http_code' => 200 );
 };
-$r_struct = Mtuc_Smartucf_Api_Client::start_session( array( 'orderNo' => '5032' ), mtuc_su_lc_shop() );
+$r_struct = Mtuc_Smartucf_Api_Client::start_session( mtuc_su_lc_session_payload( '5032'  ), mtuc_su_lc_shop() );
 mtuc_su_lc_assert( is_wp_error( $r_struct ) && 0 === $http_calls, 'struct-incomplete claim no transport' );
 mtuc_su_lc_assert( $struct_raw === (string) $GLOBALS['mtuc_test_options'][ $struct_key ], 'struct-incomplete claim not rewritten' );
 
@@ -570,7 +588,7 @@ Mtuc_Smartucf_Api_Client::$http_transport = function () use ( &$http_calls ) {
 		'http_code'  => 200,
 	);
 };
-$r_race = Mtuc_Smartucf_Api_Client::start_session( array( 'orderNo' => '509' ), mtuc_su_lc_shop() );
+$r_race = Mtuc_Smartucf_Api_Client::start_session( mtuc_su_lc_session_payload( '509'  ), mtuc_su_lc_shop() );
 mtuc_su_lc_assert( is_wp_error( $r_race ), 'post-CAS fence loss denies start_session' );
 mtuc_su_lc_assert( 'mtuc_smartucf_transport_not_authorized' === $r_race->get_error_code(), 'post-CAS denial code' );
 mtuc_su_lc_assert( 0 === $http_calls, 'post-CAS fence loss must not curl_exec' );
@@ -588,7 +606,7 @@ mtuc_su_lc_assert( is_wp_error( $acq_b ) && 'mtuc_smartucf_claim_ambiguous' === 
 mtuc_set_smartucf_p1_claim_owner_context( 509, 'B-owner' );
 mtuc_su_lc_assert( false === mtuc_mark_smartucf_p1_transport_boundary( 509 ), 'B boundary denied on sent_unknown' );
 $http_calls = 0;
-$r_b = Mtuc_Smartucf_Api_Client::start_session( array( 'orderNo' => '509' ), mtuc_su_lc_shop() );
+$r_b = Mtuc_Smartucf_Api_Client::start_session( mtuc_su_lc_session_payload( '509'  ), mtuc_su_lc_shop() );
 mtuc_su_lc_assert( is_wp_error( $r_b ) && 0 === $http_calls, 'B cannot transport after race' );
 
 // Handle post-CAS denial as ambiguous (no bank_send_failed_smartucf).
@@ -644,7 +662,7 @@ function mtuc_su_lc_authorized_start( int $order_id, callable $transport ) {
 	mtuc_su_lc_arm_fence( 'lock-' . $order_id, 'exec-A' );
 	mtuc_acquire_smartucf_p1_send_claim( $order );
 	Mtuc_Smartucf_Api_Client::$http_transport = $transport;
-	$result = Mtuc_Smartucf_Api_Client::start_session( array( 'orderNo' => (string) $order_id ), mtuc_su_lc_shop() );
+	$result = Mtuc_Smartucf_Api_Client::start_session( mtuc_su_lc_session_payload( $order_id ), mtuc_su_lc_shop() );
 	return array( $order, $result );
 }
 
@@ -765,7 +783,7 @@ Mtuc_Smartucf_Api_Client::$http_transport = function () {
 		'http_code'  => 500,
 	);
 };
-$r500 = Mtuc_Smartucf_Api_Client::start_session( array( 'orderNo' => '701' ), mtuc_su_lc_shop() );
+$r500 = Mtuc_Smartucf_Api_Client::start_session( mtuc_su_lc_session_payload( '701'  ), mtuc_su_lc_shop() );
 mtuc_su_lc_assert( is_wp_error( $r500 ) && 'mtuc_smartucf_http_status' === $r500->get_error_code(), '500 not success' );
 mtuc_handle_smartucf_start_error( $order, $r500 );
 mtuc_su_lc_assert( 'unknown' === $order->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ), '500 unknown' );
@@ -895,7 +913,15 @@ mtuc_acquire_smartucf_p1_send_claim( $order );
 $presend = new WP_Error( 'mtuc_smartucf_encode_failed', 'encode' );
 mtuc_handle_smartucf_start_error( $order, $presend );
 mtuc_su_lc_assert( null === mtuc_get_smartucf_p1_claim( 901 ), 'presend releases claim' );
-mtuc_su_lc_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'presend definitive status' );
+mtuc_su_lc_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF !== (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'presend does not persist bank_send_failed_smartucf' );
+
+// Definitive remote reject still persists bank_send_failed_smartucf.
+mtuc_su_lc_reset();
+$order_def = new WC_Order();
+$order_def->id = 902;
+$remote = new WP_Error( 'mtuc_smartucf_remote_rejected', 'remote reject' );
+mtuc_handle_smartucf_start_error( $order_def, $remote );
+mtuc_su_lc_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === (string) $order_def->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'definitive remote reject persists bank_send_failed_smartucf' );
 
 Mtuc_Smartucf_Api_Client::$http_transport = null;
 

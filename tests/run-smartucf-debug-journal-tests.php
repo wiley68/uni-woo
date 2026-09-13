@@ -97,27 +97,11 @@ if ( ! function_exists( 'current_time' ) ) {
 }
 
 /**
- * Option map for Mtuc_Settings::get via get_option.
+ * Option map for Mtuc_Settings::get via bootstrap get_option ($GLOBALS['mtuc_test_options']).
  *
  * @var array<string, mixed>
  */
-$GLOBALS['mtuc_dj_options'] = array(
-	Mtuc_Settings::OPTION_DEBUG => 0,
-);
-
-if ( ! function_exists( 'get_option' ) ) {
-	/**
-	 * @param string $key     Option key.
-	 * @param mixed  $default Default.
-	 * @return mixed
-	 */
-	function get_option( $key, $default = false ) {
-		if ( array_key_exists( $key, $GLOBALS['mtuc_dj_options'] ) ) {
-			return $GLOBALS['mtuc_dj_options'][ $key ];
-		}
-		return $default;
-	}
-}
+$GLOBALS['mtuc_test_options'][ Mtuc_Settings::OPTION_DEBUG ] = 0;
 
 // ---------------------------------------------------------------------------
 // Fake secrets used only for absence assertions.
@@ -170,6 +154,48 @@ mtuc_dj_assert_absent( $sanitized_req, $fake_lname, 'fake last name absent' );
 mtuc_dj_assert_absent( $sanitized_req, $fake_phone, 'fake phone absent' );
 mtuc_dj_assert_absent( $sanitized_req, $fake_email, 'fake email absent' );
 mtuc_dj_assert_absent( $sanitized_req, $fake_address, 'fake address absent' );
+
+// ---------------------------------------------------------------------------
+// 1b. Canonical + case/separator credential aliases (AUD-WOO-018).
+// ---------------------------------------------------------------------------
+
+$alias_request = wp_json_encode(
+	array(
+		'uni_user'            => $fake_user,
+		'uni_password'        => $fake_pass,
+		'UniUser'             => $fake_user,
+		'UNI_PASSWORD'        => $fake_pass,
+		'sucfOnlineSessionID' => $fake_session,
+		'orderNo'             => '1018',
+	)
+);
+$alias_sanitized = Mtuc_Debug_Log::sanitize_request_for_journal( $alias_request );
+$alias_arr       = json_decode( $alias_sanitized, true );
+
+mtuc_dj_assert( is_array( $alias_arr ), 'alias request sanitizes to JSON' );
+mtuc_dj_assert( '[REDACTED]' === ( $alias_arr['uni_user'] ?? null ), 'uni_user redacted' );
+mtuc_dj_assert( '[REDACTED]' === ( $alias_arr['uni_password'] ?? null ), 'uni_password redacted' );
+mtuc_dj_assert( '[REDACTED]' === ( $alias_arr['UniUser'] ?? null ), 'UniUser redacted' );
+mtuc_dj_assert( '[REDACTED]' === ( $alias_arr['UNI_PASSWORD'] ?? null ), 'UNI_PASSWORD redacted' );
+mtuc_dj_assert( $fake_session === ( $alias_arr['sucfOnlineSessionID'] ?? null ), 'session retained with alias redaction' );
+mtuc_dj_assert_absent( $alias_sanitized, $fake_user, 'alias request: fake user absent' );
+mtuc_dj_assert_absent( $alias_sanitized, $fake_pass, 'alias request: fake pass absent' );
+
+$alias_response = wp_json_encode(
+	array(
+		'uni_user'            => $fake_user,
+		'UNI_PASSWORD'        => $fake_pass,
+		'sucfOnlineSessionID' => $fake_session,
+		'status'              => 'OK',
+	)
+);
+$alias_resp_out = Mtuc_Debug_Log::sanitize_response_for_journal( $alias_response );
+$alias_resp_arr = json_decode( $alias_resp_out, true );
+mtuc_dj_assert( '[REDACTED]' === ( $alias_resp_arr['uni_user'] ?? null ), 'response uni_user redacted' );
+mtuc_dj_assert( '[REDACTED]' === ( $alias_resp_arr['UNI_PASSWORD'] ?? null ), 'response UNI_PASSWORD redacted' );
+mtuc_dj_assert( $fake_session === ( $alias_resp_arr['sucfOnlineSessionID'] ?? null ), 'response session visible' );
+mtuc_dj_assert_absent( $alias_resp_out, $fake_user, 'alias response: fake user absent' );
+mtuc_dj_assert_absent( $alias_resp_out, $fake_pass, 'alias response: fake pass absent' );
 
 // ---------------------------------------------------------------------------
 // 2. Nested request redaction.
@@ -229,11 +255,11 @@ $sanitized_response = Mtuc_Debug_Log::sanitize_response_for_journal( $response_j
 $response_arr       = json_decode( $sanitized_response, true );
 
 mtuc_dj_assert( is_array( $response_arr ), 'response sanitizes to JSON' );
-mtuc_dj_assert( '[REDACTED]' === $response_arr['sucfOnlineSessionID'], 'session id redacted' );
+mtuc_dj_assert( $fake_session === $response_arr['sucfOnlineSessionID'], 'session id preserved for bank diagnostics' );
 mtuc_dj_assert( '[REDACTED]' === $response_arr['clientEmail'], 'response email redacted' );
 mtuc_dj_assert( '[REDACTED]' === $response_arr['clientPhone'], 'response phone redacted' );
 mtuc_dj_assert( 'OK' === $response_arr['status'], 'safe status preserved' );
-mtuc_dj_assert_absent( $sanitized_response, $fake_session, 'fake session absent' );
+mtuc_dj_assert( false !== strpos( $sanitized_response, $fake_session ), 'fake session retained in journal body' );
 mtuc_dj_assert_absent( $sanitized_response, $fake_email, 'response fake email absent' );
 mtuc_dj_assert_absent( $sanitized_response, $fake_phone, 'response fake phone absent' );
 
@@ -321,7 +347,7 @@ mtuc_dj_assert( false !== strpos( $business_req, $fake_pass ), 'business request
 // 9. Debug disabled — no persistence.
 // ---------------------------------------------------------------------------
 
-$GLOBALS['mtuc_dj_options'][ Mtuc_Settings::OPTION_DEBUG ] = 0;
+$GLOBALS['mtuc_test_options'][ Mtuc_Settings::OPTION_DEBUG ] = 0;
 $wpdb = new Mtuc_Dj_Wpdb();
 $GLOBALS['wpdb'] = $wpdb;
 
@@ -332,7 +358,7 @@ mtuc_dj_assert( 0 === count( $wpdb->inserts ), 'debug off: no insert' );
 // 10. Debug enabled — persisted values are sanitized; schema keys unchanged.
 // ---------------------------------------------------------------------------
 
-$GLOBALS['mtuc_dj_options'][ Mtuc_Settings::OPTION_DEBUG ] = 1;
+$GLOBALS['mtuc_test_options'][ Mtuc_Settings::OPTION_DEBUG ] = 1;
 $wpdb = new Mtuc_Dj_Wpdb();
 $GLOBALS['wpdb'] = $wpdb;
 

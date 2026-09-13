@@ -180,6 +180,13 @@ if ( ! class_exists( 'wpdb', false ) ) {
 		public $prefix = 'wp_';
 
 		/**
+		 * @return string
+		 */
+		public function get_charset_collate() {
+			return 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci';
+		}
+
+		/**
 		 * @param string $query  SQL query.
 		 * @param mixed  $output Output format constant.
 		 * @return array<string, string>|null
@@ -368,6 +375,8 @@ mtuc_res_queue_cp_fetch(
 		'success' => true,
 		'data'    => array(
 			'id'           => 10,
+			// AUD-WOO-019-F07: a snapshot must name the shop it belongs to.
+			'unicid'       => 'test-unicid-0001',
 			'uni_zaglavie' => 'refreshed',
 			'uni_eur'      => 0,
 		),
@@ -432,7 +441,7 @@ $GLOBALS['mtuc_test_options'][ $lock_key ] = (string) ( time() - 200 );
 mtuc_res_queue_cp_fetch(
 	array(
 		'success' => true,
-		'data'    => array( 'id' => 10, 'uni_zaglavie' => 'after-lock', 'uni_eur' => 0 ),
+		'data'    => array( 'id' => 10, 'unicid' => 'test-unicid-0001', 'uni_zaglavie' => 'after-lock', 'uni_eur' => 0 ),
 	)
 );
 $mtuc_res_cp_fetch_calls = 0;

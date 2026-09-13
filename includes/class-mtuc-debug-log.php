@@ -35,20 +35,24 @@ class Mtuc_Debug_Log {
 	/**
 	 * SmartUCF keys to anonymize before journaling.
 	 *
-	 * Includes sucfOnlineSessionID: it is appended to the public application URL
-	 * (`…/Request/Start/{id}`) and can resume a live financing session.
+	 * sucfOnlineSessionID is intentionally NOT redacted: bank/support diagnostics
+	 * require the live session identifier (AUD-WOO-019 runtime remediation).
+	 *
+	 * Credential aliases (user/pass/uni_user/uni_password and case/separator variants)
+	 * are matched via mtuc_is_diagnostic_credential_key() in redact_sensitive_tree.
 	 *
 	 * @var list<string>
 	 */
 	private const SMARTUCF_PII_KEYS = array(
 		'user',
 		'pass',
+		'uni_user',
+		'uni_password',
 		'clientFirstName',
 		'clientLastName',
 		'clientPhone',
 		'clientEmail',
 		'clientDeliveryAddress',
-		'sucfOnlineSessionID',
 	);
 
 	/**
@@ -233,9 +237,23 @@ class Mtuc_Debug_Log {
 	 */
 	private static function redact_sensitive_tree( array $data ): array {
 		foreach ( $data as $key => $value ) {
-			if ( is_string( $key ) && in_array( $key, self::SMARTUCF_PII_KEYS, true ) ) {
-				$data[ $key ] = self::REDACTED_VALUE;
-				continue;
+			if ( is_string( $key ) ) {
+				if ( 'sucfOnlineSessionID' === $key ) {
+					// Frozen operator decision: keep visible for bank/support.
+					if ( is_array( $value ) ) {
+						$data[ $key ] = self::redact_sensitive_tree( $value );
+					}
+					continue;
+				}
+
+				$is_credential = function_exists( 'mtuc_is_diagnostic_credential_key' )
+					? mtuc_is_diagnostic_credential_key( $key )
+					: in_array( $key, array( 'user', 'pass', 'uni_user', 'uni_password' ), true );
+
+				if ( $is_credential || in_array( $key, self::SMARTUCF_PII_KEYS, true ) ) {
+					$data[ $key ] = self::REDACTED_VALUE;
+					continue;
+				}
 			}
 
 			if ( is_array( $value ) ) {

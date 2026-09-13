@@ -9,6 +9,30 @@
 
 require_once __DIR__ . '/bootstrap.php';
 
+if ( ! class_exists( 'Mtuc_Settings', false ) ) {
+	/**
+	 * Settings stub — the shop UNICID backs financing ownership (AUD-WOO-019-F05).
+	 */
+	class Mtuc_Settings {
+		public const OPTION_UNICID     = 'mtuc_unicid';
+		public const OPTION_SECRET_KEY = 'mtuc_secret_key';
+
+		/**
+		 * @param string $key Option key.
+		 * @return string
+		 */
+		public static function get( $key ) {
+			if ( self::OPTION_UNICID === $key ) {
+				return 'TEST-UNICID';
+			}
+			if ( self::OPTION_SECRET_KEY === $key ) {
+				return 'TEST-SECRET';
+			}
+			return '';
+		}
+	}
+}
+
 $GLOBALS['mtuc_test_options'] = array(
 	'admin_email' => 'store-admin@example.com',
 );

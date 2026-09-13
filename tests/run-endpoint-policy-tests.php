@@ -375,7 +375,11 @@ final class Mtuc_Endpoint_Policy_Test_Runner {
 		};
 
 		$result = Mtuc_Smartucf_Api_Client::start_session(
-			array( 'orderNo' => '99' ),
+			array(
+				'orderNo' => '99',
+				'user'    => 'secret-user',
+				'pass'    => 'secret-pass',
+			),
 			$this->shop_test( array( 'uni_sertificat' => 1 ) )
 		);
 
@@ -487,7 +491,11 @@ final class Mtuc_Endpoint_Policy_Test_Runner {
 		};
 
 		Mtuc_Smartucf_Api_Client::start_session(
-			array( 'orderNo' => '777' ),
+			array(
+				'orderNo' => '777',
+				'user'    => 'secret-user',
+				'pass'    => 'secret-pass',
+			),
 			$this->shop_test( array( 'uni_sertificat' => 0 ) )
 		);
 

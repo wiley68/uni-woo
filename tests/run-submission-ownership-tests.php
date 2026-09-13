@@ -9,6 +9,30 @@
 
 require_once __DIR__ . '/bootstrap.php';
 
+if ( ! class_exists( 'Mtuc_Settings', false ) ) {
+	/**
+	 * Settings stub — the shop UNICID backs financing ownership (AUD-WOO-019-F05).
+	 */
+	class Mtuc_Settings {
+		public const OPTION_UNICID     = 'mtuc_unicid';
+		public const OPTION_SECRET_KEY = 'mtuc_secret_key';
+
+		/**
+		 * @param string $key Option key.
+		 * @return string
+		 */
+		public static function get( $key ) {
+			if ( self::OPTION_UNICID === $key ) {
+				return 'TEST-UNICID';
+			}
+			if ( self::OPTION_SECRET_KEY === $key ) {
+				return 'TEST-SECRET';
+			}
+			return '';
+		}
+	}
+}
+
 $mtuc_assert_count = 0;
 
 /** @var array<string, mixed> */
@@ -931,7 +955,7 @@ if ( ! class_exists( 'WC_Product', false ) ) {
 	 */
 	class WC_Product {
 		/** @var int */
-		private $id;
+		public $id;
 		public function __construct( int $id = 0 ) {
 			$this->id = $id;
 		}
@@ -1464,10 +1488,22 @@ if ( ! function_exists( 'wp_remote_request' ) ) {
 	function wp_remote_request( $url, $args = array() ) {
 		$GLOBALS['mtuc_test_wp_remote_urls'][] = (string) $url;
 		$path = (string) ( parse_url( (string) $url, PHP_URL_PATH ) ?? '' );
+		// AUD-WOO-019-F02: every CP response is a canonical envelope.
+		$envelope = static function ( array $data ): string {
+			return (string) wp_json_encode(
+				array(
+					'success' => true,
+					'error'   => null,
+					'message' => '',
+					'data'    => $data,
+				)
+			);
+		};
+
 		if ( false !== strpos( $path, 'auth/login' ) || false !== strpos( $path, 'auth/refresh' ) ) {
 			return array(
 				'response' => array( 'code' => 200 ),
-				'body'     => wp_json_encode(
+				'body'     => $envelope(
 					array(
 						'access_token' => 'tok-test',
 						'expires_in'   => 3600,
@@ -1476,17 +1512,31 @@ if ( ! function_exists( 'wp_remote_request' ) ) {
 			);
 		}
 		if ( false !== strpos( $path, 'orders' ) ) {
-			$code = ! empty( $GLOBALS['mtuc_test_cp_orders_401'] ) ? 401 : 200;
-			if ( 401 === $code ) {
+			if ( ! empty( $GLOBALS['mtuc_test_cp_orders_401'] ) ) {
 				$GLOBALS['mtuc_test_cp_orders_401'] = false;
 				return array(
 					'response' => array( 'code' => 401 ),
-					'body'     => wp_json_encode( array( 'message' => 'unauthorized' ) ),
+					'body'     => (string) wp_json_encode(
+						array(
+							'success' => false,
+							'error'   => 'unauthenticated',
+							'message' => 'unauthorized',
+							'data'    => array(),
+						)
+					),
 				);
 			}
 			return array(
 				'response' => array( 'code' => 200 ),
-				'body'     => wp_json_encode( array( 'data' => array( 'id' => 9 ) ) ),
+				'body'     => $envelope(
+					array(
+						'id'         => 9,
+						'shop_id'    => 1,
+						'order_id'   => '1',
+						'unicid'     => 'TEST-UNICID',
+						'created_at' => '2026-01-01T00:00:00+00:00',
+					)
+				),
 			);
 		}
 		if ( false !== strpos( $path, 'ssl/certificate' ) ) {
@@ -1502,12 +1552,19 @@ if ( ! function_exists( 'wp_remote_request' ) ) {
 			}
 			return array(
 				'response' => array( 'code' => 200 ),
-				'body'     => wp_json_encode( array( 'data' => $data ) ),
+				'body'     => $envelope( $data ),
 			);
 		}
 		return array(
 			'response' => array( 'code' => 500 ),
-			'body'     => '{}',
+			'body'     => (string) wp_json_encode(
+				array(
+					'success' => false,
+					'error'   => 'server_error',
+					'message' => 'unavailable',
+					'data'    => array(),
+				)
+			),
 		);
 	}
 }
@@ -1584,18 +1641,23 @@ mtuc_so_assert( ! is_wp_error( $created ), 'cp-check: create-order ok' );
 $paths = array_column( $GLOBALS['mtuc_test_cp_http_checkpoints'], 'path' );
 mtuc_so_assert( in_array( 'orders', $paths, true ), 'cp-check: ownership before create-order POST' );
 
+/*
+ * AUD-WOO-019-F01: a 401 *after* the POST was sent proves nothing about whether
+ * CP committed the order, so create never re-authenticates and replays. The
+ * error surfaces to the caller after exactly one POST.
+ */
 $GLOBALS['mtuc_test_cp_http_checkpoints'] = array();
 $GLOBALS['mtuc_test_cp_orders_401']       = true;
 update_option( Mtuc_Cp_Api_Client::OPTION_ACCESS_TOKEN, 'tok-test', false );
 update_option( Mtuc_Cp_Api_Client::OPTION_TOKEN_EXPIRES, time() + 3600, false );
 $retry = Mtuc_Cp_Api_Client::create_order( array( 'order_id' => '2' ), 2 );
-mtuc_so_assert( ! is_wp_error( $retry ), 'cp-check: 401 retry ok' );
+mtuc_so_assert( is_wp_error( $retry ), 'cp-check: 401 on create surfaces as an error' );
 $paths = array_column( $GLOBALS['mtuc_test_cp_http_checkpoints'], 'path' );
 $order_posts = array_values( array_filter( $paths, static function ( $p ) {
 	return 'orders' === $p;
 } ) );
-mtuc_so_assert( count( $order_posts ) >= 2, 'cp-check: ownership before 401 retry POST' );
-mtuc_so_assert( in_array( 'auth/login', $paths, true ) || in_array( 'auth/refresh', $paths, true ), 'cp-check: reauth checkpoint before retry' );
+mtuc_so_assert( 1 === count( $order_posts ), 'cp-check: F01 create POSTs exactly once even on 401' );
+$GLOBALS['mtuc_test_cp_orders_401'] = false;
 
 $GLOBALS['mtuc_test_cp_http_checkpoints'] = array();
 update_option( Mtuc_Cp_Api_Client::OPTION_ACCESS_TOKEN, 'tok-test', false );

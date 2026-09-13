@@ -70,6 +70,9 @@ require_once MTUC_INCLUDES_DIR . '/mtuc-order-diagnostics.php';
 
 /** Includes */
 $mtuc_files = array(
+	'/mtuc-cp-envelope.php',
+	'/mtuc-shop-snapshot.php',
+	'/mtuc-smartucf-credentials.php',
 	'/class-mtuc-settings.php',
 	'/class-mtuc-debug-log.php',
 	'/class-mtuc-certificate-pair-validator.php',
@@ -83,6 +86,8 @@ $mtuc_files = array(
 	'/class-mtuc-module-request-signature-protocol.php',
 	'/class-mtuc-api-nonce-store.php',
 	'/class-mtuc-module-request-authenticator.php',
+	'/mtuc-financing-order-resolver.php',
+	'/mtuc-inbound-envelope.php',
 	'/class-mtuc-rest-api.php',
 	'/admin.php',
 	'/functions.php',

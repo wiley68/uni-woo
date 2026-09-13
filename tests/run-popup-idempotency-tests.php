@@ -9,6 +9,30 @@
 
 require_once __DIR__ . '/bootstrap.php';
 
+if ( ! class_exists( 'Mtuc_Settings', false ) ) {
+	/**
+	 * Settings stub — the shop UNICID backs financing ownership (AUD-WOO-019-F05).
+	 */
+	class Mtuc_Settings {
+		public const OPTION_UNICID     = 'mtuc_unicid';
+		public const OPTION_SECRET_KEY = 'mtuc_secret_key';
+
+		/**
+		 * @param string $key Option key.
+		 * @return string
+		 */
+		public static function get( $key ) {
+			if ( self::OPTION_UNICID === $key ) {
+				return 'TEST-UNICID';
+			}
+			if ( self::OPTION_SECRET_KEY === $key ) {
+				return 'TEST-SECRET';
+			}
+			return '';
+		}
+	}
+}
+
 $mtuc_assert_count = 0;
 
 /** @var array<string, mixed> */
@@ -350,17 +374,25 @@ $id_b                  = mtuc_assign_cp_shop_order_id( $order_b );
 mtuc_pi_assert( (string) $order_b->get_id() === $id_b, 'second order CP id equals internal ID' );
 mtuc_pi_assert( $id_a !== $id_b, 'distinct Woo IDs must not collide after custom order numbers' );
 
+// AUD-WOO-019-F05: no display-number fallback. An order without the durable
+// meta simply has no CP identity, so it can never be addressed by a callback.
 $legacy = mtuc_pi_create_test_order();
 $legacy->order_number = 'LEGACY-ORDER-999';
-mtuc_pi_assert( 'LEGACY-ORDER-' === mtuc_get_cp_shop_order_id( $legacy ), 'legacy fallback truncates display number' );
+mtuc_pi_assert( '' === mtuc_get_cp_shop_order_id( $legacy ), 'F05 no display-number fallback for CP order_id' );
 
 $existing_w = new WC_Order( 875 );
 $existing_w->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, 'W0000000000OA' );
 $GLOBALS['mtuc_test_orders'][875] = $existing_w;
 mtuc_pi_assert( 'W0000000000OA' === mtuc_get_cp_shop_order_id( $existing_w ), 'W-format persisted meta preserved' );
 mtuc_pi_assert( 'W0000000000OA' === mtuc_assign_cp_shop_order_id( $existing_w ), 'W-format not rewritten on assign' );
-$found_w = mtuc_find_order_by_cp_order_id( 'W0000000000OA' );
-mtuc_pi_assert( $found_w instanceof WC_Order && 875 === $found_w->get_id(), 'W-format callback lookup resolves' );
+// AUD-WOO-019-F05: inbound order_id is canonical decimal only, so a legacy
+// W-format identity is no longer addressable from a callback.
+mtuc_pi_assert( null === mtuc_find_order_by_cp_order_id( 'W0000000000OA' ), 'F05 non-canonical W-format order_id is rejected' );
+$resolved_w = mtuc_resolve_financing_order( 'W0000000000OA', 'TEST-UNICID' );
+mtuc_pi_assert(
+	is_wp_error( $resolved_w ) && 'mtuc_financing_order_not_found' === $resolved_w->get_error_code(),
+	'F05 rejection is the single opaque not-found error'
+);
 
 $found = mtuc_find_order_by_cp_order_id( $id_a );
 mtuc_pi_assert( $found instanceof WC_Order && $found->get_id() === $order_a->get_id(), 'exact meta lookup' );

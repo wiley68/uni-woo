@@ -134,7 +134,7 @@ class Mtuc_Shop_Cache {
 		if ( ! $force_refresh ) {
 			$cached = self::get_fresh_row( $unicid );
 			if ( null !== $cached ) {
-				$data = self::decode_shop_data( $cached['shop_data'] );
+				$data = self::decode_shop_data( $cached['shop_data'], $unicid );
 				if ( ! is_wp_error( $data ) ) {
 					return $data;
 				}
@@ -146,7 +146,7 @@ class Mtuc_Shop_Cache {
 		if ( ! self::acquire_refresh_lock( $unicid ) ) {
 			if ( null !== $stale_row ) {
 				self::maybe_log_stale_fallback( $unicid, 'refresh_lock_contention' );
-				$data = self::decode_shop_data( $stale_row['shop_data'] );
+				$data = self::decode_shop_data( $stale_row['shop_data'], $unicid );
 				if ( ! is_wp_error( $data ) ) {
 					return $data;
 				}
@@ -154,7 +154,7 @@ class Mtuc_Shop_Cache {
 
 			$fresh_after_wait = self::get_fresh_row( $unicid );
 			if ( null !== $fresh_after_wait ) {
-				$data = self::decode_shop_data( $fresh_after_wait['shop_data'] );
+				$data = self::decode_shop_data( $fresh_after_wait['shop_data'], $unicid );
 				if ( ! is_wp_error( $data ) ) {
 					return $data;
 				}
@@ -170,7 +170,7 @@ class Mtuc_Shop_Cache {
 
 		if ( null !== $stale_row && self::is_stale_fallback_allowed( $result ) ) {
 			self::maybe_log_stale_fallback( $unicid, mtuc_normalize_error( $result, 'configuration' )['category'] ?? 'configuration_error' );
-			$data = self::decode_shop_data( $stale_row['shop_data'] );
+			$data = self::decode_shop_data( $stale_row['shop_data'], $unicid );
 			if ( ! is_wp_error( $data ) ) {
 				return $data;
 			}
@@ -210,29 +210,30 @@ class Mtuc_Shop_Cache {
 			return $response;
 		}
 
-		if ( empty( $response['success'] ) || empty( $response['data'] ) || ! is_array( $response['data'] ) ) {
-			$message = isset( $response['message'] ) && is_string( $response['message'] )
-				? $response['message']
-				: __( 'КП не върна валидни shop данни.', 'mtunicredit' );
-
-			self::purge_all();
-
-			return new WP_Error( 'mtuc_cache_invalid_shop_payload', $message );
+		/*
+		 * F07 + AUD-WOO-018-V2: validate/classify/rotate credentials and persist
+		 * the credential-free cache row under one serialized transaction.
+		 */
+		$snapshot = mtuc_prepare_shop_snapshot(
+			$response['data'] ?? null,
+			$unicid,
+			array( __CLASS__, 'persist_sanitized_snapshot' )
+		);
+		if ( is_wp_error( $snapshot ) ) {
+			return $snapshot;
 		}
 
-		self::save( $unicid, $response['data'] );
-
-		return $response['data'];
+		return $snapshot;
 	}
 
 	/**
 	 * Update cache from CP push webhook (no outbound API call).
 	 *
-	 * @param string               $unicid Store unicid.
-	 * @param array<string, mixed> $data   Shop `data` object.
+	 * @param string $unicid Store unicid.
+	 * @param mixed  $data   Raw shop `data` value (validated by the shared snapshot contract).
 	 * @return array<string, string>|WP_Error Cache metadata.
 	 */
-	public static function update_from_cp_push( string $unicid, array $data ) {
+	public static function update_from_cp_push( string $unicid, $data ) {
 		$unicid = sanitize_text_field( $unicid );
 		if ( '' === $unicid ) {
 			return new WP_Error(
@@ -241,14 +242,14 @@ class Mtuc_Shop_Cache {
 			);
 		}
 
-		if ( empty( $data ) ) {
-			return new WP_Error(
-				'mtuc_cache_invalid_shop_payload',
-				__( 'Липсват shop данни в заявката.', 'mtunicredit' )
-			);
+		$snapshot = mtuc_prepare_shop_snapshot(
+			$data,
+			$unicid,
+			array( __CLASS__, 'persist_sanitized_snapshot' )
+		);
+		if ( is_wp_error( $snapshot ) ) {
+			return $snapshot;
 		}
-
-		self::save( $unicid, $data );
 
 		$meta = self::get_cache_meta( $unicid );
 		if ( null === $meta ) {
@@ -557,14 +558,109 @@ class Mtuc_Shop_Cache {
 	}
 
 	/**
+	 * Locking read of shop_data for credential/cache mutations (AUD-WOO-018-V3).
+	 *
+	 * Distinguishes ABSENT / PRESENT / DB_ERROR / AMBIGUOUS. A failed SELECT must
+	 * never be treated as row absence.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return array{state: string, shop_data: ?array, error_code: ?string}
+	 */
+	public static function read_snapshot_for_update( string $unicid ): array {
+		global $wpdb;
+
+		$absent = array(
+			'state'      => defined( 'MTUC_SMARTUCF_CACHE_LOCK_ABSENT' ) ? MTUC_SMARTUCF_CACHE_LOCK_ABSENT : 'absent',
+			'shop_data'  => null,
+			'error_code' => null,
+		);
+
+		if ( '' === $unicid || ! isset( $wpdb ) || ! is_object( $wpdb ) || ! method_exists( $wpdb, 'get_results' ) ) {
+			return array(
+				'state'      => defined( 'MTUC_SMARTUCF_CACHE_LOCK_DB_ERROR' ) ? MTUC_SMARTUCF_CACHE_LOCK_DB_ERROR : 'db_error',
+				'shop_data'  => null,
+				'error_code' => 'mtuc_smartucf_database_lock_read_failed',
+			);
+		}
+
+		if ( property_exists( $wpdb, 'last_error' ) ) {
+			$wpdb->last_error = '';
+		}
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id, shop_data FROM {$table} WHERE unicid = %s FOR UPDATE",
+				$unicid
+			),
+			defined( 'ARRAY_A' ) ? ARRAY_A : 'ARRAY_A'
+		);
+
+		$failed = ( false === $rows )
+			|| ( isset( $wpdb->last_error ) && is_string( $wpdb->last_error ) && '' !== $wpdb->last_error )
+			|| ! is_array( $rows );
+		if ( $failed ) {
+			return array(
+				'state'      => defined( 'MTUC_SMARTUCF_CACHE_LOCK_DB_ERROR' ) ? MTUC_SMARTUCF_CACHE_LOCK_DB_ERROR : 'db_error',
+				'shop_data'  => null,
+				'error_code' => 'mtuc_smartucf_database_lock_read_failed',
+			);
+		}
+
+		$count = count( $rows );
+		if ( 0 === $count ) {
+			return $absent;
+		}
+		if ( $count > 1 ) {
+			return array(
+				'state'      => defined( 'MTUC_SMARTUCF_CACHE_LOCK_AMBIGUOUS' ) ? MTUC_SMARTUCF_CACHE_LOCK_AMBIGUOUS : 'ambiguous',
+				'shop_data'  => null,
+				'error_code' => 'mtuc_smartucf_database_lock_read_failed',
+			);
+		}
+
+		$raw = $rows[0]['shop_data'] ?? '';
+		$data = array();
+		if ( is_string( $raw ) && '' !== $raw ) {
+			$decoded = json_decode( $raw, true );
+			$data    = is_array( $decoded ) ? $decoded : array();
+		}
+
+		return array(
+			'state'      => defined( 'MTUC_SMARTUCF_CACHE_LOCK_PRESENT' ) ? MTUC_SMARTUCF_CACHE_LOCK_PRESENT : 'present',
+			'shop_data'  => $data,
+			'error_code' => null,
+		);
+	}
+
+	/**
+	 * Public mutation-boundary cache writer (AUD-WOO-018-V2).
+	 *
+	 * Called only from the credential/cache transaction callback.
+	 *
+	 * @param string               $unicid Store unicid.
+	 * @param array<string, mixed> $data   Credential-free snapshot.
+	 * @return true|false
+	 */
+	public static function persist_sanitized_snapshot( string $unicid, array $data ) {
+		return self::save( $unicid, $data );
+	}
+
+	/**
 	 * Insert or update cache row.
 	 *
 	 * @param string               $unicid Store unicid.
-	 * @param array<string, mixed> $data   API `data` object.
-	 * @return void
+	 * @param array<string, mixed> $data   API `data` object (credential-free).
+	 * @return bool True when the row appears stored.
 	 */
-	private static function save( string $unicid, array $data ): void {
+	private static function save( string $unicid, array $data ): bool {
 		global $wpdb;
+
+		// Defense in depth: never persist credential aliases even if a caller slipped.
+		if ( function_exists( 'mtuc_strip_smartucf_credentials_from_snapshot' ) ) {
+			$data = mtuc_strip_smartucf_credentials_from_snapshot( $data );
+		}
 
 		$table   = self::table_name();
 		$now     = current_time( 'mysql', true );
@@ -577,12 +673,28 @@ class Mtuc_Shop_Cache {
 		$uni_picture  = self::sanitize_picture_url( $data['uni_picture'] ?? '' );
 		$uni_picturem = self::sanitize_picture_url( $data['uni_picturem'] ?? '' );
 
+		if ( ! is_string( $shop_json ) || '' === $shop_json ) {
+			return false;
+		}
+
+		if ( property_exists( $wpdb, 'last_error' ) ) {
+			$wpdb->last_error = '';
+		}
+
+		// Lock the shop row for the duration of the surrounding transaction when available.
 		$existing_id = $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT id FROM {$table} WHERE unicid = %s LIMIT 1", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"SELECT id FROM {$table} WHERE unicid = %s LIMIT 1 FOR UPDATE", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				$unicid
 			)
 		);
+
+		// Failed SELECT must never fall through to insert-as-absent logic.
+		if ( false === $existing_id
+			|| ( isset( $wpdb->last_error ) && is_string( $wpdb->last_error ) && '' !== $wpdb->last_error )
+		) {
+			return false;
+		}
 
 		$row = array(
 			'unicid'       => $unicid,
@@ -596,22 +708,26 @@ class Mtuc_Shop_Cache {
 			'expires_at'   => $expires,
 		);
 
-		if ( $existing_id ) {
-			$wpdb->update(
+		if ( null !== $existing_id && '' !== (string) $existing_id ) {
+			$result = $wpdb->update(
 				$table,
 				$row,
 				array( 'id' => (int) $existing_id ),
 				array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ),
 				array( '%d' )
 			);
-			return;
+			return false !== $result
+				&& ! ( isset( $wpdb->last_error ) && is_string( $wpdb->last_error ) && '' !== $wpdb->last_error );
 		}
 
-		$wpdb->insert(
+		$result = $wpdb->insert(
 			$table,
 			$row,
 			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 		);
+
+		return false !== $result
+			&& ! ( isset( $wpdb->last_error ) && is_string( $wpdb->last_error ) && '' !== $wpdb->last_error );
 	}
 
 	/**
@@ -627,18 +743,30 @@ class Mtuc_Shop_Cache {
 	}
 
 	/**
-	 * Decode cached shop JSON.
+	 * Decode cached shop JSON (always credential-free to consumers).
+	 *
+	 * Lazily migrates legacy plaintext credential rows into the dedicated store.
 	 *
 	 * @param string $shop_json JSON encoded shop data.
+	 * @param string $unicid    Store unicid for migration scope.
 	 * @return array<string, mixed>|WP_Error
 	 */
-	private static function decode_shop_data( string $shop_json ) {
+	private static function decode_shop_data( string $shop_json, string $unicid = '' ) {
 		$data = json_decode( $shop_json, true );
 		if ( ! is_array( $data ) ) {
 			return new WP_Error(
 				'mtuc_cache_corrupt',
 				__( 'Кешираните shop данни са повредени.', 'mtunicredit' )
 			);
+		}
+
+		if ( '' !== $unicid && function_exists( 'mtuc_maybe_migrate_legacy_shop_credentials' ) ) {
+			$migrated = mtuc_maybe_migrate_legacy_shop_credentials( $data, $unicid );
+			// Always return sanitized runtime data — never re-expose plaintext.
+			$data = $migrated['data'];
+			// Durable rewrite happens inside the migration transaction when rewritten=true.
+		} elseif ( function_exists( 'mtuc_strip_smartucf_credentials_from_snapshot' ) ) {
+			$data = mtuc_strip_smartucf_credentials_from_snapshot( $data );
 		}
 
 		return $data;

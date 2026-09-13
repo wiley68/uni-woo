@@ -9,6 +9,30 @@
 
 require_once __DIR__ . '/bootstrap.php';
 
+if ( ! class_exists( 'Mtuc_Settings', false ) ) {
+	/**
+	 * Settings stub — the shop UNICID backs financing ownership (AUD-WOO-019-F05).
+	 */
+	class Mtuc_Settings {
+		public const OPTION_UNICID     = 'mtuc_unicid';
+		public const OPTION_SECRET_KEY = 'mtuc_secret_key';
+
+		/**
+		 * @param string $key Option key.
+		 * @return string
+		 */
+		public static function get( $key ) {
+			if ( self::OPTION_UNICID === $key ) {
+				return 'TEST-UNICID';
+			}
+			if ( self::OPTION_SECRET_KEY === $key ) {
+				return 'TEST-SECRET';
+			}
+			return '';
+		}
+	}
+}
+
 $GLOBALS['mtuc_test_options'] = array();
 $mtuc_su_amb_assert_count     = 0;
 
@@ -911,19 +935,28 @@ require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-rest-api.php';
 $rest_order = new WC_Order();
 mtuc_su_amb_seed_unresolved( $rest_order, array( 'id' => 1350, 'with_claim' => true, 'cp_order_id' => 9550 ) );
 $rest_order->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '1350' );
+$rest_order->update_meta_data( MTUC_ORDER_META_FINANCING_UNICID, 'TEST-UNICID' );
+$rest_order->update_meta_data( MTUC_ORDER_META_FINANCING_SITE, 'https://shop.example' );
 $rest_order->save();
 
 $rest_req = new WP_REST_Request();
 $rest_req->json = array(
+	'operation' => 'order-bank-status',
+	'unicid'    => 'TEST-UNICID',
 	'order_id'  => '1350',
 	'status'    => 'Изпратен',
 	'status_id' => MTUC_BANK_STATUS_SENT_PROCESS1,
 );
 $rest_req->body = (string) wp_json_encode( $rest_req->json );
 $rest_resp      = Mtuc_Rest_Api::handle_order_bank_status_push( $rest_req );
-mtuc_su_amb_assert( 400 === $rest_resp->get_status(), 'REST rejects bank_sent_process1 without evidence' );
+// AUD-WOO-019-F09: a refused transition is a semantic conflict, not a 400.
+mtuc_su_amb_assert( 409 === $rest_resp->get_status(), 'REST rejects bank_sent_process1 without evidence' );
 $rest_data = $rest_resp->get_data();
 mtuc_su_amb_assert( is_array( $rest_data ) && empty( $rest_data['success'] ), 'REST controlled rejection payload' );
+mtuc_su_amb_assert(
+	is_array( $rest_data ) && 'semantic_conflict' === ( $rest_data['error'] ?? '' ),
+	'REST rejection uses the canonical semantic_conflict code'
+);
 mtuc_su_amb_assert( MTUC_BANK_STATUS_SENT_PROCESS1 !== (string) $rest_order->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'REST path leaves bank status unchanged' );
 mtuc_su_amb_assert( mtuc_order_has_unresolved_smartucf_ambiguity( $rest_order ), 'REST path preserves ambiguity' );
 

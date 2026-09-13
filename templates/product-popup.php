@@ -207,20 +207,20 @@ $consents            = isset( $popup['consents'] ) && is_array( $popup['consents
 							</div>
 							<?php if ( $process2 ) : ?>
 							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-egn">
-									<?php esc_html_e( 'ЕГН', 'mtunicredit' ); ?>
-									<span class="mtuc-popup__required" aria-hidden="true">*</span>
-								</label>
-								<input type="text" id="mtuc-popup-egn" class="mtuc-popup__input" value="" required aria-required="true" inputmode="numeric" maxlength="10" pattern="\d{10}" autocomplete="off" />
-								<span class="mtuc-popup__field-error" id="mtuc-popup-egn-error" role="alert"></span>
-							</div>
-							<div class="mtuc-popup__field">
 								<label class="mtuc-popup__field-label" for="mtuc-popup-phone2">
 									<?php esc_html_e( 'Втори телефон', 'mtunicredit' ); ?>
 									<span class="mtuc-popup__required" aria-hidden="true">*</span>
 								</label>
 								<input type="tel" id="mtuc-popup-phone2" class="mtuc-popup__input" value="" required aria-required="true" autocomplete="tel" inputmode="tel" />
 								<span class="mtuc-popup__field-error" id="mtuc-popup-phone2-error" role="alert"></span>
+							</div>
+							<div class="mtuc-popup__field">
+								<label class="mtuc-popup__field-label" for="mtuc-popup-egn">
+									<?php esc_html_e( 'ЕГН', 'mtunicredit' ); ?>
+									<span class="mtuc-popup__required" aria-hidden="true">*</span>
+								</label>
+								<input type="text" id="mtuc-popup-egn" class="mtuc-popup__input" value="" required aria-required="true" inputmode="numeric" maxlength="10" pattern="\d{10}" autocomplete="off" />
+								<span class="mtuc-popup__field-error" id="mtuc-popup-egn-error" role="alert"></span>
 							</div>
 							<?php endif; ?>
 						</div>

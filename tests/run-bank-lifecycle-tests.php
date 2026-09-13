@@ -46,6 +46,67 @@ if ( ! function_exists( 'sanitize_text_field' ) ) {
 	}
 }
 
+/*
+ * Durable option store backing the CP sync target lock (REVIEW-01). The CAS
+ * primitives in mtuc-submission-lock.php switch to this array whenever it is
+ * set, so the lock behaves here exactly as it does against wp_options.
+ */
+$GLOBALS['mtuc_test_options'] = array();
+
+if ( ! function_exists( 'add_option' ) ) {
+	/**
+	 * @param string $option     Option name.
+	 * @param mixed  $value      Value.
+	 * @param string $deprecated Unused.
+	 * @param string $autoload   Autoload flag.
+	 * @return bool
+	 */
+	function add_option( $option, $value = '', $deprecated = '', $autoload = 'yes' ) {
+		unset( $deprecated, $autoload );
+		if ( array_key_exists( $option, $GLOBALS['mtuc_test_options'] ) ) {
+			return false;
+		}
+		$GLOBALS['mtuc_test_options'][ $option ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_option' ) ) {
+	/**
+	 * @param string $option        Option name.
+	 * @param mixed  $default_value Default.
+	 * @return mixed
+	 */
+	function get_option( $option, $default_value = false ) {
+		return $GLOBALS['mtuc_test_options'][ $option ] ?? $default_value;
+	}
+}
+
+if ( ! function_exists( 'update_option' ) ) {
+	/**
+	 * @param string $option   Option name.
+	 * @param mixed  $value    Value.
+	 * @param bool   $autoload Autoload flag.
+	 * @return bool
+	 */
+	function update_option( $option, $value, $autoload = null ) {
+		unset( $autoload );
+		$GLOBALS['mtuc_test_options'][ $option ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_option' ) ) {
+	/**
+	 * @param string $option Option name.
+	 * @return bool
+	 */
+	function delete_option( $option ) {
+		unset( $GLOBALS['mtuc_test_options'][ $option ] );
+		return true;
+	}
+}
+
 if ( ! function_exists( 'wp_schedule_single_event' ) ) {
 	/** @var list<array{timestamp:int,hook:string,args:array}> */
 	$GLOBALS['mtuc_scheduled'] = array();
@@ -118,6 +179,19 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		public $notes = array();
 		/** @var int */
 		public $status_change_count = 0;
+		/** @var int */
+		private static $next_id = 1000;
+
+		/**
+		 * Every order is reachable by ID: REVIEW-02 proves durability by
+		 * reloading through wc_get_order() rather than trusting memory.
+		 *
+		 * @param int $id Order ID.
+		 */
+		public function __construct( int $id = 0 ) {
+			$this->id = $id > 0 ? $id : self::$next_id++;
+			$GLOBALS['mtuc_test_orders'][ $this->id ] = $this;
+		}
 
 		public function get_id(): int {
 			return $this->id;
@@ -281,9 +355,14 @@ if ( ! class_exists( 'Mtuc_Cp_Api_Client', false ) ) {
 				'status_id' => $status_id,
 			);
 			if ( empty( self::$patch_queue ) ) {
-				return array( 'success' => true );
+				// Default: canonical echo envelope that satisfies the F08 contract.
+				return mtuc_bl_patch_success( $status_id, $status, $order_id );
 			}
-			return array_shift( self::$patch_queue );
+			$next = array_shift( self::$patch_queue );
+			if ( true === $next ) {
+				return mtuc_bl_patch_success( $status_id, $status, $order_id );
+			}
+			return $next;
 		}
 	}
 }
@@ -455,16 +534,81 @@ $GLOBALS['mtuc_test_unicid'] = 'SHOP-UNICID';
  * @return array<string, mixed>
  */
 function mtuc_bl_cp_success( int $id, string $order_id = '100', array $extra = array() ): array {
-	return array(
-		'data' => array_merge(
+	return mtuc_bl_envelope(
+		array_merge(
 			array(
-				'id'       => $id,
-				'order_id' => $order_id,
-				'shop_id'  => 1,
-				'unicid'   => (string) ( $GLOBALS['mtuc_test_unicid'] ?? 'SHOP-UNICID' ),
+				'id'         => $id,
+				'order_id'   => $order_id,
+				'shop_id'    => 1,
+				'unicid'     => (string) ( $GLOBALS['mtuc_test_unicid'] ?? 'SHOP-UNICID' ),
+				'created_at' => '2026-01-01T00:00:00+00:00',
 			),
 			$extra
-		),
+		)
+	);
+}
+
+/**
+ * Canonical success envelope wrapper for CP client stubs (AUD-WOO-019-F02).
+ *
+ * @param array<string, mixed> $data Envelope data object.
+ * @return array<string, mixed>
+ */
+function mtuc_bl_envelope( array $data = array() ): array {
+	return array(
+		'success' => true,
+		'error'   => null,
+		'message' => '',
+		'data'    => $data,
+	);
+}
+
+/**
+ * Canonical failure envelope error for CP client stubs.
+ *
+ * @param string $error   Canonical snake_case CP error code.
+ * @param int    $status  HTTP status.
+ * @param string $message Human message.
+ * @return WP_Error
+ */
+function mtuc_bl_cp_failure( string $error, int $status, string $message = 'rejected' ): WP_Error {
+	return new WP_Error(
+		'mtuc_api_http_error',
+		$message,
+		array(
+			'status'         => $status,
+			'raw'            => '',
+			'response'       => array(),
+			'envelope'       => array(
+				'success' => false,
+				'error'   => $error,
+				'message' => $message,
+				'data'    => array(),
+			),
+			'envelope_valid' => true,
+			'cp_error'       => $error,
+		)
+	);
+}
+
+/**
+ * Canonical PATCH echo envelope for CP client stubs (AUD-WOO-019-F08).
+ *
+ * @param string $status_id Echoed status_id.
+ * @param string $status    Echoed status label.
+ * @param string $order_id  Echoed order_id.
+ * @return array<string, mixed>
+ */
+function mtuc_bl_patch_success( string $status_id, string $status, string $order_id = '100' ): array {
+	return mtuc_bl_envelope(
+		array(
+			'id'         => 55,
+			'shop_id'    => 1,
+			'order_id'   => $order_id,
+			'status_id'  => $status_id,
+			'status'     => $status,
+			'updated_at' => '2026-01-01T00:00:00+00:00',
+		)
 	);
 }
 
@@ -497,7 +641,7 @@ $fail_smart = new WC_Order();
 $fail_smart->status = 'on-hold';
 $fail_smart->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 77 );
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$patch_queue[] = array( 'success' => true );
+Mtuc_Cp_Api_Client::$patch_queue[] = true;
 mtuc_fail_order_on_smartucf_error( $fail_smart, 'smart fail', 'mtuc_smartucf_http_error' );
 mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === $fail_smart->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'SmartUCF fail status wrong' );
 mtuc_bl_assert( 'on-hold' === $fail_smart->status, 'SmartUCF fail changed Woo status' );
@@ -520,24 +664,36 @@ mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS2 === $p2_order->get_meta( MTUC_ORD
 mtuc_bl_assert( 'pending' === $p2_order->status, 'P2 changed Woo status' );
 
 // ---------------------------------------------------------------------------
-// AUD-WOO-005 — CP create ambiguity
+// AUD-WOO-005 / AUD-WOO-019-F01 — CP create ambiguity, exactly one POST
 // ---------------------------------------------------------------------------
 
+// Canonical semantic rejection: proven not created → definitive failure.
 $pre_send = new WC_Order();
 $pre_send->status = 'pending';
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'mtuc_api_http_error', 'validation', array( 'status' => 422 ) );
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_failure( 'validation', 422 );
 $r1 = mtuc_create_cp_order_with_recovery( $pre_send, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
-mtuc_bl_assert( is_wp_error( $r1 ), '422 should fail' );
-mtuc_bl_assert( 'missing' === $pre_send->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), '422 outcome not missing' );
-mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === $pre_send->get_meta( MTUC_ORDER_META_BANK_STATUS ), '422 bank status wrong' );
-mtuc_bl_assert( 'pending' === $pre_send->status, '422 changed Woo status' );
-mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), '422 should not retry' );
+mtuc_bl_assert( is_wp_error( $r1 ), 'canonical 422 should fail' );
+mtuc_bl_assert( 'missing' === $pre_send->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'canonical 422 outcome not missing' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === $pre_send->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'canonical 422 bank status wrong' );
+mtuc_bl_assert( 'pending' === $pre_send->status, 'canonical 422 changed Woo status' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 canonical 422 exactly one POST' );
 
+// Non-canonical 4xx proves nothing: ambiguous, never a definitive CP failure.
+$noncanonical_422 = new WC_Order();
+$noncanonical_422->status = 'pending';
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'mtuc_api_http_error', 'validation', array( 'status' => 422 ) );
+$r_nc422 = mtuc_create_cp_order_with_recovery( $noncanonical_422, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_nc422 ), 'noncanonical 422 should error' );
+mtuc_bl_assert( 'unknown' === $noncanonical_422->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F01 noncanonical 422 must stay unknown' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP !== (string) $noncanonical_422->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F01 noncanonical 422 must not claim CP failure' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 noncanonical 422 exactly one POST' );
+
+// Timeout after send: exactly one POST, frozen as unknown.
 $ambiguous = new WC_Order();
 $ambiguous->status = 'pending';
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'http_request_failed', 'cURL error 28: timeout' );
 Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'http_request_failed', 'cURL error 28: timeout' );
 $r2 = mtuc_create_cp_order_with_recovery( $ambiguous, array( 'order_id' => '100', 'price' => 1 ), array( 'uni_proces' => 0 ) );
 mtuc_bl_assert( is_wp_error( $r2 ), 'timeout should fail' );
@@ -545,56 +701,108 @@ mtuc_bl_assert( 'unknown' === $ambiguous->get_meta( MTUC_ORDER_META_CP_CREATE_OU
 mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP !== (string) $ambiguous->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F01 timeout must not persist bank_send_failed_cp' );
 mtuc_bl_assert( '' === (string) $ambiguous->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F01 timeout must leave bank status unset' );
 mtuc_bl_assert( 1 === (int) $ambiguous->get_meta( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE ), 'F01 timeout may set bank-unavailable UX notice' );
-mtuc_bl_assert( 2 === count( Mtuc_Cp_Api_Client::$create_calls ), 'timeout must idempotent retry once' );
-mtuc_bl_assert( Mtuc_Cp_Api_Client::$create_calls[0] === Mtuc_Cp_Api_Client::$create_calls[1], 'retry payload changed' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 ambiguous create must POST exactly once' );
 mtuc_bl_assert( 'pending' === $ambiguous->status, 'timeout changed Woo status' );
+
+// Frozen: a second attempt on an unknown outcome must not reach the network.
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 4242 );
+$r_frozen = mtuc_create_cp_order_with_recovery( $ambiguous, array( 'order_id' => '100', 'price' => 1 ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_frozen ), 'F01 frozen unknown must refuse a second create' );
+mtuc_bl_assert( 'mtuc_cp_create_outcome_unknown' === $r_frozen->get_error_code(), 'F01 frozen error code' );
+mtuc_bl_assert( 0 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 frozen unknown must POST zero times' );
+mtuc_bl_assert( 'unknown' === $ambiguous->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F01 frozen outcome preserved' );
+mtuc_bl_assert( 0 === (int) $ambiguous->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F01 frozen must not persist a CP id' );
+mtuc_bl_assert( mtuc_is_cp_create_ambiguous_error( $r_frozen ), 'F01 frozen error is itself ambiguous' );
 
 // AUD-WOO-011-F01 Process 2 ambiguity
 $ambiguous_p2 = new WC_Order();
 $ambiguous_p2->status = 'pending';
 Mtuc_Cp_Api_Client::reset();
 Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'http_request_failed', 'timeout' );
-Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'mtuc_api_http_error', 'gateway', array( 'status' => 503 ) );
 $r2p2 = mtuc_create_cp_order_with_recovery( $ambiguous_p2, array( 'order_id' => '100' ), array( 'uni_proces' => 1 ) );
 mtuc_bl_assert( is_wp_error( $r2p2 ), 'P2 timeout should error' );
 mtuc_bl_assert( 'unknown' === $ambiguous_p2->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'P2 timeout outcome not unknown' );
 mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS2 !== (string) $ambiguous_p2->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'P2 ambiguous must not claim bank_sent_process2' );
 mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED !== (string) $ambiguous_p2->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'P2 ambiguous must not persist definitive CP failure' );
 mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP !== (string) $ambiguous_p2->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'P2 ambiguous must not persist bank_send_failed_cp' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 P2 ambiguous exactly one POST' );
 
-$recover = new WC_Order();
-$recover->status = 'pending';
-Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'http_request_failed', 'timeout' );
-Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 902 );
-$r3 = mtuc_create_cp_order_with_recovery( $recover, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
-mtuc_bl_assert( ! is_wp_error( $r3 ), 'idempotent recovery failed' );
-mtuc_bl_assert( 'created' === $recover->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'recovery did not clear unknown' );
-mtuc_bl_assert( 902 === (int) $recover->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'recovery CP id missing' );
-mtuc_bl_assert( 2 === count( Mtuc_Cp_Api_Client::$create_calls ), 'recovery call count' );
-
+// Canonical 409 is a definitive conflict; a malformed 409 is not.
 $conflict = new WC_Order();
 $conflict->status = 'pending';
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'mtuc_api_http_error', 'conflict', array( 'status' => 409 ) );
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_failure( 'order_already_exists', 409, 'conflict' );
 $r4 = mtuc_create_cp_order_with_recovery( $conflict, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
-mtuc_bl_assert( is_wp_error( $r4 ), '409 should fail' );
-mtuc_bl_assert( 'missing' === $conflict->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), '409 outcome' );
-mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), '409 must not invent duplicate create loop' );
+mtuc_bl_assert( is_wp_error( $r4 ), 'canonical 409 should fail' );
+mtuc_bl_assert( 'missing' === $conflict->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'canonical 409 outcome' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 canonical 409 exactly one POST' );
 mtuc_bl_assert( 'pending' === $conflict->status, '409 changed Woo status' );
 
+$conflict_malformed = new WC_Order();
+$conflict_malformed->status = 'pending';
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'mtuc_api_http_error', 'conflict', array( 'status' => 409 ) );
+$r4m = mtuc_create_cp_order_with_recovery( $conflict_malformed, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r4m ), 'malformed 409 should error' );
+mtuc_bl_assert( 'unknown' === $conflict_malformed->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F01 malformed 409 must stay ambiguous' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 malformed 409 exactly one POST' );
+
+// 401 after send cannot prove the order was not committed.
+$auth_lost = new WC_Order();
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_failure( 'unauthenticated', 401 );
+$r_401 = mtuc_create_cp_order_with_recovery( $auth_lost, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_401 ), '401 should error' );
+mtuc_bl_assert( 'unknown' === $auth_lost->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F01 401 must stay ambiguous' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 401 exactly one POST' );
+
+// 429 throttling is ambiguous too.
+$throttled = new WC_Order();
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_failure( 'too_many_requests', 429 );
+$r_429 = mtuc_create_cp_order_with_recovery( $throttled, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_429 ), '429 should error' );
+mtuc_bl_assert( 'unknown' === $throttled->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F01 429 must stay ambiguous' );
+
+// Unknown canonical 4xx code is not proof of rejection.
+$unknown_code = new WC_Order();
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_failure( 'some_future_code', 400 );
+$r_unknown = mtuc_create_cp_order_with_recovery( $unknown_code, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_unknown ), 'unknown 4xx code should error' );
+mtuc_bl_assert( 'unknown' === $unknown_code->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F01 unknown 4xx code must stay ambiguous' );
+
+// Malformed envelope on an otherwise 2xx response is ambiguous.
+$bad_envelope = new WC_Order();
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error( 'mtuc_api_invalid_envelope', 'noncanonical', array( 'status' => 200, 'envelope_valid' => false ) );
+$r_env = mtuc_create_cp_order_with_recovery( $bad_envelope, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_env ), 'malformed envelope should error' );
+mtuc_bl_assert( 'unknown' === $bad_envelope->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F01 malformed envelope must stay ambiguous' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 malformed envelope exactly one POST' );
+
+// Ambiguity classification unit assertions.
 mtuc_bl_assert( mtuc_is_cp_transport_ambiguous_error( new WP_Error( 'http_request_failed', 'x' ) ), 'http_request_failed not ambiguous' );
 mtuc_bl_assert( mtuc_is_cp_transport_ambiguous_error( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 503 ) ) ), '503 not ambiguous' );
-mtuc_bl_assert( ! mtuc_is_cp_transport_ambiguous_error( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 422 ) ) ), '422 wrongly ambiguous' );
-mtuc_bl_assert( mtuc_is_cp_idempotency_conflict_error( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 409 ) ) ), '409 not conflict' );
+mtuc_bl_assert( mtuc_is_cp_transport_ambiguous_error( new WP_Error( 'mtuc_api_invalid_envelope', 'x' ) ), 'malformed envelope not ambiguous' );
+mtuc_bl_assert( mtuc_is_cp_create_ambiguous_error( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 422 ) ) ), 'F01 noncanonical 422 must be create-ambiguous' );
+mtuc_bl_assert( ! mtuc_is_cp_create_ambiguous_error( mtuc_bl_cp_failure( 'validation', 422 ) ), 'F01 canonical validation must be definitive' );
+mtuc_bl_assert( ! mtuc_is_cp_create_ambiguous_error( mtuc_bl_cp_failure( 'invalid_payload', 400 ) ), 'F01 canonical invalid_payload must be definitive' );
+mtuc_bl_assert( mtuc_is_cp_create_ambiguous_error( mtuc_bl_cp_failure( 'unauthenticated', 401 ) ), 'F01 401 must be ambiguous' );
+mtuc_bl_assert( mtuc_is_cp_create_ambiguous_error( mtuc_bl_cp_failure( 'too_many_requests', 429 ) ), 'F01 429 must be ambiguous' );
+mtuc_bl_assert( mtuc_is_cp_create_ambiguous_error( mtuc_bl_cp_failure( 'server_error', 500 ) ), 'F01 5xx must be ambiguous' );
+mtuc_bl_assert( mtuc_is_cp_idempotency_conflict_error( mtuc_bl_cp_failure( 'order_already_exists', 409 ) ), 'canonical 409 not conflict' );
+mtuc_bl_assert( ! mtuc_is_cp_idempotency_conflict_error( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 409 ) ) ), 'F01 malformed 409 must not be a definitive conflict' );
 
 // ---------------------------------------------------------------------------
-// AUD-WOO-009 — CP status sync persistence / retry
+// AUD-WOO-009 / AUD-WOO-019-F03 — durable generation-aware CP status sync
 // ---------------------------------------------------------------------------
 
 $sync_order = new WC_Order();
 $sync_order->id = 55;
 $sync_order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 55 );
+$sync_order->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '100' );
 $GLOBALS['mtuc_test_orders'][55] = $sync_order;
 $GLOBALS['mtuc_scheduled']       = array();
 
@@ -607,26 +815,133 @@ mtuc_bl_assert( 'transport_timeout' === $sync_order->get_meta( MTUC_ORDER_META_C
 mtuc_bl_assert( 1 === (int) $sync_order->get_meta( MTUC_ORDER_META_CP_SYNC_ATTEMPTS ), 'sync attempts' );
 mtuc_bl_assert( ! empty( $GLOBALS['mtuc_scheduled'] ), 'retry not scheduled' );
 
+$sync_target = mtuc_read_cp_status_sync_target( $sync_order );
+mtuc_bl_assert( is_array( $sync_target ), 'F03 durable target persisted' );
+mtuc_bl_assert( 'pending' === $sync_target['state'], 'F03 transport failure keeps target pending' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS1 === $sync_target['status_id'], 'F03 target status_id' );
+mtuc_bl_assert( 1 === $sync_target['generation'], 'F03 first admission is generation 1' );
+mtuc_bl_assert( 'pending' === mtuc_get_cp_status_sync_state( $sync_order ), 'F03 state accessor' );
+
 $diag = mtuc_sanitize_cp_sync_error_category( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 401 ) ) );
 mtuc_bl_assert( 'auth_401' === $diag, '401 category' );
 $diag5 = mtuc_sanitize_cp_sync_error_category( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 502 ) ) );
 mtuc_bl_assert( 'http_5xx' === $diag5, '5xx category' );
 mtuc_bl_assert( false === strpos( $diag, 'Bearer' ), 'secrets in diagnostics' );
+mtuc_bl_assert( 'echo_mismatch' === mtuc_sanitize_cp_sync_error_category( new WP_Error( 'mtuc_cp_patch_echo_mismatch', 'x' ) ), 'echo mismatch category' );
 
+// Cron/manual retry is driven from the persisted target, then confirms it.
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$patch_queue[] = array( 'success' => true );
+Mtuc_Cp_Api_Client::$patch_queue[] = true;
 $retry = mtuc_retry_cp_status_sync_for_order( 55 );
 mtuc_bl_assert( ! is_wp_error( $retry ), 'retry failed' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'F03 retry issues exactly one PATCH' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS1 === Mtuc_Cp_Api_Client::$patch_calls[0]['status_id'], 'F03 retry reuses persisted target' );
 mtuc_bl_assert( '' === (string) $sync_order->get_meta( MTUC_ORDER_META_CP_SYNC_PENDING ), 'pending not cleared' );
+mtuc_bl_assert( 'confirmed' === mtuc_get_cp_status_sync_state( $sync_order ), 'F03 validated echo confirms target' );
 
+// Re-syncing a confirmed target is a no-op success: no second PATCH.
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$patch_queue[] = array( 'success' => true );
 $dup = mtuc_sync_cp_order_bank_status( $sync_order, MTUC_BANK_STATUS_SENT_PROCESS1 );
 mtuc_bl_assert( ! is_wp_error( $dup ), 'duplicate PATCH should succeed' );
-mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'duplicate patch call count' );
+mtuc_bl_assert( 0 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'F03 confirmed target must not re-PATCH' );
+
+// A conflicting target while one is still in flight is rejected.
+$conflict_sync = new WC_Order();
+$conflict_sync->id = 56;
+$conflict_sync->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '100' );
+$GLOBALS['mtuc_test_orders'][56] = $conflict_sync;
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$patch_queue[] = new WP_Error( 'http_request_failed', 'timeout' );
+mtuc_sync_cp_order_bank_status( $conflict_sync, MTUC_BANK_STATUS_SENT_PROCESS1 );
+$rejected = mtuc_sync_cp_order_bank_status( $conflict_sync, MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF );
+mtuc_bl_assert( is_wp_error( $rejected ), 'F03 conflicting target must be rejected' );
+mtuc_bl_assert( 'mtuc_cp_sync_semantic_conflict' === $rejected->get_error_code(), 'F03 conflict error code' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'F03 conflicting target must not PATCH' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS1 === mtuc_read_cp_status_sync_target( $conflict_sync )['status_id'], 'F03 in-flight target preserved' );
+
+// Terminal semantic failures stop retrying; everything else stays pending.
+$terminal_sync = new WC_Order();
+$terminal_sync->id = 57;
+$terminal_sync->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '100' );
+$GLOBALS['mtuc_test_orders'][57] = $terminal_sync;
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$patch_queue[] = mtuc_bl_cp_failure( 'unsupported_status', 422 );
+$terminal_result = mtuc_sync_cp_order_bank_status( $terminal_sync, MTUC_BANK_STATUS_SENT_PROCESS1 );
+mtuc_bl_assert( is_wp_error( $terminal_result ), 'F03 terminal failure errors' );
+mtuc_bl_assert( 'terminal_failed' === mtuc_get_cp_status_sync_state( $terminal_sync ), 'F03 unsupported_status is terminal' );
+Mtuc_Cp_Api_Client::reset();
+$terminal_again = mtuc_sync_cp_order_bank_status( $terminal_sync, MTUC_BANK_STATUS_SENT_PROCESS1 );
+mtuc_bl_assert( is_wp_error( $terminal_again ), 'F03 terminal target stays failed' );
+mtuc_bl_assert( 0 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'F03 terminal target must not re-PATCH' );
+
+mtuc_bl_assert( mtuc_is_terminal_cp_sync_error( mtuc_bl_cp_failure( 'invalid_payload', 422 ) ), 'F03 invalid_payload terminal' );
+mtuc_bl_assert( mtuc_is_terminal_cp_sync_error( mtuc_bl_cp_failure( 'semantic_conflict', 409 ) ), 'F03 semantic_conflict terminal' );
+mtuc_bl_assert( mtuc_is_terminal_cp_sync_error( mtuc_bl_cp_failure( 'order_not_found', 404 ) ), 'F03 order_not_found terminal' );
+mtuc_bl_assert( ! mtuc_is_terminal_cp_sync_error( mtuc_bl_cp_failure( 'unauthenticated', 401 ) ), 'F03 auth stays pending' );
+mtuc_bl_assert( ! mtuc_is_terminal_cp_sync_error( mtuc_bl_cp_failure( 'server_error', 503 ) ), 'F03 5xx stays pending' );
+mtuc_bl_assert( ! mtuc_is_terminal_cp_sync_error( new WP_Error( 'http_request_failed', 'timeout' ) ), 'F03 transport stays pending' );
+mtuc_bl_assert( ! mtuc_is_terminal_cp_sync_error( new WP_Error( 'mtuc_api_invalid_envelope', 'x' ) ), 'F03 malformed stays pending' );
+mtuc_bl_assert( ! mtuc_is_terminal_cp_sync_error( new WP_Error( 'mtuc_cp_patch_echo_mismatch', 'x' ) ), 'F03 echo mismatch stays pending' );
+
+// A decoded-but-wrong echo must not confirm the target.
+$echo_sync = new WC_Order();
+$echo_sync->id = 58;
+$echo_sync->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '100' );
+$GLOBALS['mtuc_test_orders'][58] = $echo_sync;
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$patch_queue[] = mtuc_bl_envelope(
+	array(
+		'id'         => 9,
+		'shop_id'    => 1,
+		'order_id'   => '100',
+		'status_id'  => 'some_other_status',
+		'status'     => 'Друг статус',
+		'updated_at' => '2026-01-01T00:00:00+00:00',
+	)
+);
+$echo_result = mtuc_sync_cp_order_bank_status( $echo_sync, MTUC_BANK_STATUS_SENT_PROCESS1 );
+mtuc_bl_assert( is_wp_error( $echo_result ), 'F03 mismatched echo must error' );
+mtuc_bl_assert( 'mtuc_cp_patch_echo_mismatch' === $echo_result->get_error_code(), 'F03 echo mismatch code' );
+mtuc_bl_assert( 'pending' === mtuc_get_cp_status_sync_state( $echo_sync ), 'F03 decoded response alone must not confirm' );
+
+// Stale confirmations/failures cannot cross generations.
+$gen_order = new WC_Order();
+$gen_order->id = 59;
+$gen_order->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '100' );
+$GLOBALS['mtuc_test_orders'][59] = $gen_order;
+mtuc_write_cp_status_sync_target(
+	$gen_order,
+	array(
+		'state'      => 'pending',
+		'generation' => 7,
+		'status_id'  => MTUC_BANK_STATUS_SENT_PROCESS1,
+		'status'     => 'label',
+		'error'      => '',
+		'updated_at' => time(),
+	)
+);
+mtuc_bl_assert( ! mtuc_confirm_cp_status_sync_target( $gen_order, 6, MTUC_BANK_STATUS_SENT_PROCESS1 ), 'F03 stale success cannot confirm newer generation' );
+mtuc_bl_assert( 'pending' === mtuc_get_cp_status_sync_state( $gen_order ), 'F03 stale confirm left target pending' );
+mtuc_bl_assert( '' === mtuc_fail_cp_status_sync_target( $gen_order, 6, MTUC_BANK_STATUS_SENT_PROCESS1, mtuc_bl_cp_failure( 'invalid_payload', 422 ) ), 'F03 stale failure cannot fail newer generation' );
+mtuc_bl_assert( 'pending' === mtuc_get_cp_status_sync_state( $gen_order ), 'F03 stale failure left target pending' );
+mtuc_bl_assert( mtuc_confirm_cp_status_sync_target( $gen_order, 7, MTUC_BANK_STATUS_SENT_PROCESS1 ), 'F03 matching generation confirms' );
+
+// A malformed target record is treated as absent, never trusted.
+$corrupt_target = new WC_Order();
+$corrupt_target->update_meta_data( MTUC_ORDER_META_CP_SYNC_TARGET, '{not json' );
+mtuc_bl_assert( null === mtuc_read_cp_status_sync_target( $corrupt_target ), 'F03 malformed target reads as absent' );
+$corrupt_target->update_meta_data( MTUC_ORDER_META_CP_SYNC_TARGET, wp_json_encode( array( 'state' => 'bogus', 'generation' => 1, 'status_id' => 'x' ) ) );
+mtuc_bl_assert( null === mtuc_read_cp_status_sync_target( $corrupt_target ), 'F03 unknown target state reads as absent' );
+
+// Progression after confirmation admits a new generation rather than conflicting.
+Mtuc_Cp_Api_Client::reset();
+$progress = mtuc_admit_cp_status_sync_target( $gen_order, MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF );
+mtuc_bl_assert( ! is_wp_error( $progress ), 'F03 confirmed target allows a new intent' );
+mtuc_bl_assert( 8 === $progress['generation'], 'F03 new intent bumps generation' );
 
 $malformed = new WC_Order();
 $malformed->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 1 );
+$malformed->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '100' );
 Mtuc_Cp_Api_Client::reset();
 Mtuc_Cp_Api_Client::$patch_queue[] = new WP_Error( 'mtuc_api_invalid_json', 'bad json' );
 mtuc_sync_cp_order_bank_status( $malformed, 'bank_sent_process1' );
@@ -672,77 +987,45 @@ mtuc_bl_assert(
 );
 
 // ---------------------------------------------------------------------------
-// AUD-WOO-011 — F02 malformed 2xx success + F03 identity validation
+// ---------------------------------------------------------------------------
+// AUD-WOO-011 F02/F03 under AUD-WOO-019-F01/F08 — unusable success and identity
+// echo are ambiguous, and each of them costs exactly one POST.
 // ---------------------------------------------------------------------------
 
 mtuc_bl_assert( mtuc_is_cp_create_ambiguous_error( new WP_Error( 'mtuc_cp_unusable_success', 'x' ) ), 'unusable success not ambiguous' );
 mtuc_bl_assert( mtuc_is_cp_create_ambiguous_error( new WP_Error( 'mtuc_cp_identity_mismatch', 'x' ) ), 'identity mismatch not ambiguous' );
-mtuc_bl_assert( ! mtuc_is_cp_create_ambiguous_error( new WP_Error( 'mtuc_api_http_error', 'x', array( 'status' => 422 ) ) ), '422 wrongly create-ambiguous' );
 
-// F02: malformed success then recovery with matching identity.
-$malformed_recover = new WC_Order();
-$malformed_recover->status = 'pending';
+// Success body without a usable data.id is unusable → ambiguous, one POST, frozen.
+$malformed_success = new WC_Order();
+$malformed_success->status = 'pending';
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'success' => true,
-	'data'    => array(
-		'order_id' => '100',
-		'unicid'   => 'SHOP-UNICID',
-		// missing/invalid id
-		'id'       => 0,
-	),
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_envelope(
+	array(
+		'order_id'   => '100',
+		'unicid'     => 'SHOP-UNICID',
+		'shop_id'    => 9,
+		'created_at' => '2026-01-01T00:00:00+00:00',
+		'id'         => 0,
+	)
 );
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'success' => true,
-	'data'    => array(
-		'id'       => 8801,
-		'order_id' => '100',
-		'shop_id'  => 9,
-		'unicid'   => 'SHOP-UNICID',
-	),
-);
-$r_mal_ok = mtuc_create_cp_order_with_recovery(
-	$malformed_recover,
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 8801 );
+$r_mal = mtuc_create_cp_order_with_recovery(
+	$malformed_success,
 	array( 'order_id' => '100', 'price' => 10 ),
 	array( 'uni_proces' => 0 )
 );
-mtuc_bl_assert( ! is_wp_error( $r_mal_ok ), 'F02 recovery after unusable 2xx failed' );
-mtuc_bl_assert( 'created' === $malformed_recover->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F02 recovery outcome' );
-mtuc_bl_assert( 8801 === (int) $malformed_recover->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F02 recovered CP id' );
-mtuc_bl_assert( 2 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F02 must same-identity replay once' );
-mtuc_bl_assert( Mtuc_Cp_Api_Client::$create_calls[0] === Mtuc_Cp_Api_Client::$create_calls[1], 'F02 replay payload changed' );
-mtuc_bl_assert( '' === (string) $malformed_recover->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F02 P1 must not claim bank_sent after CP only' );
+mtuc_bl_assert( is_wp_error( $r_mal ), 'F02 unusable 2xx must error' );
+mtuc_bl_assert( 'mtuc_cp_unusable_success' === $r_mal->get_error_code(), 'F02 unusable success code' );
+mtuc_bl_assert( 'unknown' === $malformed_success->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F02 unusable outcome unknown' );
+mtuc_bl_assert( 0 === (int) $malformed_success->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F02 unusable must not persist CP id' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP !== (string) $malformed_success->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F02 must not persist bank_send_failed_cp' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01/F02 unusable success must POST exactly once' );
 
-// F02: repeated malformed success → unknown, no definitive failure.
-$malformed_twice = new WC_Order();
-$malformed_twice->status = 'pending';
-Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array( 'data' => array( 'order_id' => '100' ) );
-Mtuc_Cp_Api_Client::$create_queue[] = array( 'data' => array( 'id' => 'abc' ) );
-$r_mal_bad = mtuc_create_cp_order_with_recovery(
-	$malformed_twice,
-	array( 'order_id' => '100' ),
-	array( 'uni_proces' => 0 )
-);
-mtuc_bl_assert( is_wp_error( $r_mal_bad ), 'F02 repeated unusable should error' );
-mtuc_bl_assert( 'mtuc_cp_unusable_success' === $r_mal_bad->get_error_code(), 'F02 error code' );
-mtuc_bl_assert( 'unknown' === $malformed_twice->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F02 repeated outcome unknown' );
-mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP !== (string) $malformed_twice->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F02 must not persist bank_send_failed_cp' );
-mtuc_bl_assert( 0 === (int) $malformed_twice->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F02 must not persist CP id' );
-mtuc_bl_assert( 2 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F02 repeated call count' );
-
-// F03: matching identity accepted.
+// F03: matching identity accepted (full F08 contract).
 $ident_ok = new WC_Order();
 $ident_ok->status = 'pending';
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 9901,
-		'order_id' => '100',
-		'shop_id'  => 3,
-		'unicid'   => 'SHOP-UNICID',
-	),
-);
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 9901 );
 $r_id_ok = mtuc_create_cp_order_with_recovery(
 	$ident_ok,
 	array( 'order_id' => '100' ),
@@ -751,25 +1034,13 @@ $r_id_ok = mtuc_create_cp_order_with_recovery(
 mtuc_bl_assert( ! is_wp_error( $r_id_ok ), 'F03 matching identity rejected' );
 mtuc_bl_assert( 'created' === $ident_ok->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F03 match outcome' );
 mtuc_bl_assert( 9901 === (int) $ident_ok->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F03 match CP id' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F03 success is exactly one POST' );
 
-// F03: wrong order_id → not success; no CP id persist; unknown after exhausted replay.
+// F03: wrong order_id echo → ambiguous identity mismatch, one POST, no CP id.
 $ident_bad = new WC_Order();
 $ident_bad->status = 'pending';
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 9910,
-		'order_id' => 'OTHER',
-		'unicid'   => 'SHOP-UNICID',
-	),
-);
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 9911,
-		'order_id' => 'OTHER',
-		'unicid'   => 'SHOP-UNICID',
-	),
-);
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 9910, 'OTHER' );
 $r_id_bad = mtuc_create_cp_order_with_recovery(
 	$ident_bad,
 	array( 'order_id' => '100' ),
@@ -781,26 +1052,13 @@ mtuc_bl_assert( 'unknown' === $ident_bad->get_meta( MTUC_ORDER_META_CP_CREATE_OU
 mtuc_bl_assert( 0 === (int) $ident_bad->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F03 must not persist mismatched CP id' );
 mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP !== (string) $ident_bad->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F03 mismatch not definitive CP failure' );
 mtuc_bl_assert( '' === (string) $ident_bad->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F03 mismatch must not claim bank_sent' );
-mtuc_bl_assert( 2 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F03 mismatch same-key replay once' );
-mtuc_bl_assert( Mtuc_Cp_Api_Client::$create_calls[0]['order_id'] === '100', 'F03 replay kept request order_id' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01/F03 echo mismatch must POST exactly once' );
+mtuc_bl_assert( '100' === (string) Mtuc_Cp_Api_Client::$create_calls[0]['order_id'], 'F03 request kept its own order_id' );
 
-// F03: wrong unicid when present.
+// F03: wrong unicid echo.
 $ident_shop = new WC_Order();
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 9920,
-		'order_id' => '100',
-		'unicid'   => 'OTHER-SHOP',
-	),
-);
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 9921,
-		'order_id' => '100',
-		'unicid'   => 'OTHER-SHOP',
-	),
-);
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 9920, '100', array( 'unicid' => 'OTHER-SHOP' ) );
 $r_shop_bad = mtuc_create_cp_order_with_recovery(
 	$ident_shop,
 	array( 'order_id' => '100' ),
@@ -810,150 +1068,70 @@ mtuc_bl_assert( is_wp_error( $r_shop_bad ), 'F03 unicid mismatch should error' )
 mtuc_bl_assert( 'unknown' === $ident_shop->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F03 unicid mismatch outcome' );
 mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS2 !== (string) $ident_shop->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F03 unicid mismatch must not complete P2' );
 mtuc_bl_assert( 0 === (int) $ident_shop->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F03 unicid mismatch must not persist CP id' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F03 unicid mismatch exactly one POST' );
 
-// F03 Pass 2: missing guaranteed order_id → unusable success + same-key replay.
-$missing_oid = new WC_Order();
-$missing_oid->status = 'pending';
-Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'     => 123,
-		'unicid' => 'SHOP-UNICID',
-		// order_id missing
-	),
+// F08 strict create contract: each guaranteed field is individually required.
+$mtuc_bl_contract_cases = array(
+	'order_id'   => mtuc_bl_envelope( array( 'id' => 1, 'shop_id' => 1, 'unicid' => 'SHOP-UNICID', 'created_at' => 'x' ) ),
+	'unicid'     => mtuc_bl_envelope( array( 'id' => 1, 'shop_id' => 1, 'order_id' => '100', 'created_at' => 'x' ) ),
+	'shop_id'    => mtuc_bl_envelope( array( 'id' => 1, 'order_id' => '100', 'unicid' => 'SHOP-UNICID', 'created_at' => 'x' ) ),
+	'created_at' => mtuc_bl_envelope( array( 'id' => 1, 'shop_id' => 1, 'order_id' => '100', 'unicid' => 'SHOP-UNICID' ) ),
 );
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'     => 124,
-		'unicid' => 'SHOP-UNICID',
-	),
-);
-$r_miss_oid = mtuc_create_cp_order_with_recovery(
-	$missing_oid,
-	array( 'order_id' => '100' ),
-	array( 'uni_proces' => 0 )
-);
-mtuc_bl_assert( is_wp_error( $r_miss_oid ), 'F03 missing order_id should error' );
-mtuc_bl_assert( 'mtuc_cp_unusable_success' === $r_miss_oid->get_error_code(), 'F03 missing order_id code' );
-mtuc_bl_assert( 'unknown' === $missing_oid->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F03 missing order_id outcome' );
-mtuc_bl_assert( 0 === (int) $missing_oid->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F03 missing order_id must not persist CP id' );
-mtuc_bl_assert( '' === (string) $missing_oid->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F03 missing order_id no bank status' );
-mtuc_bl_assert( 2 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F03 missing order_id same-key replay' );
-mtuc_bl_assert( '100' === (string) Mtuc_Cp_Api_Client::$create_calls[0]['order_id'], 'F03 missing order_id replay identity' );
+foreach ( $mtuc_bl_contract_cases as $mtuc_bl_missing => $mtuc_bl_envelope_case ) {
+	$mtuc_bl_order = new WC_Order();
+	Mtuc_Cp_Api_Client::reset();
+	Mtuc_Cp_Api_Client::$create_queue[] = $mtuc_bl_envelope_case;
+	$mtuc_bl_result = mtuc_create_cp_order_with_recovery( $mtuc_bl_order, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+	mtuc_bl_assert( is_wp_error( $mtuc_bl_result ), 'F08 create contract requires ' . $mtuc_bl_missing );
+	mtuc_bl_assert( 'unknown' === $mtuc_bl_order->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F08 missing ' . $mtuc_bl_missing . ' is ambiguous' );
+	mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F08 missing ' . $mtuc_bl_missing . ' exactly one POST' );
+}
 
-// F03 Pass 2: missing unicid.
-$missing_uni = new WC_Order();
+// F08: scalar coercion is rejected — an int-typed order_id is not a string echo.
+$coerced = new WC_Order();
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 123,
-		'order_id' => '100',
-	),
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_envelope(
+	array(
+		'id'         => 9950,
+		'shop_id'    => 3,
+		'order_id'   => 100,
+		'unicid'     => 'SHOP-UNICID',
+		'created_at' => '2026-01-01T00:00:00+00:00',
+	)
 );
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 124,
-		'order_id' => '100',
-	),
-);
-$r_miss_uni = mtuc_create_cp_order_with_recovery(
-	$missing_uni,
-	array( 'order_id' => '100' ),
-	array( 'uni_proces' => 1 )
-);
-mtuc_bl_assert( is_wp_error( $r_miss_uni ), 'F03 missing unicid should error' );
-mtuc_bl_assert( 'mtuc_cp_unusable_success' === $r_miss_uni->get_error_code(), 'F03 missing unicid code' );
-mtuc_bl_assert( 'unknown' === $missing_uni->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F03 missing unicid outcome' );
-mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS2 !== (string) $missing_uni->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F03 missing unicid must not complete P2' );
-mtuc_bl_assert( 0 === (int) $missing_uni->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F03 missing unicid no CP id' );
+$r_coerced = mtuc_create_cp_order_with_recovery( $coerced, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_coerced ), 'F08 int order_id must not coerce to the string echo' );
+mtuc_bl_assert( 'unknown' === $coerced->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F08 coerced echo is ambiguous' );
 
-// F03 Pass 2: empty unicid.
-$empty_uni = new WC_Order();
+$float_id = new WC_Order();
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 123,
-		'order_id' => '100',
-		'unicid'   => '',
-	),
-);
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 124,
-		'order_id' => '100',
-		'unicid'   => '',
-	),
-);
-$r_empty_uni = mtuc_create_cp_order_with_recovery(
-	$empty_uni,
-	array( 'order_id' => '100' ),
-	array( 'uni_proces' => 0 )
-);
-mtuc_bl_assert( is_wp_error( $r_empty_uni ), 'F03 empty unicid should error' );
-mtuc_bl_assert( 'mtuc_cp_unusable_success' === $r_empty_uni->get_error_code(), 'F03 empty unicid code' );
-mtuc_bl_assert( 'unknown' === $empty_uni->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F03 empty unicid outcome' );
-mtuc_bl_assert( 0 === (int) $empty_uni->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F03 empty unicid no CP id' );
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 1, '100', array( 'id' => 12.0 ) );
+$r_float = mtuc_create_cp_order_with_recovery( $float_id, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_float ), 'F08 float data.id must be rejected' );
 
-// F03 Pass 2: empty order_id.
-$empty_oid = new WC_Order();
+$bool_id = new WC_Order();
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 123,
-		'order_id' => '',
-		'unicid'   => 'SHOP-UNICID',
-	),
-);
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 124,
-		'order_id' => '',
-		'unicid'   => 'SHOP-UNICID',
-	),
-);
-$r_empty_oid = mtuc_create_cp_order_with_recovery(
-	$empty_oid,
-	array( 'order_id' => '100' ),
-	array( 'uni_proces' => 0 )
-);
-mtuc_bl_assert( is_wp_error( $r_empty_oid ), 'F03 empty order_id should error' );
-mtuc_bl_assert( 'mtuc_cp_unusable_success' === $r_empty_oid->get_error_code(), 'F03 empty order_id code' );
-mtuc_bl_assert( 'unknown' === $empty_oid->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F03 empty order_id outcome' );
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 1, '100', array( 'shop_id' => true ) );
+$r_bool = mtuc_create_cp_order_with_recovery( $bool_id, array( 'order_id' => '100' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_bool ), 'F08 bool shop_id must be rejected' );
 
-// F03: integer order_id in response still matches string request.
-$ident_int = new WC_Order();
+// F03/F08: a Process 2 success admits a durable PATCH target and patches once.
+$p2_durable = new WC_Order();
+$p2_durable->id = 61;
+$p2_durable->status = 'pending';
+mtuc_persist_order_process_identity( $p2_durable, 2 );
+$p2_durable->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '100' );
+$GLOBALS['mtuc_test_orders'][61] = $p2_durable;
 Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array(
-	'data' => array(
-		'id'       => 9950,
-		'order_id' => 100,
-		'shop_id'  => 3,
-		'unicid'   => 'SHOP-UNICID',
-	),
-);
-$r_int = mtuc_create_cp_order_with_recovery(
-	$ident_int,
-	array( 'order_id' => '100' ),
-	array( 'uni_proces' => 0 )
-);
-mtuc_bl_assert( ! is_wp_error( $r_int ), 'F03 int/string order_id must match' );
-mtuc_bl_assert( 'created' === $ident_int->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F03 int order_id outcome' );
-mtuc_bl_assert( 9950 === (int) $ident_int->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F03 int order_id CP id' );
-
-// F02 regression: id-only success body remains unusable (missing guaranteed identity).
-$id_only = new WC_Order();
-Mtuc_Cp_Api_Client::reset();
-Mtuc_Cp_Api_Client::$create_queue[] = array( 'data' => array( 'id' => 7777 ) );
-Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 7778 );
-$r_id_only = mtuc_create_cp_order_with_recovery(
-	$id_only,
-	array( 'order_id' => '100' ),
-	array( 'uni_proces' => 0 )
-);
-mtuc_bl_assert( ! is_wp_error( $r_id_only ), 'F02/F03 id-only then valid recovery failed' );
-mtuc_bl_assert( 'created' === $id_only->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'F02/F03 id-only recovery outcome' );
-mtuc_bl_assert( 7778 === (int) $id_only->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'F02/F03 id-only recovered CP id' );
-mtuc_bl_assert( 2 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F02/F03 id-only same-key replay' );
+Mtuc_Cp_Api_Client::$create_queue[] = mtuc_bl_cp_success( 7100 );
+$r_p2_durable = mtuc_create_cp_order_with_recovery( $p2_durable, array( 'order_id' => '100' ), array( 'uni_proces' => 1 ) );
+mtuc_bl_assert( ! is_wp_error( $r_p2_durable ), 'F03 P2 create succeeded' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F03 P2 create is exactly one POST' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS2 === $p2_durable->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F03 P2 local status recorded' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'F03 P2 status reaches CP via PATCH, not create' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SENT_PROCESS2 === Mtuc_Cp_Api_Client::$patch_calls[0]['status_id'], 'F03 P2 PATCH carries the target status' );
+mtuc_bl_assert( 'confirmed' === mtuc_get_cp_status_sync_state( $p2_durable ), 'F03 P2 target confirmed by a valid echo' );
+mtuc_bl_assert( ! array_key_exists( 'status', Mtuc_Cp_Api_Client::$create_calls[0] ), 'F08 P2 create payload carries no status' );
 
 fwrite( STDOUT, "OK: {$mtuc_assert_count} bank lifecycle assertions passed\n" );
 exit( 0 );

@@ -33,6 +33,14 @@ class Mtuc_Rest_Api {
 	 */
 	public static function init(): void {
 		add_action( 'rest_api_init', array( self::class, 'register_routes' ) );
+
+		/*
+		 * REVIEW-04: bound the raw body before WordPress reads php://input.
+		 * rest_api_loaded() is hooked to parse_request at the default priority
+		 * 10, so priority 0 is the last point at which the ceiling can still be
+		 * the real one rather than an after-the-fact check.
+		 */
+		add_action( 'parse_request', 'mtuc_inbound_rest_body_gate', 0, 1 );
 	}
 
 	/**
@@ -106,37 +114,33 @@ class Mtuc_Rest_Api {
 	 * @return WP_REST_Response
 	 */
 	public static function handle_shop_cache_push( WP_REST_Request $request ): WP_REST_Response {
-		$auth = self::authenticate_request( $request );
+		$body = self::read_bounded_body( $request );
+		if ( is_wp_error( $body ) ) {
+			return self::error_from_wp_error( $body );
+		}
+
+		$params = self::decode_body( $body );
+
+		$auth = self::authenticate_request( $request, $body, $params );
 		if ( is_wp_error( $auth ) ) {
 			return self::error_from_wp_error( $auth );
 		}
 
 		$unicid = (string) $auth;
-		$params = self::decode_payload( $request );
-		$data   = self::extract_shop_data( $params );
-		if ( is_wp_error( $data ) ) {
-			return self::error_response( $data->get_error_message(), 400 );
+
+		$operation = mtuc_validate_inbound_operation( $params, MTUC_INBOUND_OPERATION_SHOP_CACHE );
+		if ( is_wp_error( $operation ) ) {
+			return self::error_from_wp_error( $operation );
 		}
 
-		if ( isset( $data['unicid'] ) && (string) $data['unicid'] !== $unicid ) {
-			return self::error_response(
-				__( 'unicid в данните не съвпада с подадения идентификатор.', 'mtunicredit' ),
-				400
-			);
-		}
-
-		$result = Mtuc_Shop_Cache::update_from_cp_push( $unicid, $data );
+		$result = Mtuc_Shop_Cache::update_from_cp_push( $unicid, isset( $params['data'] ) ? $params['data'] : null );
 		if ( is_wp_error( $result ) ) {
-			return self::error_response( $result->get_error_message(), 400 );
+			return self::error_from_wp_error( $result );
 		}
 
-		return new WP_REST_Response(
-			array(
-				'success' => true,
-				'message' => __( 'Кешът на shop данни е обновен успешно.', 'mtunicredit' ),
-				'data'    => $result,
-			),
-			200
+		return self::success_response(
+			__( 'Кешът на shop данни е обновен успешно.', 'mtunicredit' ),
+			is_array( $result ) ? $result : array()
 		);
 	}
 
@@ -147,54 +151,57 @@ class Mtuc_Rest_Api {
 	 * @return WP_REST_Response
 	 */
 	public static function handle_smartucf_debug_log_fetch( WP_REST_Request $request ): WP_REST_Response {
-		$auth = self::authenticate_request( $request );
+		$body = self::read_bounded_body( $request );
+		if ( is_wp_error( $body ) ) {
+			return self::error_from_wp_error( $body );
+		}
+
+		$params = self::decode_body( $body );
+
+		$auth = self::authenticate_request( $request, $body, $params );
 		if ( is_wp_error( $auth ) ) {
 			return self::error_from_wp_error( $auth );
 		}
 
-		$params   = self::decode_payload( $request );
-		$order_id = isset( $params['order_id'] ) ? sanitize_text_field( (string) $params['order_id'] ) : '';
+		$unicid = (string) $auth;
 
-		if ( '' === $order_id ) {
-			return self::error_response(
-				__( 'Липсва order_id в заявката.', 'mtunicredit' ),
-				400
-			);
+		$operation = mtuc_validate_inbound_operation( $params, MTUC_INBOUND_OPERATION_SMARTUCF_DEBUG_LOG );
+		if ( is_wp_error( $operation ) ) {
+			return self::error_from_wp_error( $operation );
 		}
 
-		if ( ! function_exists( 'mtuc_find_order_by_cp_order_id' ) ) {
-			return self::error_response(
-				__( 'WooCommerce не е наличен.', 'mtunicredit' ),
-				500
-			);
+		$validated = mtuc_validate_smartucf_debug_log_body( $params );
+		if ( is_wp_error( $validated ) ) {
+			return self::error_from_wp_error( $validated );
 		}
 
-		$order = mtuc_find_order_by_cp_order_id( $order_id );
-		if ( ! $order instanceof WC_Order ) {
-			return self::error_response(
-				__( 'Поръчката не е намерена в магазина.', 'mtunicredit' ),
-				404
-			);
+		if ( ! function_exists( 'mtuc_resolve_financing_order' ) ) {
+			return self::error_response( 'internal_error', __( 'WooCommerce не е наличен.', 'mtunicredit' ), 500 );
+		}
+
+		$order = mtuc_resolve_financing_order( $validated['order_id'], $unicid );
+		if ( is_wp_error( $order ) ) {
+			return self::error_from_wp_error( $order );
+		}
+
+		// F06: P1 identity + SmartUCF lifecycle ownership; all denials are opaque.
+		$authorized = mtuc_authorize_smartucf_debug_read( $order );
+		if ( is_wp_error( $authorized ) ) {
+			return self::error_from_wp_error( $authorized );
 		}
 
 		$entry = Mtuc_Debug_Log::get_entry_for_wc_order_id( $order->get_id() );
 		if ( null === $entry ) {
-			return self::error_response(
-				__( 'Няма запис в дебъг журнала за тази поръчка.', 'mtunicredit' ),
-				404
-			);
+			return self::error_from_wp_error( mtuc_financing_order_not_found_error( 'debug_journal_absent' ) );
 		}
 
-		return new WP_REST_Response(
+		return self::success_response(
+			__( 'Записът от дебъг журнала е върнат успешно.', 'mtunicredit' ),
 			array(
-				'success' => true,
-				'data'    => array(
-					'order_id'    => mtuc_get_cp_shop_order_id( $order ),
-					'wc_order_id' => $order->get_id(),
-					'log'         => $entry,
-				),
-			),
-			200
+				'order_id'    => mtuc_get_cp_shop_order_id( $order ),
+				'wc_order_id' => (string) $order->get_id(),
+				'log'         => $entry,
+			)
 		);
 	}
 
@@ -230,121 +237,145 @@ class Mtuc_Rest_Api {
 	 * @return WP_REST_Response
 	 */
 	public static function handle_order_bank_status_push( WP_REST_Request $request ): WP_REST_Response {
-		$auth = self::authenticate_request( $request );
+		$body = self::read_bounded_body( $request );
+		if ( is_wp_error( $body ) ) {
+			return self::error_from_wp_error( $body );
+		}
+
+		$params = self::decode_body( $body );
+
+		$auth = self::authenticate_request( $request, $body, $params );
 		if ( is_wp_error( $auth ) ) {
 			return self::error_from_wp_error( $auth );
 		}
 
-		$params = self::decode_payload( $request );
+		$unicid = (string) $auth;
 
-		if ( array_key_exists( 'status_id', $params ) && ! self::is_bank_status_field_scalar( $params['status_id'] ) ) {
-			return self::error_response(
-				__( 'Невалиден тип на status_id в заявката.', 'mtunicredit' ),
-				400
-			);
+		$operation = mtuc_validate_inbound_operation( $params, MTUC_INBOUND_OPERATION_ORDER_BANK_STATUS );
+		if ( is_wp_error( $operation ) ) {
+			return self::error_from_wp_error( $operation );
 		}
 
-		if ( array_key_exists( 'status', $params ) && ! self::is_bank_status_field_scalar( $params['status'] ) ) {
-			return self::error_response(
-				__( 'Невалиден тип на status в заявката.', 'mtunicredit' ),
-				400
-			);
+		$validated = mtuc_validate_order_bank_status_body( $params );
+		if ( is_wp_error( $validated ) ) {
+			return self::error_from_wp_error( $validated );
 		}
 
-		if ( array_key_exists( 'status_label', $params ) && ! self::is_bank_status_field_scalar( $params['status_label'] ) ) {
-			return self::error_response(
-				__( 'Невалиден тип на status_label в заявката.', 'mtunicredit' ),
-				400
-			);
+		if ( ! function_exists( 'mtuc_resolve_financing_order' ) || ! function_exists( 'mtuc_apply_cp_bank_status_push' ) ) {
+			return self::error_response( 'internal_error', __( 'WooCommerce не е наличен.', 'mtunicredit' ), 500 );
 		}
 
-		$order_id  = isset( $params['order_id'] ) ? sanitize_text_field( (string) $params['order_id'] ) : '';
-		$status    = isset( $params['status'] ) ? sanitize_text_field( (string) $params['status'] ) : '';
-		if ( '' === $status && isset( $params['status_label'] ) ) {
-			$status = sanitize_text_field( (string) $params['status_label'] );
-		}
-		$status_id = isset( $params['status_id'] ) ? sanitize_key( (string) $params['status_id'] ) : '';
-
-		if ( strlen( $status_id ) > self::BANK_STATUS_ID_MAX_LEN ) {
-			return self::error_response(
-				__( 'status_id надвишава допустимата дължина.', 'mtunicredit' ),
-				400
-			);
+		$order = mtuc_resolve_financing_order( $validated['order_id'], $unicid );
+		if ( is_wp_error( $order ) ) {
+			return self::error_from_wp_error( $order );
 		}
 
-		if ( strlen( $status ) > self::BANK_STATUS_LABEL_MAX_LEN ) {
-			return self::error_response(
-				__( 'status_label надвишава допустимата дължина.', 'mtunicredit' ),
-				400
-			);
-		}
-
-		if ( '' === $order_id ) {
-			return self::error_response(
-				__( 'Липсва order_id в заявката.', 'mtunicredit' ),
-				400
-			);
-		}
-
-		if ( '' === $status_id ) {
-			return self::error_response(
-				__( 'Липсва status_id в заявката.', 'mtunicredit' ),
-				400
-			);
-		}
-
-		if ( ! function_exists( 'mtuc_find_order_by_cp_order_id' ) || ! function_exists( 'mtuc_apply_cp_bank_status_push' ) ) {
-			return self::error_response(
-				__( 'WooCommerce не е наличен.', 'mtunicredit' ),
-				500
-			);
-		}
-
-		$order = mtuc_find_order_by_cp_order_id( $order_id );
-		if ( ! $order instanceof WC_Order ) {
-			return self::error_response(
-				__( 'Поръчката не е намерена в магазина.', 'mtunicredit' ),
-				404
-			);
-		}
+		/*
+		 * REVIEW-07: the validator already decided these bytes are acceptable.
+		 * Re-sanitising here would silently store a different status than the
+		 * one CP sent, so the validated strings are passed through verbatim.
+		 */
+		$status_id = $validated['status_id'];
+		$status    = $validated['status'];
 
 		$result = mtuc_apply_cp_bank_status_push( $order, $status_id, $status );
 		if ( is_wp_error( $result ) ) {
-			return self::error_response( $result->get_error_message(), 400 );
+			return self::error_from_wp_error( self::map_bank_status_push_error( $result ) );
 		}
 
-		return new WP_REST_Response(
+		return self::success_response(
+			__( 'Банковият статус на поръчката е обновен успешно.', 'mtunicredit' ),
 			array(
-				'success' => true,
-				'message' => __( 'Банковият статус на поръчката е обновен успешно.', 'mtunicredit' ),
-				'data'    => array(
-					'order_id'    => mtuc_get_cp_shop_order_id( $order ),
-					'wc_order_id' => $order->get_id(),
-					'status'      => '' !== $status ? $status : (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' ),
-					'status_id'   => $status_id,
-				),
-			),
-			200
+				'order_id'    => mtuc_get_cp_shop_order_id( $order ),
+				'wc_order_id' => (string) $order->get_id(),
+				'status'      => '' !== $status ? $status : (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' ),
+				'status_id'   => $status_id,
+			)
 		);
+	}
+
+	/**
+	 * Map a bank-status rejection onto the canonical inbound error contract.
+	 *
+	 * Identity/transition refusals are semantic conflicts (409); everything else
+	 * that reached this point is a validation failure (422).
+	 *
+	 * @param WP_Error $error Rejection from the bank status state machine.
+	 * @return WP_Error
+	 */
+	private static function map_bank_status_push_error( WP_Error $error ): WP_Error {
+		$conflict_codes = array(
+			'mtuc_callback_process_identity_conflict',
+			'mtuc_callback_process_identity_unknown',
+			'mtuc_callback_status_transition_forbidden',
+			'mtuc_callback_process1_identity_required',
+			'mtuc_callback_process2_identity_required',
+			'mtuc_callback_cp_failure_process_mismatch',
+			'mtuc_callback_smartucf_failure_process_mismatch',
+			'mtuc_callback_smartucf_evidence_missing',
+			'mtuc_callback_process2_evidence_missing',
+			'mtuc_callback_smartucf_failure_evidence_missing',
+			'mtuc_callback_cp_failure_evidence_missing',
+			'mtuc_not_mtuc_order',
+		);
+
+		if ( in_array( $error->get_error_code(), $conflict_codes, true ) ) {
+			return new WP_Error(
+				$error->get_error_code(),
+				$error->get_error_message(),
+				array(
+					'status' => 409,
+					'error'  => 'semantic_conflict',
+				)
+			);
+		}
+
+		return new WP_Error(
+			$error->get_error_code(),
+			$error->get_error_message(),
+			array(
+				'status' => 422,
+				'error'  => 'validation',
+			)
+		);
+	}
+
+	/**
+	 * Re-check the 1 MiB ceiling at the handler (defense in depth).
+	 *
+	 * The real bound is the parse_request gate registered in init(): by the
+	 * time a handler runs, WordPress has already read the whole body. This
+	 * check still runs before HMAC verification, nonce claiming, JSON parsing
+	 * and order lookup, and covers dispatch paths that bypass the gate
+	 * (internal rest_do_request calls, tests).
+	 *
+	 * @param WP_REST_Request $request Incoming request.
+	 * @return string|WP_Error
+	 */
+	private static function read_bounded_body( WP_REST_Request $request ) {
+		return mtuc_read_bounded_inbound_body( (string) $request->get_body() );
 	}
 
 	/**
 	 * Authenticate signed CP request before endpoint business logic.
 	 *
-	 * @param WP_REST_Request $request Incoming request.
+	 * @param WP_REST_Request      $request  Incoming request.
+	 * @param string               $raw_body Bounded raw request body.
+	 * @param array<string, mixed> $params   Decoded request body.
 	 * @return string|WP_Error
 	 */
-	private static function authenticate_request( WP_REST_Request $request ) {
-		$raw_body = (string) $request->get_body();
+	private static function authenticate_request( WP_REST_Request $request, string $raw_body, array $params ) {
 		if ( '' === $raw_body ) {
 			return new WP_Error(
 				'mtuc_invalid_body',
 				__( 'Липсва JSON body в заявката.', 'mtunicredit' ),
-				array( 'status' => 400 )
+				array(
+					'status' => 400,
+					'error'  => 'validation',
+				)
 			);
 		}
 
-		$params  = self::decode_payload( $request );
 		$headers = self::extract_signature_headers( $request );
 
 		return Mtuc_Module_Request_Authenticator::authenticate( $params, $raw_body, $headers );
@@ -372,63 +403,81 @@ class Mtuc_Rest_Api {
 	}
 
 	/**
-	 * @param WP_REST_Request $request Incoming request.
+	 * Decode the bounded raw body into request params.
+	 *
+	 * @param string $raw_body Bounded raw request body.
 	 * @return array<string, mixed>
 	 */
-	private static function decode_payload( WP_REST_Request $request ): array {
-		$params = $request->get_json_params();
-		if ( ! is_array( $params ) ) {
-			$params = json_decode( (string) $request->get_body(), true );
-		}
+	private static function decode_body( string $raw_body ): array {
+		$params = json_decode( $raw_body, true );
 
 		return is_array( $params ) ? $params : array();
 	}
 
 	/**
-	 * Extract shop `data` object from request payload.
+	 * Build a canonical inbound success response (F09).
 	 *
-	 * @param array<string, mixed> $params Request JSON.
-	 * @return array<string, mixed>|WP_Error
-	 */
-	private static function extract_shop_data( array $params ) {
-		if ( isset( $params['data'] ) && is_array( $params['data'] ) && ! empty( $params['data'] ) ) {
-			return $params['data'];
-		}
-
-		return new WP_Error(
-			'mtuc_invalid_shop_payload',
-			__( 'Липсва или е невалидно полето data в заявката.', 'mtunicredit' )
-		);
-	}
-
-	/**
-	 * Build a JSON error response in CP style.
-	 *
-	 * @param string $message Error message.
-	 * @param int    $status  HTTP status code.
+	 * @param string               $message Human-readable message.
+	 * @param array<string, mixed> $data    Response data object.
 	 * @return WP_REST_Response
 	 */
-	private static function error_response( string $message, int $status ): WP_REST_Response {
-		return new WP_REST_Response(
-			array(
-				'success' => false,
-				'message' => $message,
-			),
-			$status
-		);
+	private static function success_response( string $message, array $data = array() ): WP_REST_Response {
+		return new WP_REST_Response( mtuc_inbound_success_envelope( $message, $data ), 200 );
 	}
 
 	/**
+	 * Build a canonical inbound failure response (F09).
+	 *
+	 * @param string               $error   Lowercase snake_case machine error code.
+	 * @param string               $message Human-readable message.
+	 * @param int                  $status  HTTP status code.
+	 * @param array<string, mixed> $data    Response data object.
+	 * @return WP_REST_Response
+	 */
+	private static function error_response( string $error, string $message, int $status, array $data = array() ): WP_REST_Response {
+		return new WP_REST_Response( mtuc_inbound_error_envelope( $error, $message, $data ), $status );
+	}
+
+	/**
+	 * Render a WP_Error as a canonical inbound failure envelope.
+	 *
 	 * @param WP_Error $error Error object.
 	 * @return WP_REST_Response
 	 */
 	private static function error_from_wp_error( WP_Error $error ): WP_REST_Response {
-		$status = 401;
 		$data   = $error->get_error_data();
-		if ( is_array( $data ) && isset( $data['status'] ) ) {
-			$status = (int) $data['status'];
+		$data   = is_array( $data ) ? $data : array();
+		$status = isset( $data['status'] ) ? (int) $data['status'] : 401;
+
+		$code = isset( $data['error'] ) && is_string( $data['error'] )
+			? $data['error']
+			: self::default_error_code_for_status( $status );
+
+		$payload = array();
+		if ( isset( $data['violations'] ) && is_array( $data['violations'] ) ) {
+			$payload['violations'] = array_values( $data['violations'] );
 		}
 
-		return self::error_response( $error->get_error_message(), $status );
+		return self::error_response( $code, $error->get_error_message(), $status, $payload );
+	}
+
+	/**
+	 * Canonical machine error code for a bare HTTP status.
+	 *
+	 * @param int $status HTTP status code.
+	 * @return string
+	 */
+	private static function default_error_code_for_status( int $status ): string {
+		$map = array(
+			400 => 'validation',
+			401 => 'unauthorized',
+			403 => 'forbidden',
+			404 => 'not_found',
+			409 => 'semantic_conflict',
+			413 => 'payload_too_large',
+			422 => 'validation',
+		);
+
+		return $map[ $status ] ?? 'internal_error';
 	}
 }

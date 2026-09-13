@@ -33,6 +33,7 @@
     "json",
     "openssl",
     "curl",
+    "mysqli",
     "filter",
     "mbstring",
     "pcre",

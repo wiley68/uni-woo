@@ -129,6 +129,8 @@ function mtuc_fp_seed_process2_order( WC_Order $order ): void {
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'glp', 1.25 );
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'gpr', 2.5 );
 	$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 777 );
+	// AUD-WOO-019-F05: the CP shop order_id is durable meta, never derived.
+	$order->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '42' );
 }
 
 // ---------------------------------------------------------------------------
@@ -194,9 +196,9 @@ $msg_pos            = array_search( 'Съобщение', $admin_email_labels, t
 mtuc_fp_assert(
 	false !== $egn_pos
 	&& false !== $phone_pos
-	&& $egn_pos < $phone_pos
-	&& $phone_pos < $msg_pos,
-	'admin email Process 2 field order: EGN → phone2 → message'
+	&& $phone_pos < $egn_pos
+	&& $egn_pos < $msg_pos,
+	'admin email Process 2 field order: phone2 → EGN → message'
 );
 
 // ---------------------------------------------------------------------------

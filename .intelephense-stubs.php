@@ -33,9 +33,11 @@ const ARRAY_N           = 'ARRAY_N';
 // --- WordPress globals ------------------------------------------------------
 
 /**
- * @var wpdb $wpdb
+ * WordPress database abstraction object.
+ *
+ * @var wpdb|null
  */
-global $wpdb;
+$wpdb = null;
 
 // --- WordPress core ---------------------------------------------------------
 
@@ -760,6 +762,13 @@ class wpdb
 	public int $insert_id = 0;
 	public string $last_error = '';
 
+	/**
+	 * Database link (mysqli or legacy mysql resource).
+	 *
+	 * @var mysqli|resource|object|null
+	 */
+	public $dbh = null;
+
 	public function prepare(string $query, mixed ...$args): string|false
 	{
 		unset($query, $args);
@@ -1044,9 +1053,24 @@ function wc_get_product($the_product = false, $deprecated = array()): ?WC_Produc
 
 class WC_Product
 {
+	/** @var int */
+	public $id = 0;
+
+	/** @var string */
+	public $name = '';
+
+	/**
+	 * @param int    $id   Product ID.
+	 * @param string $name Product name.
+	 */
+	public function __construct( int $id = 0, string $name = '' ) {
+		$this->id   = $id;
+		$this->name = $name;
+	}
+
 	public function get_id(): int
 	{
-		return 0;
+		return $this->id;
 	}
 
 	public function get_parent_id(): int

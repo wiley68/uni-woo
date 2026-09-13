@@ -761,6 +761,37 @@ function mtuc_is_smartucf_presend_error( $error_or_code ): bool {
 			'mtuc_smartucf_curl_init',
 			'mtuc_smartucf_claim_invalid_order',
 			'mtuc_smartucf_claim_encode_failed',
+			'mtuc_smartucf_credentials_unavailable',
+			'mtuc_smartucf_credentials_scope_mismatch',
+			'mtuc_smartucf_credentials_crypto_unavailable',
+			'mtuc_smartucf_credentials_invalid_pair',
+			'mtuc_smartucf_credentials_encrypt_failed',
+			'mtuc_smartucf_credentials_encode_failed',
+			'mtuc_smartucf_credentials_store_failed',
+			'mtuc_submit_locked',
+		),
+		true
+	);
+}
+
+/**
+ * Whether a SmartUCF error is a proven definitive remote rejection.
+ *
+ * Non-2xx HTTP without canonical reject evidence remains ambiguous (AUD-WOO-012).
+ * This helper is reserved for explicitly classified remote rejects.
+ *
+ * @param WP_Error|string $error_or_code Error or code.
+ * @return bool
+ */
+function mtuc_is_smartucf_definitive_remote_error( $error_or_code ): bool {
+	$code = $error_or_code instanceof WP_Error
+		? $error_or_code->get_error_code()
+		: (string) $error_or_code;
+
+	return in_array(
+		$code,
+		array(
+			'mtuc_smartucf_remote_rejected',
 		),
 		true
 	);
@@ -791,8 +822,13 @@ function mtuc_is_smartucf_ambiguous_error( WP_Error $error ): bool {
 		return true;
 	}
 
-	// Conservative: unknown smartucf_* after boundary is ambiguous unless proven presend.
+	// Conservative: unknown smartucf_* after boundary is ambiguous unless proven presend/definitive.
 	if ( 0 === strpos( $code, 'mtuc_smartucf_' ) && ! mtuc_is_smartucf_presend_error( $error ) ) {
+		if ( function_exists( 'mtuc_is_smartucf_definitive_remote_error' )
+			&& mtuc_is_smartucf_definitive_remote_error( $error )
+		) {
+			return false;
+		}
 		return true;
 	}
 
@@ -888,11 +924,21 @@ function mtuc_finalize_smartucf_p1_success( WC_Order $order, string $session_id,
 	}
 
 	if ( function_exists( 'mtuc_record_order_bank_status' ) ) {
-		mtuc_record_order_bank_status(
+		/*
+		 * REVIEW-02: admission, local write and durability proof all happen
+		 * inside this call and before any CP PATCH. A failure here means the
+		 * bank status was never durably claimed, so P1 success is not claimed
+		 * either — the caller must not treat the submission as complete.
+		 */
+		$recorded = mtuc_record_order_bank_status(
 			$order,
 			MTUC_BANK_STATUS_SENT_PROCESS1,
 			array( 'sync_cp' => true )
 		);
+
+		if ( is_wp_error( $recorded ) ) {
+			return $recorded;
+		}
 	} else {
 		$order->update_meta_data( MTUC_ORDER_META_BANK_STATUS, MTUC_BANK_STATUS_SENT_PROCESS1 );
 		$order->save();
@@ -1017,6 +1063,26 @@ function mtuc_handle_smartucf_start_error( WC_Order $order, WP_Error $error ): W
 
 	if ( mtuc_is_smartucf_presend_error( $error ) ) {
 		mtuc_release_smartucf_p1_claim_after_presend_failure( $order );
+		/*
+		 * Local/pre-send failures are retryable. Record sanitized diagnostics only —
+		 * never persist bank_send_failed_smartucf (AUD-WOO-018).
+		 */
+		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
+			$subsystem = (
+				function_exists( 'mtuc_is_ssl_presend_error_code' )
+				&& mtuc_is_ssl_presend_error_code( $code )
+			) ? 'certificate' : 'smartucf';
+			mtuc_record_order_financing_diagnostic( $order, $error, $subsystem );
+		}
+		$order->update_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE, 1 );
+		$order->save();
+		return $error;
+	}
+
+	// Proven definitive remote rejection (not ambiguous, not pre-send).
+	if ( function_exists( 'mtuc_is_smartucf_definitive_remote_error' )
+		&& mtuc_is_smartucf_definitive_remote_error( $error )
+	) {
 		if ( function_exists( 'mtuc_fail_order_on_smartucf_error' ) ) {
 			mtuc_fail_order_on_smartucf_error( $order, $error );
 		}

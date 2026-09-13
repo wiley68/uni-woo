@@ -729,6 +729,33 @@ if ( ! class_exists( 'Mtuc_Module_Request_Signature_Protocol', false ) ) {
 	}
 }
 
+if ( ! function_exists( 'home_url' ) ) {
+	/**
+	 * @param string $path Path.
+	 * @return string
+	 */
+	function home_url( $path = '' ) {
+		return 'https://shop.example' . ( '' === $path ? '' : '/' . ltrim( (string) $path, '/' ) );
+	}
+}
+
+if ( ! class_exists( 'Mtuc_Settings', false ) ) {
+	/**
+	 * Settings stub exposing the shop UNICID used for ownership checks.
+	 */
+	class Mtuc_Settings {
+		public const OPTION_UNICID = 'mtuc_unicid';
+
+		/**
+		 * @param string $key Option key.
+		 * @return string
+		 */
+		public static function get( $key ) {
+			return self::OPTION_UNICID === $key ? 'TEST-UNICID' : '';
+		}
+	}
+}
+
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-rest-api.php';
 
 mtuc_bssm_assert( ! Mtuc_Rest_Api::is_bank_status_field_scalar( array() ), 'array not scalar' );
@@ -741,39 +768,91 @@ $rest_o = new WC_Order();
 $rest_o->id = 1580;
 mtuc_bssm_seed_identity( $rest_o, 1 );
 $rest_o->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '1580' );
+$rest_o->update_meta_data( MTUC_ORDER_META_FINANCING_UNICID, 'TEST-UNICID' );
+$rest_o->update_meta_data( MTUC_ORDER_META_FINANCING_SITE, 'https://shop.example' );
 $GLOBALS['mtuc_test_orders'][1580] = $rest_o;
+
+/**
+ * Canonical inbound order-bank-status body (AUD-WOO-019-F09).
+ *
+ * @param array<string, mixed> $overrides Fields replacing the canonical ones.
+ * @return array<string, mixed>
+ */
+function mtuc_bssm_bank_status_body( array $overrides ): array {
+	return array_merge(
+		array(
+			'operation' => 'order-bank-status',
+			'unicid'    => 'TEST-UNICID',
+			'order_id'  => '1580',
+			'status_id' => '85',
+			'status'    => 'ok',
+		),
+		$overrides
+	);
+}
 
 $cases = array(
 	array( 'status_id' => array(), 'status' => 'x', 'label' => 'status_id array' ),
 	array( 'status_id' => (object) array( 'x' => 1 ), 'status' => 'x', 'label' => 'status_id object' ),
 	array( 'status_id' => '85', 'status' => array(), 'label' => 'status array' ),
 	array( 'status_id' => '85', 'status_label' => (object) array( 'x' => 1 ), 'label' => 'status_label object' ),
+	array( 'status_id' => 85, 'label' => 'status_id int is not coerced' ),
+	array( 'status' => true, 'label' => 'status bool is not coerced' ),
+	array( 'status_label' => 'Изпратен', 'label' => 'status_label string is unknown field' ),
 );
 
 foreach ( $cases as $case ) {
+	$label = $case['label'];
+	unset( $case['label'] );
+
 	$req       = new WP_REST_Request();
-	$req->json = array_merge(
-		array( 'order_id' => '1580' ),
-		$case
-	);
-	unset( $req->json['label'] );
+	$req->json = mtuc_bssm_bank_status_body( $case );
 	$req->body = (string) wp_json_encode( $req->json );
 	$resp      = Mtuc_Rest_Api::handle_order_bank_status_push( $req );
-	mtuc_bssm_assert( 400 === $resp->get_status(), 'F05 REST reject: ' . $case['label'] );
+	mtuc_bssm_assert( 422 === $resp->get_status(), 'F09 REST reject: ' . $label );
+
 	$data = $resp->get_data();
+	mtuc_bssm_assert(
+		is_array( $data )
+		&& array( 'success', 'error', 'message', 'data' ) === array_keys( $data )
+		&& false === $data['success']
+		&& 'validation' === $data['error']
+		&& is_array( $data['data'] ),
+		'F09 canonical error envelope: ' . $label
+	);
+
 	$blob = (string) wp_json_encode( $data );
-	mtuc_bssm_assert( false === stripos( $blob, 'Array' ) || false === strpos( $blob, '"Array"' ), 'F05 no Array cast leak: ' . $case['label'] );
-	mtuc_bssm_assert( '' === (string) $rest_o->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F05 status untouched: ' . $case['label'] );
+	mtuc_bssm_assert( false === stripos( $blob, 'Array' ) || false === strpos( $blob, '"Array"' ), 'F09 no Array cast leak: ' . $label );
+	mtuc_bssm_assert( '' === (string) $rest_o->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F09 status untouched: ' . $label );
 }
 
 $over = new WP_REST_Request();
-$over->json = array(
-	'order_id'  => '1580',
-	'status_id' => str_repeat( 'a', Mtuc_Rest_Api::BANK_STATUS_ID_MAX_LEN + 1 ),
-	'status'    => 'ok',
+$over->json = mtuc_bssm_bank_status_body(
+	array( 'status_id' => str_repeat( 'a', MTUC_INBOUND_STATUS_ID_MAX_LEN + 1 ) )
 );
 $over->body = (string) wp_json_encode( $over->json );
 $resp       = Mtuc_Rest_Api::handle_order_bank_status_push( $over );
-mtuc_bssm_assert( 400 === $resp->get_status(), 'F05 over-length status_id rejected' );
+mtuc_bssm_assert( 422 === $resp->get_status(), 'F09 over-length status_id rejected' );
+
+$long_order = new WP_REST_Request();
+$long_order->json = mtuc_bssm_bank_status_body(
+	array( 'order_id' => str_repeat( '1', MTUC_INBOUND_ORDER_ID_MAX_LEN + 1 ) )
+);
+$long_order->body = (string) wp_json_encode( $long_order->json );
+$resp             = Mtuc_Rest_Api::handle_order_bank_status_push( $long_order );
+mtuc_bssm_assert( 422 === $resp->get_status(), 'F09 over-length order_id rejected' );
+
+$wrong_op = new WP_REST_Request();
+$wrong_op->json = mtuc_bssm_bank_status_body( array( 'operation' => 'shop-cache' ) );
+$wrong_op->body = (string) wp_json_encode( $wrong_op->json );
+$resp           = Mtuc_Rest_Api::handle_order_bank_status_push( $wrong_op );
+mtuc_bssm_assert( 422 === $resp->get_status(), 'F04 wrong operation rejected' );
+
+$oversize = new WP_REST_Request();
+$oversize->json = mtuc_bssm_bank_status_body( array() );
+$oversize->body = str_repeat( 'x', MTUC_INBOUND_MAX_BODY_BYTES + 1 );
+$resp           = Mtuc_Rest_Api::handle_order_bank_status_push( $oversize );
+mtuc_bssm_assert( 413 === $resp->get_status(), 'F04 oversize body rejected with 413' );
+mtuc_bssm_assert( 'payload_too_large' === $resp->get_data()['error'], 'F04 oversize error code canonical' );
 
 fwrite( STDOUT, 'OK bank-status-state-machine ' . $mtuc_bssm_assert_count . ' assertions' . PHP_EOL );

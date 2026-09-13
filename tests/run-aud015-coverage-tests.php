@@ -665,13 +665,20 @@ if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) && function_exi
 // HPOS-oriented callback lookup remains meta-based (no posts-table assumption)
 // ---------------------------------------------------------------------------
 
-$lookup_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php' );
+// The lookup body moved into the strict ownership resolver (AUD-WOO-019-F05).
+$lookup_src   = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php' );
+$resolver_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-financing-order-resolver.php' );
 mtuc_aud015_assert( false !== strpos( $lookup_src, 'function mtuc_find_order_by_cp_order_id' ), 'CP external ID lookup helper exists' );
-mtuc_aud015_assert( false !== strpos( $lookup_src, 'wc_get_orders' ), 'CP lookup uses wc_get_orders (HPOS-compatible)' );
-mtuc_aud015_assert( false === strpos( $lookup_src, '$wpdb->get_results' ), 'CP lookup avoids raw wpdb order queries' );
+mtuc_aud015_assert( false !== strpos( $resolver_src, 'wc_get_orders' ), 'CP lookup uses wc_get_orders (HPOS-compatible)' );
+mtuc_aud015_assert( false === strpos( $resolver_src, '$wpdb->get_results' ), 'CP lookup avoids raw wpdb order queries' );
 mtuc_aud015_assert(
-	false !== strpos( $lookup_src, 'MTUC_ORDER_META_CP_SHOP_ORDER_ID' ),
+	false !== strpos( $resolver_src, 'MTUC_ORDER_META_CP_SHOP_ORDER_ID' ),
 	'lookup prefers persisted CP shop order meta'
+);
+mtuc_aud015_assert(
+	false === strpos( $resolver_src, "'limit'      => 1," )
+	&& false === strpos( $resolver_src, "'search'" ),
+	'F05 lookup has no truncating limit-1 or display-number search fallback'
 );
 
 // Abandonment: no invented bank status — last known bank meta remains.

@@ -11,7 +11,8 @@ require_once __DIR__ . '/bootstrap.php';
 
 $mtuc_fe_assert_count = 0;
 $mtuc_fe_mail_log     = array();
-$mtuc_fe_options      = array( 'admin_email' => 'store-admin@example.com' );
+$GLOBALS['mtuc_test_options']['admin_email'] = 'store-admin@example.com';
+$mtuc_fe_options      = &$GLOBALS['mtuc_test_options'];
 $mtuc_fe_shop         = array(
 	'uni_email' => 'merchant@example.com, store-admin@example.com, other@example.com',
 );

@@ -154,6 +154,15 @@ if ( ! class_exists( 'WC_Product', false ) ) {
 		/** @var string */
 		public $name = '';
 
+		/**
+		 * @param int    $id   Product ID.
+		 * @param string $name Product name.
+		 */
+		public function __construct( int $id = 0, string $name = '' ) {
+			$this->id   = $id;
+			$this->name = $name;
+		}
+
 		public function get_id(): int {
 			return $this->id;
 		}
@@ -340,9 +349,7 @@ function mtuc_cp_fixture_product_context( int $order_id = 874 ): array {
 	$order->currency        = 'BGN';
 	$order->meta[ MTUC_ORDER_META_CP_SHOP_ORDER_ID ] = (string) $order_id;
 
-	$product       = new WC_Product();
-	$product->id   = 42;
-	$product->name = 'Тестов продукт_с_долна_черта';
+	$product = new WC_Product( 42, 'Тестов продукт_с_долна_черта' );
 
 	$customer = array(
 		'first_name' => 'Иван',
@@ -411,7 +418,8 @@ $expected_p1 = array(
 	'vnoski'        => 12,
 	'parva'         => 10.0,
 	'products_id'   => '42',
-	'products_name' => 'Тестов продукт-с-долна-черта',
+	// AUD-WOO-019-F10: underscores preserved verbatim, never rewritten to dashes.
+	'products_name' => 'Тестов продукт_с_долна_черта',
 	'products_q'    => '2',
 	'type_client'   => 1,
 	'currency'      => 'BGN',
@@ -438,12 +446,24 @@ $actual_p2 = mtuc_build_cp_order_payload(
 	$shop_p2
 );
 
+// AUD-WOO-019-F08: create carries the allowlist only — P2 no longer claims a
+// bank status on create; it admits a durable PATCH target instead.
 $expected_p2 = $expected_p1;
-$expected_p2['status']    = 'Изпратен Банка - Процес 2';
-$expected_p2['status_id'] = 'bank_sent_process2';
 
 mtuc_cp_assert_same( $expected_p2, $actual_p2, 'Process 2 product CP payload golden contract' );
 mtuc_cp_assert( ! array_key_exists( 'egn', $actual_p2 ), 'P2 CP payload must not include EGN' );
+mtuc_cp_assert( ! array_key_exists( 'status', $actual_p2 ), 'F08 P2 create omits status' );
+mtuc_cp_assert( ! array_key_exists( 'status_id', $actual_p2 ), 'F08 P2 create omits status_id' );
+mtuc_cp_assert(
+	array_keys( $actual_p2 ) === array_values( array_intersect( mtuc_cp_create_payload_allowlist(), array_keys( $actual_p2 ) ) ),
+	'F08 create payload keys follow the allowlist order'
+);
+foreach ( array_keys( $actual_p2 ) as $mtuc_cp_field ) {
+	mtuc_cp_assert(
+		in_array( $mtuc_cp_field, mtuc_cp_create_payload_allowlist(), true ),
+		'F08 create payload has no non-allowlisted field: ' . $mtuc_cp_field
+	);
+}
 
 // ---------------------------------------------------------------------------
 // Numeric CP identity + no W/base36
@@ -553,16 +573,12 @@ $cart_order->total    = 250.0;
 $cart_order->currency = 'BGN';
 $cart_order->meta[ MTUC_ORDER_META_CP_SHOP_ORDER_ID ] = '900';
 
-$p_a       = new WC_Product();
-$p_a->id   = 10;
-$p_a->name = 'A_one';
-$item_a            = new WC_Order_Item_Product();
-$item_a->product   = $p_a;
-$item_a->quantity  = 1;
+$p_a              = new WC_Product( 10, 'A_one' );
+$item_a           = new WC_Order_Item_Product();
+$item_a->product  = $p_a;
+$item_a->quantity = 1;
 
-$p_b       = new WC_Product();
-$p_b->id   = 20;
-$p_b->name = 'B_two';
+$p_b              = new WC_Product( 20, 'B_two' );
 $item_b            = new WC_Order_Item_Product();
 $item_b->product   = $p_b;
 $item_b->quantity  = 3;
@@ -591,7 +607,8 @@ $expected_cart = array(
 	'vnoski'        => 12,
 	'parva'         => 10.0,
 	'products_id'   => '10_20',
-	'products_name' => 'A-one_B-two',
+	// F10: names join with `_` and keep their own underscores verbatim.
+	'products_name' => 'A_one_B_two',
 	'products_q'    => '1_3',
 	'type_client'   => 1,
 	'currency'      => 'BGN',
@@ -606,8 +623,28 @@ $cart_p2 = mtuc_build_cp_cart_order_payload(
 	$fx['calculation'],
 	$shop_p2
 );
-mtuc_cp_assert( isset( $cart_p2['status_id'] ) && 'bank_sent_process2' === $cart_p2['status_id'], 'cart P2 includes status_id' );
+mtuc_cp_assert( ! isset( $cart_p2['status_id'] ), 'F08 cart P2 create omits status_id' );
+mtuc_cp_assert( ! isset( $cart_p2['status'] ), 'F08 cart P2 create omits status' );
 mtuc_cp_assert( ! isset( $cart_payload['status_id'] ), 'cart P1 omits status_id' );
+
+// F10: oversize free text is rejected before transport, never truncated.
+$mtuc_cp_long_customer         = $fx['customer'];
+$mtuc_cp_long_customer['email'] = str_repeat( 'a', 120 ) . '@example.com';
+$mtuc_cp_too_long              = mtuc_build_cp_order_payload(
+	$fx['order'],
+	$mtuc_cp_long_customer,
+	$fx['calculation'],
+	$fx['product'],
+	42,
+	0,
+	1,
+	$shop_p1
+);
+mtuc_cp_assert( is_wp_error( $mtuc_cp_too_long ), 'F10 oversize e-mail rejected before transport' );
+mtuc_cp_assert(
+	is_wp_error( $mtuc_cp_too_long ) && 'mtuc_cp_field_too_long' === $mtuc_cp_too_long->get_error_code(),
+	'F10 oversize e-mail uses the pre-send rejection code'
+);
 
 // ---------------------------------------------------------------------------
 // Missing optional / empty shipping → address2 mirrors address or '-'
