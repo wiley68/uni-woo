@@ -1317,24 +1317,21 @@ function mtuc_validate_cp_bank_status_callback( WC_Order $order, string $status_
 		/*
 		 * F01: signed callback alone never proves CP registration failure.
 		 * Prefer reject unless local definitive outcome=missing evidence exists.
-		 * Marker is Process 1 local technical status (P2 uses bank_send_failed).
+		 * CP create failure is process-agnostic (Process 1 and Process 2 share
+		 * the public bank_send_failed_cp status).
 		 */
-		if ( null !== $identity_status && 'clean' === $identity_status && 2 === $identity_proc ) {
-			return new WP_Error(
-				'mtuc_callback_cp_failure_process_mismatch',
-				__( 'bank_send_failed_cp не е валиден за Process 2 поръчка.', 'mtunicredit' )
-			);
-		}
 		if ( ! mtuc_order_has_definitive_cp_failure_evidence( $order ) ) {
 			return new WP_Error(
 				'mtuc_callback_cp_failure_evidence_missing',
 				__( 'bank_send_failed_cp изисква локални definitive CP failure доказателства.', 'mtunicredit' )
 			);
 		}
-		if ( null !== $identity_status && ( 'clean' !== $identity_status || 1 !== $identity_proc ) ) {
+		if ( null !== $identity_status
+			&& ( 'clean' !== $identity_status || ! in_array( $identity_proc, array( 1, 2 ), true ) )
+		) {
 			return new WP_Error(
-				'mtuc_callback_process1_identity_required',
-				__( 'bank_send_failed_cp изисква чиста Process 1 идентичност.', 'mtunicredit' )
+				'mtuc_callback_process_identity_required',
+				__( 'bank_send_failed_cp изисква чиста Process 1 или Process 2 идентичност.', 'mtunicredit' )
 			);
 		}
 	}
@@ -1431,13 +1428,17 @@ function mtuc_maybe_add_callback_guard_note( WC_Order $order, string $status_id,
  * Record confirmed CP create failure (order definitely not created / rejected).
  *
  * Does not change native WooCommerce order status (AUD-WOO-004).
+ * Public bank status is always bank_send_failed_cp for both Process 1 and
+ * Process 2 — CP create failure is process-agnostic.
  *
  * @param WC_Order             $order  Order instance.
  * @param WP_Error|string      $error_or_reason Failure details or WP_Error.
- * @param array<string, mixed> $shop   Shop data (determines Process 1 vs Process 2 failure label).
+ * @param array<string, mixed> $shop   Shop data (kept for call-site compatibility).
  * @return void
  */
 function mtuc_fail_order_on_cp_create_error( WC_Order $order, $error_or_reason = '', array $shop = array() ): void {
+	unset( $shop );
+
 	$reason = '';
 	if ( $error_or_reason instanceof WP_Error ) {
 		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
@@ -1462,14 +1463,6 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, $error_or_reason =
 
 	mtuc_set_cp_create_outcome( $order, 'missing' );
 
-	$is_process2 = function_exists( 'mtuc_is_process2_order' )
-		? mtuc_is_process2_order( $order )
-		: mtuc_is_shop_process_2( $shop );
-
-	$status_key = $is_process2
-		? MTUC_BANK_STATUS_SEND_FAILED
-		: MTUC_BANK_STATUS_SEND_FAILED_CP;
-
 	/*
 	 * The caller is already handling a definitive CP create failure; a refused
 	 * status write cannot make that outcome any worse, and the diagnostic +
@@ -1477,7 +1470,7 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, $error_or_reason =
 	 */
 	mtuc_record_order_bank_status(
 		$order,
-		$status_key,
+		MTUC_BANK_STATUS_SEND_FAILED_CP,
 		array(
 			'bank_unavailable' => true,
 		)

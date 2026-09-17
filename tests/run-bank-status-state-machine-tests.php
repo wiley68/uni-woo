@@ -385,6 +385,22 @@ $r = mtuc_apply_cp_bank_status_push( $cp_fail_ok, MTUC_BANK_STATUS_SEND_FAILED_C
 mtuc_bssm_assert( true === $r, 'F01: clean P1 + definitive CP failure evidence accepts bank_send_failed_cp' );
 mtuc_bssm_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === (string) $cp_fail_ok->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F01: CP failure marker persisted' );
 
+$cp_fail_p2 = new WC_Order();
+$cp_fail_p2->id = 1505;
+mtuc_bssm_seed_identity( $cp_fail_p2, 2 );
+$cp_fail_p2->update_meta_data( MTUC_ORDER_META_CP_CREATE_OUTCOME, 'missing' );
+$r = mtuc_apply_cp_bank_status_push( $cp_fail_p2, MTUC_BANK_STATUS_SEND_FAILED_CP, 'CP fail' );
+mtuc_bssm_assert( true === $r, 'F01: clean P2 + definitive CP failure evidence accepts bank_send_failed_cp' );
+mtuc_bssm_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === (string) $cp_fail_p2->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'F01: P2 CP failure marker persisted' );
+mtuc_bssm_assert(
+	'Неуспешно изпратен Банка - КП' === mtuc_get_bank_status_label( MTUC_BANK_STATUS_SEND_FAILED_CP ),
+	'F01: public CP failure label is not generic'
+);
+mtuc_bssm_assert(
+	'Неуспешно изпратен Банка' !== mtuc_get_bank_status_label( MTUC_BANK_STATUS_SEND_FAILED_CP ),
+	'F01: generic Неуспешно изпратен Банка is not the CP failure label'
+);
+
 // ---------------------------------------------------------------------------
 // F03 — clean P1 required for bank_sent_process1
 // ---------------------------------------------------------------------------
@@ -570,8 +586,7 @@ $p2_rec = new WC_Order();
 $p2_rec->id = 1552;
 mtuc_bssm_seed_identity( $p2_rec, 2 );
 $p2_rec->update_meta_data( MTUC_ORDER_META_CP_CREATE_OUTCOME, 'missing' );
-// Local writer may set bank_send_failed (P2) — use protected CP marker only if evidence;
-// For P2, bank_send_failed_cp is rejected by callback; seed status via direct meta as prior local fail.
+// Local writer / callback may set bank_send_failed_cp for P2 when evidence exists.
 $p2_rec->update_meta_data( MTUC_ORDER_META_BANK_STATUS, MTUC_BANK_STATUS_SEND_FAILED_CP );
 $p2_rec->update_meta_data( MTUC_ORDER_META_PREFIX . 'bank_status_label', 'fail' );
 $p2_rec->update_meta_data( MTUC_ORDER_META_CP_CREATE_OUTCOME, 'created' );

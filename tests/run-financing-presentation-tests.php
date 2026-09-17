@@ -302,4 +302,25 @@ mtuc_fp_assert(
 );
 mtuc_fp_assert( false === strpos( (string) wp_json_encode( $email_rows, JSON_UNESCAPED_UNICODE ), 'Последна грешка' ), 'email rows omit diagnostics' );
 
+// Definitive CP create failure — panel shows bank_send_failed_cp only.
+$cp_fail = new WC_Order();
+$cp_fail->update_meta_data( MTUC_ORDER_META_PROCESS2, 0 );
+$cp_fail->update_meta_data( MTUC_ORDER_META_BANK_STATUS, MTUC_BANK_STATUS_SEND_FAILED_CP );
+$cp_fail->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '958' );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'months', 12 );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'kop_code', 'POS COM 50' );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'parva', 0 );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'loan_amount', 1000 );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'monthly_installment', 97.49 );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'total_payable', 1169.88 );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'glp', 30 );
+$cp_fail->update_meta_data( MTUC_ORDER_META_PREFIX . 'gpr', 34.5 );
+$cp_panel = mtuc_get_admin_order_credit_meta_rows( $cp_fail );
+mtuc_fp_assert(
+	'Неуспешно изпратен Банка - КП' === ( $cp_panel['Статус към банката'] ?? '' ),
+	'CP fail panel bank status'
+);
+mtuc_fp_assert( ! isset( $cp_panel['КП поръчка (ID)'] ), 'CP fail panel has no CP order id' );
+mtuc_fp_assert( false === strpos( (string) wp_json_encode( $cp_panel, JSON_UNESCAPED_UNICODE ), 'Последна грешка' ), 'CP fail panel omits diagnostics' );
+
 fwrite( STDOUT, 'OK financing-presentation ' . $mtuc_fp_assert_count . " assertions\n" );

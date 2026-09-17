@@ -112,12 +112,46 @@ function mtuc_cp_error_has_canonical_envelope( WP_Error $error ): bool {
 }
 
 /**
+ * Whether a CP create error proves the create endpoint was unreachable / never ran.
+ *
+ * Real /api/v11 (wrong version) returns e.g. HTTP 403 Cloudflare HTML or HTTP 404
+ * HTML — decoded as invalid_json / invalid_envelope. That proves POST /orders did
+ * not commit a CP order, so the outcome is definitive absence (not ambiguity).
+ *
+ * HTTP 2xx / 5xx / 0 / timeout-class bodies remain ambiguous.
+ *
+ * @param WP_Error $error API or decode error.
+ * @return bool
+ */
+function mtuc_cp_create_error_proves_unreachable_endpoint( WP_Error $error ): bool {
+	$code = $error->get_error_code();
+	if ( ! in_array(
+		$code,
+		array(
+			'mtuc_api_invalid_json',
+			'mtuc_api_invalid_envelope',
+		),
+		true
+	) ) {
+		return false;
+	}
+
+	$data   = $error->get_error_data();
+	$status = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 0;
+
+	return in_array( $status, array( 403, 404, 405, 410 ), true );
+}
+
+/**
  * Whether a CP create result is ambiguous — CP may or may not have committed.
  *
  * Ambiguity is the default: only a canonical failure envelope carrying a
  * terminal semantic rejection code (or a canonical 409 conflict) is proof.
- * Timeouts, post-send transport loss, 401, 429, 5xx, malformed JSON/envelope,
- * identity echo mismatch, unknown 4xx and malformed 409 all remain ambiguous.
+ * Timeouts, post-send transport loss, 401, 429, 5xx, malformed JSON/envelope
+ * on 2xx, identity echo mismatch, unknown 4xx and malformed 409 all remain ambiguous.
+ *
+ * Exception: non-JSON / non-canonical body with HTTP 403/404/405/410 proves the
+ * create route never accepted the order (wrong API base, missing route, edge block).
  *
  * @param WP_Error $error API or normalization error.
  * @return bool
@@ -135,6 +169,10 @@ function mtuc_is_cp_create_ambiguous_error( WP_Error $error ): bool {
 		true
 	) ) {
 		return true;
+	}
+
+	if ( mtuc_cp_create_error_proves_unreachable_endpoint( $error ) ) {
+		return false;
 	}
 
 	if ( mtuc_is_cp_transport_ambiguous_error( $error ) ) {

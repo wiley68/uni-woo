@@ -557,6 +557,7 @@ $ambiguous = array(
 	'transport timeout'    => mtuc_a19_error( 'http_request_failed', array( 'is_timeout' => true ) ),
 	'malformed JSON'       => mtuc_a19_error( 'mtuc_api_invalid_json', array( 'status' => 200 ) ),
 	'non-canonical body'   => mtuc_a19_error( 'mtuc_api_invalid_envelope', array( 'status' => 200 ) ),
+	'invalid JSON 5xx'     => mtuc_a19_error( 'mtuc_api_invalid_json', array( 'status' => 503 ) ),
 	'unusable 2xx'         => mtuc_a19_error( 'mtuc_cp_unusable_success' ),
 	'identity mismatch'    => mtuc_a19_error( 'mtuc_cp_identity_mismatch' ),
 	'401 after send'       => mtuc_a19_cp_failure( 'unauthenticated', 401 ),
@@ -573,8 +574,11 @@ foreach ( $ambiguous as $label => $error ) {
 }
 
 $definitive = array(
-	'canonical validation 422' => mtuc_a19_cp_failure( 'validation', 422 ),
+	'canonical validation 422'  => mtuc_a19_cp_failure( 'validation', 422 ),
 	'canonical invalid_payload' => mtuc_a19_cp_failure( 'invalid_payload', 422 ),
+	'wrong API HTML 403'        => mtuc_a19_error( 'mtuc_api_invalid_json', array( 'status' => 403 ) ),
+	'missing route HTML 404'    => mtuc_a19_error( 'mtuc_api_invalid_json', array( 'status' => 404 ) ),
+	'method not allowed 405'    => mtuc_a19_error( 'mtuc_api_invalid_envelope', array( 'status' => 405 ) ),
 );
 
 foreach ( $definitive as $label => $error ) {

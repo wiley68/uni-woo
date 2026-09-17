@@ -451,6 +451,49 @@ require_once MTUC_PLUGIN_DIR . '/includes/mtuc-process-identity.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-smartucf-lifecycle.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 
+if ( ! function_exists( 'mtuc_order_financing_is_terminal_failure' ) ) {
+	/**
+	 * @param WC_Order $order Order.
+	 * @return bool
+	 */
+	function mtuc_order_financing_is_terminal_failure( WC_Order $order ): bool {
+		$outcome = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ) );
+		if ( 'unknown' === $outcome ) {
+			return false;
+		}
+		if ( defined( 'MTUC_ORDER_META_SMARTUCF_START_OUTCOME' ) ) {
+			$smartucf_outcome = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ) );
+			if ( 'unknown' === $smartucf_outcome ) {
+				return false;
+			}
+		}
+		$bank_status = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+		return in_array(
+			$bank_status,
+			array(
+				MTUC_BANK_STATUS_SEND_FAILED,
+				MTUC_BANK_STATUS_SEND_FAILED_CP,
+				MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF,
+			),
+			true
+		);
+	}
+}
+
+if ( ! function_exists( 'mtuc_should_accept_financing_order_after_submission' ) ) {
+	/**
+	 * @param WC_Order             $order Order.
+	 * @param array<string, mixed> $submission Submission.
+	 * @return bool
+	 */
+	function mtuc_should_accept_financing_order_after_submission( WC_Order $order, array $submission ): bool {
+		if ( empty( $submission['bank_unavailable'] ) ) {
+			return true;
+		}
+		return mtuc_order_financing_is_terminal_failure( $order );
+	}
+}
+
 // ---------------------------------------------------------------------------
 // AUD-WOO-004 — native Woo status separation
 // ---------------------------------------------------------------------------
@@ -678,6 +721,83 @@ mtuc_bl_assert( 'missing' === $pre_send->get_meta( MTUC_ORDER_META_CP_CREATE_OUT
 mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === $pre_send->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'canonical 422 bank status wrong' );
 mtuc_bl_assert( 'pending' === $pre_send->status, 'canonical 422 changed Woo status' );
 mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'F01 canonical 422 exactly one POST' );
+
+// Wrong API base (/api/v11): HTTP 403 HTML → invalid_json → definitive CP absence.
+$wrong_base = new WC_Order();
+$wrong_base->status = 'pending';
+$wrong_base->payment_method = 'mtunicredit';
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error(
+	'mtuc_api_invalid_json',
+	'Невалиден JSON отговор от Контролния панел.',
+	array(
+		'status' => 403,
+		'raw'    => '<!DOCTYPE html><html><head><title>Just a moment...</title></head></html>',
+	)
+);
+$r_v11 = mtuc_create_cp_order_with_recovery( $wrong_base, array( 'order_id' => '958' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_v11 ), 'wrong API base should fail' );
+mtuc_bl_assert( 'missing' === $wrong_base->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'wrong API base outcome missing' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === $wrong_base->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'wrong API base → bank_send_failed_cp' );
+mtuc_bl_assert( 'Неуспешно изпратен Банка - КП' === mtuc_get_order_bank_status_display( $wrong_base ), 'wrong API base public label' );
+mtuc_bl_assert( 0 === (int) $wrong_base->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' ), 'wrong API base no CP id' );
+mtuc_bl_assert( 1 === count( Mtuc_Cp_Api_Client::$create_calls ), 'wrong API base exactly one POST' );
+mtuc_bl_assert( 0 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'wrong API base no CP status PATCH' );
+mtuc_bl_assert( mtuc_order_financing_is_terminal_failure( $wrong_base ), 'wrong API base is terminal for emails' );
+mtuc_bl_assert(
+	mtuc_should_accept_financing_order_after_submission( $wrong_base, array( 'bank_unavailable' => true ) ),
+	'wrong API base accepts emails after definitive CP fail'
+);
+
+// Process 2 definitive CP create failure uses the same public CP status (not generic).
+$wrong_base_p2 = new WC_Order();
+$wrong_base_p2->status = 'pending';
+$wrong_base_p2->payment_method = 'mtunicredit';
+$wrong_base_p2->update_meta_data( MTUC_ORDER_META_PROCESS, 2 );
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error(
+	'mtuc_api_invalid_json',
+	'Невалиден JSON отговор от Контролния панел.',
+	array(
+		'status' => 403,
+		'raw'    => '<!DOCTYPE html><html><head><title>Just a moment...</title></head></html>',
+	)
+);
+$r_v11_p2 = mtuc_create_cp_order_with_recovery( $wrong_base_p2, array( 'order_id' => '970' ), array( 'uni_proces' => 1 ) );
+mtuc_bl_assert( is_wp_error( $r_v11_p2 ), 'P2 wrong API base should fail' );
+mtuc_bl_assert( 'missing' === $wrong_base_p2->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'P2 wrong API base outcome missing' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === $wrong_base_p2->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'P2 wrong API base → bank_send_failed_cp' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED !== (string) $wrong_base_p2->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'P2 must not use generic bank_send_failed' );
+mtuc_bl_assert( 'Неуспешно изпратен Банка - КП' === mtuc_get_order_bank_status_display( $wrong_base_p2 ), 'P2 public label is CP-specific' );
+mtuc_bl_assert( 'Неуспешно изпратен Банка' !== mtuc_get_order_bank_status_display( $wrong_base_p2 ), 'P2 public label is not generic' );
+mtuc_bl_assert( 0 === count( Mtuc_Cp_Api_Client::$patch_calls ), 'P2 wrong API base no CP status PATCH' );
+
+// HTML 404 missing route is also definitive.
+$missing_route = new WC_Order();
+$missing_route->status = 'pending';
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error(
+	'mtuc_api_invalid_json',
+	'bad json',
+	array( 'status' => 404, 'raw' => '<html>Not Found</html>' )
+);
+$r_404 = mtuc_create_cp_order_with_recovery( $missing_route, array( 'order_id' => '959' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_404 ), '404 HTML should fail' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP === $missing_route->get_meta( MTUC_ORDER_META_BANK_STATUS ), '404 HTML → bank_send_failed_cp' );
+
+// Invalid JSON on 2xx stays ambiguous (may have committed).
+$json_2xx = new WC_Order();
+$json_2xx->status = 'pending';
+Mtuc_Cp_Api_Client::reset();
+Mtuc_Cp_Api_Client::$create_queue[] = new WP_Error(
+	'mtuc_api_invalid_json',
+	'bad json',
+	array( 'status' => 200, 'raw' => '{truncated' )
+);
+$r_json2xx = mtuc_create_cp_order_with_recovery( $json_2xx, array( 'order_id' => '960' ), array( 'uni_proces' => 0 ) );
+mtuc_bl_assert( is_wp_error( $r_json2xx ), '2xx invalid JSON should error' );
+mtuc_bl_assert( 'unknown' === $json_2xx->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), '2xx invalid JSON stays unknown' );
+mtuc_bl_assert( MTUC_BANK_STATUS_SEND_FAILED_CP !== (string) $json_2xx->get_meta( MTUC_ORDER_META_BANK_STATUS ), '2xx invalid JSON not definitive' );
 
 // Non-canonical 4xx proves nothing: ambiguous, never a definitive CP failure.
 $noncanonical_422 = new WC_Order();
