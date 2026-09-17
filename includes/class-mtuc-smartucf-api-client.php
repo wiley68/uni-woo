@@ -329,7 +329,37 @@ class Mtuc_Smartucf_Api_Client {
 				);
 			}
 
-			// Confirmed success requires HTTP 2xx (AUD-WOO-012-F03). Non-2xx is ambiguous.
+			$decoded = json_decode( $response_body );
+			$is_object = is_object( $decoded );
+			$session_id = ( $is_object && isset( $decoded->sucfOnlineSessionID ) )
+				? trim( (string) $decoded->sucfOnlineSessionID )
+				: '';
+
+			/*
+			 * Definitive remote rejection: SmartUCF answered with a parseable business
+			 * reject (errorCode / errorText) and no usable session. HTTP 2xx or 4xx
+			 * with that payload is definitive — not transport ambiguity. HTTP 5xx /
+			 * curl / empty / invalid JSON remain ambiguous.
+			 */
+			if (
+				'' === $session_id
+				&& self::response_has_definitive_business_reject( $decoded, $response_body, $http_code )
+			) {
+				$message = self::extract_business_reject_message( $decoded );
+				return new WP_Error(
+					'mtuc_smartucf_remote_rejected',
+					'' !== $message
+						? $message
+						: __( 'SmartUCF отказа финансирането.', 'mtunicredit' ),
+					array(
+						'http_code' => $http_code,
+						'body'      => $response_body,
+					)
+				);
+			}
+
+			// Confirmed success requires HTTP 2xx (AUD-WOO-012-F03). Non-2xx without
+			// proven business reject remains ambiguous.
 			if ( $http_code < 200 || $http_code >= 300 ) {
 				return new WP_Error(
 					'mtuc_smartucf_http_status',
@@ -341,8 +371,7 @@ class Mtuc_Smartucf_Api_Client {
 				);
 			}
 
-			$decoded = json_decode( $response_body );
-			if ( ! is_object( $decoded ) ) {
+			if ( ! $is_object ) {
 				return new WP_Error(
 					'mtuc_smartucf_invalid_json',
 					__( 'Невалиден отговор от SmartUCF.', 'mtunicredit' ),
@@ -352,7 +381,6 @@ class Mtuc_Smartucf_Api_Client {
 				);
 			}
 
-			$session_id = isset( $decoded->sucfOnlineSessionID ) ? trim( (string) $decoded->sucfOnlineSessionID ) : '';
 			if ( '' === $session_id ) {
 				return new WP_Error(
 					'mtuc_smartucf_no_session',
@@ -377,5 +405,75 @@ class Mtuc_Smartucf_Api_Client {
 				$lease->release();
 			}
 		}
+	}
+
+	/**
+	 * Whether a SmartUCF start response is a proven business rejection (not transport).
+	 *
+	 * Proven signals: non-empty errorCode and/or errorText on a parseable object,
+	 * with HTTP in 2xx/4xx (reachable remote answer). Duplicate-order signals stay
+	 * ambiguous. HTTP 5xx / 0 stay ambiguous even if an error body is present.
+	 *
+	 * @param mixed  $decoded        json_decode result.
+	 * @param string $response_body  Raw body.
+	 * @param int    $http_code      HTTP status.
+	 * @return bool
+	 */
+	private static function response_has_definitive_business_reject( $decoded, string $response_body, int $http_code ): bool {
+		if ( $http_code < 200 || $http_code >= 500 ) {
+			return false;
+		}
+
+		if ( ! is_object( $decoded ) ) {
+			return false;
+		}
+
+		if ( self::response_looks_like_duplicate_order( $response_body ) ) {
+			return false;
+		}
+
+		$has_code = isset( $decoded->errorCode )
+			&& null !== $decoded->errorCode
+			&& '' !== trim( (string) $decoded->errorCode );
+		$has_text = isset( $decoded->errorText )
+			&& '' !== trim( (string) $decoded->errorText );
+
+		return $has_code || $has_text;
+	}
+
+	/**
+	 * Duplicate-orderNo signals must stay ambiguous (session may already exist).
+	 *
+	 * @param string $response_body Raw body.
+	 * @return bool
+	 */
+	private static function response_looks_like_duplicate_order( string $response_body ): bool {
+		$haystack = function_exists( 'mb_strtolower' )
+			? mb_strtolower( $response_body )
+			: strtolower( $response_body );
+
+		$duplicate = (
+			false !== strpos( $haystack, 'duplicate' )
+			&& false !== strpos( $haystack, 'order' )
+		)
+			|| false !== strpos( $haystack, 'already exists' )
+			|| false !== strpos( $haystack, 'order already' )
+			|| false !== strpos( $haystack, 'съществува' );
+
+		return $duplicate;
+	}
+
+	/**
+	 * Prefer SmartUCF errorText when present.
+	 *
+	 * @param mixed $decoded json_decode result.
+	 * @return string
+	 */
+	private static function extract_business_reject_message( $decoded ): string {
+		if ( ! is_object( $decoded ) || ! isset( $decoded->errorText ) ) {
+			return '';
+		}
+
+		return trim( (string) $decoded->errorText );
 	}
 }

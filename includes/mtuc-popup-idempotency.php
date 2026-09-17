@@ -1347,6 +1347,26 @@ function mtuc_maybe_empty_cart_for_financing_order( WC_Order $order ): void {
 }
 
 /**
+ * Whether popup/checkout should apply gateway acceptance (status + emails) after submission.
+ *
+ * Success paths always accept. Definitive terminal bank failures also accept so
+ * standard Woo emails fire; true ambiguity (bank_unavailable without terminal
+ * status) stays pending without claiming completion emails prematurely.
+ *
+ * @param WC_Order             $order      Order instance.
+ * @param array<string, mixed> $submission Submission result.
+ * @return bool
+ */
+function mtuc_should_accept_financing_order_after_submission( WC_Order $order, array $submission ): bool {
+	if ( empty( $submission['bank_unavailable'] ) ) {
+		return true;
+	}
+
+	return function_exists( 'mtuc_order_financing_is_terminal_failure' )
+		&& mtuc_order_financing_is_terminal_failure( $order );
+}
+
+/**
  * Apply gateway status and cart cleanup once for accepted popup financing.
  *
  * Stock reduction follows WooCommerce native on-hold transition (at most once).

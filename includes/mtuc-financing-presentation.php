@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /** Financing rows for customer emails / Thank You / order details (no EGN). */
 const MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER = 'customer';
 
-/** Financing rows for Woo admin order panel (no EGN; may include diagnostics). */
+/** Financing rows for Woo admin order panel (standard business block only; no EGN). */
 const MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL = 'admin_panel';
 
 /**
@@ -56,19 +56,11 @@ function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): a
 	$status_text = mtuc_get_order_bank_status_display( $order );
 	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
 	$months      = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'months' );
-	$outcome     = function_exists( 'mtuc_get_cp_create_outcome_admin_label' )
-		? mtuc_get_cp_create_outcome_admin_label( $order )
-		: '';
-	$sync_label  = function_exists( 'mtuc_get_cp_status_sync_admin_label' )
-		? mtuc_get_cp_status_sync_admin_label( $order )
-		: '';
 
 	if (
 		'' === $status_text
 		&& $cp_order_id <= 0
 		&& $months <= 0
-		&& '' === $outcome
-		&& '' === $sync_label
 	) {
 		return array();
 	}
@@ -86,14 +78,6 @@ function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): a
 	$cp_shop_order_id = mtuc_get_cp_shop_order_id( $order );
 	if ( '' !== $cp_shop_order_id ) {
 		$rows[ __( 'КП shop order_id', 'mtunicredit' ) ] = $cp_shop_order_id;
-	}
-
-	if ( '' !== $outcome ) {
-		$rows[ __( 'КП създаване', 'mtunicredit' ) ] = $outcome;
-	}
-
-	if ( '' !== $sync_label ) {
-		$rows[ __( 'Синхронизация към КП', 'mtunicredit' ) ] = $sync_label;
 	}
 
 	if ( $months > 0 ) {
@@ -137,19 +121,11 @@ function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): a
 		$rows[ __( 'Съобщение', 'mtunicredit' ) ] = mtuc_get_process2_confirmation_message();
 	}
 
-	if (
-		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL === $audience
-		&& function_exists( 'mtuc_get_smartucf_ambiguity_admin_rows' )
-	) {
-		$rows = array_merge( $rows, mtuc_get_smartucf_ambiguity_admin_rows( $order ) );
-	}
-
-	if (
-		MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL === $audience
-		&& function_exists( 'mtuc_get_order_diagnostic_admin_rows' )
-	) {
-		$rows = array_merge( $rows, mtuc_get_order_diagnostic_admin_rows( $order ) );
-	}
+	/*
+	 * Internal ambiguity / diagnostic rows stay available via their dedicated
+	 * helpers for predetermined debug surfaces — never merge into the normal
+	 * customer/business-facing leasing block (docs §3.2–3.3).
+	 */
 
 	return $rows;
 }

@@ -430,6 +430,36 @@ function mtuc_confirm_smartucf_p1_send_claim( WC_Order $order ): void {
 }
 
 /**
+ * Mark Process 1 claim as definitive remote failure (clears sent_unknown ambiguity).
+ *
+ * @param WC_Order $order Order instance.
+ * @return void
+ */
+function mtuc_mark_smartucf_p1_claim_definitive_failed( WC_Order $order ): void {
+	$order_id = (int) $order->get_id();
+	$key      = mtuc_smartucf_p1_claim_option_key( $order_id );
+	$raw      = function_exists( 'mtuc_get_option_raw_value' ) ? mtuc_get_option_raw_value( $key ) : null;
+	$claim    = null !== $raw ? mtuc_decode_smartucf_p1_claim( (string) $raw ) : mtuc_get_smartucf_p1_claim( $order_id );
+
+	if ( null === $claim ) {
+		$claim = array(
+			'order_id'   => $order_id,
+			'state'      => MTUC_SMARTUCF_P1_CLAIM_DEFINITIVE_FAILED,
+			'owner'      => 'remote_reject',
+			'claimed_at' => time(),
+			'updated_at' => time(),
+			'process'    => 1,
+		);
+		mtuc_store_smartucf_p1_claim( $order_id, $claim, null );
+		return;
+	}
+
+	$claim['state']      = MTUC_SMARTUCF_P1_CLAIM_DEFINITIVE_FAILED;
+	$claim['updated_at'] = time();
+	mtuc_store_smartucf_p1_claim( $order_id, $claim, is_string( $raw ) ? $raw : null );
+}
+
+/**
  * Release claim after definitive pre-send failure (no remote send possible).
  *
  * @param WC_Order $order Order instance.
@@ -1038,6 +1068,23 @@ function mtuc_handle_smartucf_start_error( WC_Order $order, WP_Error $error ): W
 	$claim = mtuc_get_smartucf_p1_claim( (int) $order->get_id() );
 	$state = is_array( $claim ) ? (string) $claim['state'] : '';
 
+	/*
+	 * Proven definitive remote rejection may arrive after the transport boundary
+	 * (claim already sent_unknown). Apply bank_send_failed_smartucf before the
+	 * generic post-boundary ambiguity shortcut.
+	 */
+	if ( function_exists( 'mtuc_is_smartucf_definitive_remote_error' )
+		&& mtuc_is_smartucf_definitive_remote_error( $error )
+	) {
+		mtuc_mark_smartucf_p1_claim_definitive_failed( $order );
+		$order->update_meta_data( MTUC_ORDER_META_SMARTUCF_START_OUTCOME, 'missing' );
+		if ( function_exists( 'mtuc_fail_order_on_smartucf_error' ) ) {
+			mtuc_fail_order_on_smartucf_error( $order, $error );
+		}
+		$order->save();
+		return $error;
+	}
+
 	// Boundary / post-CAS denial: if claim already crossed, treat as ambiguous (no definitive fail).
 	if ( in_array(
 		$code,
@@ -1053,7 +1100,7 @@ function mtuc_handle_smartucf_start_error( WC_Order $order, WP_Error $error ): W
 		return $error;
 	}
 
-	// Transport boundary crossed → always ambiguous (no definitive bank_send_failed_smartucf).
+	// True transport / ambiguous outcomes after boundary stay unknown (no bank_send_failed_smartucf).
 	if ( MTUC_SMARTUCF_P1_CLAIM_SENT_UNKNOWN === $state || mtuc_is_smartucf_ambiguous_error( $error ) ) {
 		if ( MTUC_SMARTUCF_P1_CLAIM_SENT_UNKNOWN === $state || ! mtuc_is_smartucf_presend_error( $error ) ) {
 			mtuc_record_smartucf_start_outcome_unknown( $order, $error );
@@ -1075,18 +1122,6 @@ function mtuc_handle_smartucf_start_error( WC_Order $order, WP_Error $error ): W
 			mtuc_record_order_financing_diagnostic( $order, $error, $subsystem );
 		}
 		$order->update_meta_data( MTUC_ORDER_META_BANK_UNAVAILABLE_NOTICE, 1 );
-		$order->save();
-		return $error;
-	}
-
-	// Proven definitive remote rejection (not ambiguous, not pre-send).
-	if ( function_exists( 'mtuc_is_smartucf_definitive_remote_error' )
-		&& mtuc_is_smartucf_definitive_remote_error( $error )
-	) {
-		if ( function_exists( 'mtuc_fail_order_on_smartucf_error' ) ) {
-			mtuc_fail_order_on_smartucf_error( $order, $error );
-		}
-		$order->update_meta_data( MTUC_ORDER_META_SMARTUCF_START_OUTCOME, 'missing' );
 		$order->save();
 		return $error;
 	}

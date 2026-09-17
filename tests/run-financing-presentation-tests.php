@@ -238,4 +238,68 @@ $fallback = mtuc_get_order_credit_meta_rows( $p2, 'unknown_audience' );
 mtuc_fp_assert( ! isset( $fallback['ЕГН'] ), 'invalid audience falls back to customer privacy' );
 mtuc_fp_assert( ! isset( $fallback['Втори телефон'] ), 'invalid audience omits phone2 like customer' );
 
+// ---------------------------------------------------------------------------
+// Definitive SmartUCF rejection — standard panel only (no diagnostics)
+// ---------------------------------------------------------------------------
+
+$rej = new WC_Order();
+$rej->update_meta_data( MTUC_ORDER_META_PROCESS2, 0 );
+$rej->update_meta_data( MTUC_ORDER_META_BANK_STATUS, MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'bank_status_label', 'Неуспешно изпратен Банка - SmartUCF' );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 366 );
+$rej->update_meta_data( MTUC_ORDER_META_CP_SHOP_ORDER_ID, '951' );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'months', 12 );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'kop_code', 'POS COM 100' );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'parva', 102.88 );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'loan_amount', 1131.68 );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'monthly_installment', 105.62 );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'total_payable', 1267.44 );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'glp', 21.45 );
+$rej->update_meta_data( MTUC_ORDER_META_PREFIX . 'gpr', 23.69 );
+
+$panel = mtuc_get_admin_order_credit_meta_rows( $rej );
+$required_labels = array(
+	'Статус към банката',
+	'КП поръчка (ID)',
+	'КП shop order_id',
+	'Срок (месеци)',
+	'КОП',
+	'Първоначална вноска',
+	'Сума на заема',
+	'Месечна вноска',
+	'Обща дължима сума',
+	'ГЛП / ГПР',
+);
+foreach ( $required_labels as $label ) {
+	mtuc_fp_assert( isset( $panel[ $label ] ), 'rejection panel has ' . $label );
+}
+mtuc_fp_assert(
+	'Неуспешно изпратен Банка - SmartUCF' === $panel['Статус към банката'],
+	'rejection panel bank status label'
+);
+
+$forbidden = array(
+	'SmartUCF резултат',
+	'SmartUCF lifecycle',
+	'SmartUCF сесия',
+	'Автоматично повторно изпращане',
+	'Препоръчано действие',
+	'Последна грешка',
+	'Подсистема',
+	'Корелация',
+	'КП създаване',
+	'Синхронизация към КП',
+);
+$panel_json = (string) wp_json_encode( $panel, JSON_UNESCAPED_UNICODE );
+foreach ( $forbidden as $needle ) {
+	mtuc_fp_assert( false === strpos( $panel_json, $needle ), 'rejection panel omits ' . $needle );
+}
+
+$email_rows = mtuc_get_order_credit_meta_rows( $rej, MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER );
+mtuc_fp_assert(
+	'Неуспешно изпратен Банка - SmartUCF' === $email_rows['Статус към банката'],
+	'customer email rows show SmartUCF fail status'
+);
+mtuc_fp_assert( false === strpos( (string) wp_json_encode( $email_rows, JSON_UNESCAPED_UNICODE ), 'Последна грешка' ), 'email rows omit diagnostics' );
+
 fwrite( STDOUT, 'OK financing-presentation ' . $mtuc_fp_assert_count . " assertions\n" );

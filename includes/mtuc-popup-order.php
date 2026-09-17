@@ -2055,7 +2055,7 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $result;
 	}
 
-	if ( empty( $result['bank_unavailable'] ) ) {
+	if ( mtuc_should_accept_financing_order_after_submission( $order, $result ) ) {
 		mtuc_apply_payment_gateway_to_order( $order );
 	}
 
@@ -3661,7 +3661,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		mtuc_send_customer_safe_json_error( $submission, 500, 'cp' );
 	}
 
-	if ( empty( $submission['bank_unavailable'] ) ) {
+	if ( mtuc_should_accept_financing_order_after_submission( $order, $submission ) ) {
 		mtuc_accept_popup_financing_order( $order );
 	}
 
@@ -4084,6 +4084,9 @@ function mtuc_ajax_popup_submit(): void {
 	}
 
 	if ( ! empty( $submission['bank_unavailable'] ) ) {
+		if ( mtuc_should_accept_financing_order_after_submission( $order, $submission ) ) {
+			mtuc_accept_popup_financing_order( $order );
+		}
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		mtuc_send_popup_bank_unavailable_response( $order );
 	}

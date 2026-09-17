@@ -990,10 +990,13 @@ mtuc_su_amb_assert( 'Липсва' === $amb_rows['SmartUCF сесия'], 'admin 
 mtuc_su_amb_assert( 'Да' === $amb_rows['КП поръчка'], 'admin CP order present' );
 
 $panel = mtuc_get_order_credit_meta_rows( $admin, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL );
-mtuc_su_amb_assert( isset( $panel['SmartUCF резултат'] ), 'admin panel merges ambiguity rows' );
+mtuc_su_amb_assert( ! isset( $panel['SmartUCF резултат'] ), 'normal admin panel does not merge ambiguity rows' );
+mtuc_su_amb_assert( ! isset( $panel['Препоръчано действие'] ), 'normal admin panel omits recommended action' );
 mtuc_su_amb_assert( ! isset( $panel['Повторение възможно'] ), 'Retry possible not shown for SmartUCF ambiguity' );
 $panel_json = (string) wp_json_encode( $panel );
 mtuc_su_amb_assert( false === strpos( $panel_json, 'Повторение възможно' ), 'Retry possible string absent from admin panel' );
+mtuc_su_amb_assert( false === strpos( $panel_json, 'SmartUCF lifecycle' ), 'lifecycle absent from normal panel' );
+mtuc_su_amb_assert( isset( $amb_rows['SmartUCF резултат'] ), 'dedicated ambiguity helper still available for diagnostics' );
 
 $admin_sess = new WC_Order();
 mtuc_su_amb_seed_unresolved(

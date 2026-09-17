@@ -923,6 +923,74 @@ $remote = new WP_Error( 'mtuc_smartucf_remote_rejected', 'remote reject' );
 mtuc_handle_smartucf_start_error( $order_def, $remote );
 mtuc_su_lc_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === (string) $order_def->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'definitive remote reject persists bank_send_failed_smartucf' );
 
+// Realistic KOP rejection (HTTP 200 + errorCode/errorText + null session) after transport boundary.
+list( $order_kop, $r_kop ) = mtuc_su_lc_authorized_start(
+	920,
+	function () {
+		return array(
+			'body'       => wp_json_encode(
+				array(
+					'errorCode'           => 134,
+					'errorText'           => 'Некоректен КОП – съответните му продукт/финансова таблица нямат активно разпространение за този ОТП',
+					'sucfOnlineSessionID' => null,
+				)
+			),
+			'curl_error' => '',
+			'http_code'  => 200,
+		);
+	}
+);
+mtuc_su_lc_assert( is_wp_error( $r_kop ) && 'mtuc_smartucf_remote_rejected' === $r_kop->get_error_code(), 'KOP reject → remote_rejected' );
+mtuc_su_lc_assert( MTUC_SMARTUCF_P1_CLAIM_SENT_UNKNOWN === mtuc_get_smartucf_p1_claim( 920 )['state'], 'KOP reject crossed boundary' );
+mtuc_handle_smartucf_start_error( $order_kop, $r_kop );
+mtuc_su_lc_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === (string) $order_kop->get_meta( MTUC_ORDER_META_BANK_STATUS ), 'KOP reject → bank_send_failed_smartucf after boundary' );
+mtuc_su_lc_assert( 'missing' === (string) $order_kop->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ), 'KOP reject outcome missing' );
+mtuc_su_lc_assert( MTUC_SMARTUCF_P1_CLAIM_DEFINITIVE_FAILED === mtuc_get_smartucf_p1_claim( 920 )['state'], 'KOP reject claim definitive_failed' );
+mtuc_su_lc_assert( ! mtuc_order_has_unresolved_smartucf_ambiguity( $order_kop ), 'KOP reject not unresolved ambiguity' );
+
+// HTTP 4xx with business error payload is definitive (not transport).
+list( $order_4xx, $r_4xx ) = mtuc_su_lc_authorized_start(
+	921,
+	function () {
+		return array(
+			'body'       => wp_json_encode(
+				array(
+					'errorCode'           => 400,
+					'errorText'           => 'няма такъв КОП за този търговец',
+					'sucfOnlineSessionID' => null,
+				)
+			),
+			'curl_error' => '',
+			'http_code'  => 400,
+		);
+	}
+);
+mtuc_su_lc_assert( is_wp_error( $r_4xx ) && 'mtuc_smartucf_remote_rejected' === $r_4xx->get_error_code(), '4xx business reject → remote_rejected' );
+mtuc_handle_smartucf_start_error( $order_4xx, $r_4xx );
+mtuc_su_lc_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF === (string) $order_4xx->get_meta( MTUC_ORDER_META_BANK_STATUS ), '4xx business reject definitive' );
+
+// HTTP 5xx with error-looking body stays ambiguous.
+list( $order_5xx, $r_5xx ) = mtuc_su_lc_authorized_start(
+	922,
+	function () {
+		return array(
+			'body'       => wp_json_encode(
+				array(
+					'errorCode'           => 500,
+					'errorText'           => 'internal',
+					'sucfOnlineSessionID' => null,
+				)
+			),
+			'curl_error' => '',
+			'http_code'  => 500,
+		);
+	}
+);
+mtuc_su_lc_assert( is_wp_error( $r_5xx ) && 'mtuc_smartucf_http_status' === $r_5xx->get_error_code(), '5xx stays http_status' );
+mtuc_handle_smartucf_start_error( $order_5xx, $r_5xx );
+mtuc_su_lc_assert( 'unknown' === (string) $order_5xx->get_meta( MTUC_ORDER_META_SMARTUCF_START_OUTCOME ), '5xx unknown' );
+mtuc_su_lc_assert( MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF !== (string) $order_5xx->get_meta( MTUC_ORDER_META_BANK_STATUS ), '5xx not definitive' );
+
 Mtuc_Smartucf_Api_Client::$http_transport = null;
 
 fwrite( STDOUT, "OK: {$mtuc_su_assert_count} smartucf lifecycle assertions passed\n" );
