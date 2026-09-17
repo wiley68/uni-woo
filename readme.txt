@@ -15,6 +15,23 @@ License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
 Дава възможност на Вашите клиенти да закупуват стока на изплащане с УНИ Кредит.
 
+== Business rules (authoritative) ==
+
+Canonical business rules for public bank statuses, later SmartUCF statuses, internal/service lifecycle states, allowed display locations, and the standard leasing information block are documented in:
+
+`docs/BUSINESS-RULES-BANK-STATUS-AND-LEASING.md`
+
+Those rules are authoritative for manual business tests and future changes. Do not treat internal lifecycle/debug values as standard bank statuses. Do not invent SmartUCF status mappings. Do not put diagnostic fields into the normal customer/business leasing UI.
+
+The four standard bank status strings (until a later SmartUCF status arrives) are exactly:
+
+* `Неуспешно изпратен Банка - КП`
+* `Неуспешно изпратен Банка - SmartUCF`
+* `Изпратен Банка - Процес 1`
+* `Изпратен Банка - Процес 2`
+
+Later SmartUCF statuses are stored and shown exactly as returned by SmartUCF.
+
 == Installation ==
 
 1. Качете папката `mtunicredit` в `/wp-content/plugins/`.
