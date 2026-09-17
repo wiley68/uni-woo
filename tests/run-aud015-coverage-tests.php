@@ -129,7 +129,7 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 }
 
 if ( ! defined( 'MTUC_VERSION' ) ) {
-	define( 'MTUC_VERSION', '2.0.2' );
+	define( 'MTUC_VERSION', '2.0.3' );
 }
 
 if ( ! class_exists( 'WC_Order', false ) ) {

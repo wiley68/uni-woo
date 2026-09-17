@@ -1097,7 +1097,7 @@ foreach ( $secret_keys as $secret_key ) {
 	mtuc_a19_assert( mtuc_is_shop_snapshot_secret_key( $secret_key ), 'F07 recognised as secret: ' . $secret_key );
 }
 
-foreach ( array( 'uni_zaglavie', 'uni_proces', 'uni_eur', 'uni_months', 'uni_kop', 'id', 'unicid' ) as $business_key ) {
+foreach ( array( 'uni_zaglavie', 'uni_proces', 'uni_eur', 'uni_months', 'uni_kop', 'id', 'unicid', 'satrudnik_email' ) as $business_key ) {
 	mtuc_a19_assert( ! mtuc_is_shop_snapshot_secret_key( $business_key ), 'F07 business key kept: ' . $business_key );
 }
 

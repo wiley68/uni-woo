@@ -1323,8 +1323,14 @@ function mtuc_sanitize_shop_snapshot_for_cache( array $data ): array {
 	if ( function_exists( 'mtuc_strip_shop_snapshot_secrets' ) ) {
 		$stripped = mtuc_strip_shop_snapshot_secrets( $stripped );
 	}
+	if ( ! is_array( $stripped ) ) {
+		$stripped = array();
+	}
+	if ( function_exists( 'mtuc_normalize_shop_snapshot_public_fields' ) ) {
+		$stripped = mtuc_normalize_shop_snapshot_public_fields( $stripped );
+	}
 
-	return is_array( $stripped ) ? $stripped : array();
+	return $stripped;
 }
 
 /**

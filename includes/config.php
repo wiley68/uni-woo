@@ -27,7 +27,7 @@ if ( ! defined( 'MTUC_CONTROL_PANEL_URL' ) ) {
  * Съставя се автоматично: {MTUC_CONTROL_PANEL_URL}/api/v1
  */
 if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
-	define( 'MTUC_API_BASE_URL', untrailingslashit( MTUC_CONTROL_PANEL_URL ) . '/api/v1' );
+	define( 'MTUC_API_BASE_URL', untrailingslashit( MTUC_CONTROL_PANEL_URL ) . '/api/v11' );
 }
 
 /**

@@ -26,7 +26,7 @@ function mtuc_rt_assert( bool $cond, string $msg ): void {
 }
 
 if ( ! defined( 'MTUC_VERSION' ) ) {
-	define( 'MTUC_VERSION', '2.0.2' );
+	define( 'MTUC_VERSION', '2.0.3' );
 }
 if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 	define( 'DAY_IN_SECONDS', 86400 );

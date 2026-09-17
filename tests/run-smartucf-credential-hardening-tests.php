@@ -1004,8 +1004,8 @@ mtuc_ch_assert( false === get_option( MTUC_SMARTUCF_CREDENTIALS_OPTION, false ),
 mtuc_ch_assert( false === get_option( MTUC_SMARTUCF_CREDENTIALS_LEGACY_OPTION, false ), '60: uninstall removes legacy option' );
 
 $main_src = (string) file_get_contents( MTUC_PLUGIN_DIR . '/mtunicredit.php' );
-mtuc_ch_assert( false !== strpos( $main_src, 'Version:           2.0.2' ), '61: Version header 2.0.2 in mtunicredit.php' );
-mtuc_ch_assert( false !== strpos( $main_src, "define( 'MTUC_VERSION', '2.0.2' )" ), '61b: MTUC_VERSION 2.0.2 defined in mtunicredit.php' );
+mtuc_ch_assert( false !== strpos( $main_src, 'Version:           2.0.3' ), '61: Version header 2.0.3 in mtunicredit.php' );
+mtuc_ch_assert( false !== strpos( $main_src, "define( 'MTUC_VERSION', '2.0.3' )" ), '61b: MTUC_VERSION 2.0.3 defined in mtunicredit.php' );
 mtuc_ch_assert(
 	false !== strpos( $main_src, 'function mtuc_activate_plugin' )
 		&& false === strpos( $main_src, 'mtuc_smartucf_credentials' ),

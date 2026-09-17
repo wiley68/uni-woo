@@ -173,6 +173,60 @@ function mtuc_strip_shop_snapshot_secrets( $value ) {
 }
 
 /**
+ * Normalize CP `satrudnik_email` to a local string|null cache value.
+ *
+ * Allowed ingress: valid email string, null, missing, empty, non-string.
+ * Never falls back to uni_email / admin_email / shop owner email.
+ *
+ * @param mixed $value Raw snapshot value.
+ * @return string|null
+ */
+function mtuc_normalize_shop_satrudnik_email( $value ): ?string {
+	if ( ! is_string( $value ) ) {
+		return null;
+	}
+
+	$trimmed = trim( $value );
+	if ( '' === $trimmed ) {
+		return null;
+	}
+
+	if ( function_exists( 'is_email' ) && ! is_email( $trimmed ) ) {
+		return null;
+	}
+
+	return $trimmed;
+}
+
+/**
+ * Normalize known public shop snapshot fields after secret/credential stripping.
+ *
+ * Missing `satrudnik_email` becomes explicit null (backward compatible).
+ *
+ * @param array<string, mixed> $data Credential/secret-free snapshot.
+ * @return array<string, mixed>
+ */
+function mtuc_normalize_shop_snapshot_public_fields( array $data ): array {
+	$raw = array_key_exists( 'satrudnik_email', $data ) ? $data['satrudnik_email'] : null;
+	$data['satrudnik_email'] = mtuc_normalize_shop_satrudnik_email( $raw );
+
+	return $data;
+}
+
+/**
+ * Read normalized satrudnik_email from a cached/runtime shop array.
+ *
+ * Future notification mail should use this (or mtuc_get_shop_data() + this helper).
+ * Does not consult uni_email.
+ *
+ * @param array<string, mixed> $shop Shop `data` object.
+ * @return string|null
+ */
+function mtuc_get_shop_satrudnik_email( array $shop ): ?string {
+	return mtuc_normalize_shop_satrudnik_email( $shop['satrudnik_email'] ?? null );
+}
+
+/**
  * Resolve a shop credential field from a (possibly hydrated) runtime shop array.
  *
  * @param array<string, mixed> $shop  Shop `data` object.
@@ -255,7 +309,11 @@ function mtuc_prepare_shop_snapshot( $data, string $unicid, $cache_writer = null
 		if ( function_exists( 'mtuc_strip_smartucf_credentials_from_snapshot' ) ) {
 			$stripped = mtuc_strip_smartucf_credentials_from_snapshot( $stripped );
 		}
-		return $stripped;
+		if ( ! is_array( $stripped ) ) {
+			$stripped = array();
+		}
+
+		return mtuc_normalize_shop_snapshot_public_fields( $stripped );
 	}
 
 	return mtuc_commit_authenticated_shop_snapshot( $unicid, $data, $cache_writer );

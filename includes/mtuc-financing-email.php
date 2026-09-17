@@ -13,6 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/** Order meta: Satrudnik bank-failure notification successfully sent (idempotency only). */
+const MTUC_ORDER_META_SATRUDNIK_FAILURE_NOTIFICATION_SENT = '_mtuc_satrudnik_failure_notification_sent';
+
 /**
  * WooCommerce transactional email handler, when available.
  *
@@ -266,4 +269,175 @@ function mtuc_send_process2_uni_email_notifications( WC_Order $order ): void {
 		$order->update_meta_data( MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT, 1 );
 		$order->save();
 	}
+}
+
+/**
+ * Notify the shop Satrudnik after a definitive bank-send failure is already persisted.
+ *
+ * Side effect only — never mutates bank/WC status and never throws to checkout.
+ *
+ * @param WC_Order $order Order instance.
+ * @return void
+ */
+function mtuc_maybe_notify_satrudnik_bank_send_failure( WC_Order $order ): void {
+	try {
+		mtuc_notify_satrudnik_bank_send_failure( $order );
+	} catch ( Throwable $e ) {
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- isolated diagnostic only.
+			error_log( 'MTUC satrudnik failure notification threw (order #' . $order->get_id() . '): ' . $e->getMessage() );
+		}
+	}
+}
+
+/**
+ * Internal send path for Satrudnik bank-failure notification.
+ *
+ * @param WC_Order $order Order instance.
+ * @return void
+ */
+function mtuc_notify_satrudnik_bank_send_failure( WC_Order $order ): void {
+	if ( (int) $order->get_meta( MTUC_ORDER_META_SATRUDNIK_FAILURE_NOTIFICATION_SENT ) ) {
+		return;
+	}
+
+	$status_id = sanitize_key( (string) $order->get_meta( MTUC_ORDER_META_BANK_STATUS ) );
+	$targets   = array();
+	if ( defined( 'MTUC_BANK_STATUS_SEND_FAILED_CP' ) ) {
+		$targets[] = MTUC_BANK_STATUS_SEND_FAILED_CP;
+	}
+	if ( defined( 'MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF' ) ) {
+		$targets[] = MTUC_BANK_STATUS_SEND_FAILED_SMARTUCF;
+	}
+	if ( ! in_array( $status_id, $targets, true ) ) {
+		return;
+	}
+
+	if ( ! function_exists( 'mtuc_get_shop_data' ) || ! function_exists( 'mtuc_get_shop_satrudnik_email' ) ) {
+		return;
+	}
+
+	$shop = mtuc_get_shop_data();
+	if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
+		return;
+	}
+
+	$to = mtuc_get_shop_satrudnik_email( $shop );
+	if ( null === $to || '' === $to ) {
+		return;
+	}
+
+	$label = trim( (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'bank_status_label' ) );
+	if ( '' === $label && function_exists( 'mtuc_get_bank_status_label' ) ) {
+		$label = mtuc_get_bank_status_label( $status_id );
+	}
+	if ( '' === $label ) {
+		$label = $status_id;
+	}
+
+	$order_number = (string) $order->get_order_number();
+	$order_date   = mtuc_format_order_date_for_notification( $order );
+
+	$subject = sprintf(
+		/* translators: %s: shop order number */
+		__( 'Проблем при изпращане на заявка за финансиране - поръчка #%s', 'mtunicredit' ),
+		$order_number
+	);
+
+	$lines = array(
+		__( 'Проблем при изпращане на заявка за финансиране', 'mtunicredit' ),
+		'',
+		sprintf(
+			/* translators: %s: shop order number */
+			__( 'Магазин поръчка: %s', 'mtunicredit' ),
+			$order_number
+		),
+	);
+
+	if ( '' !== $order_date ) {
+		$lines[] = sprintf(
+			/* translators: %s: order date */
+			__( 'Дата на поръчката: %s', 'mtunicredit' ),
+			$order_date
+		);
+	}
+
+	$cp_order_id = (int) $order->get_meta( MTUC_ORDER_META_PREFIX . 'cp_order_id' );
+	if ( $cp_order_id > 0 ) {
+		$lines[] = sprintf(
+			/* translators: %s: CP order id */
+			__( 'КП поръчка: %s', 'mtunicredit' ),
+			(string) $cp_order_id
+		);
+	}
+
+	$lines[] = sprintf(
+		/* translators: 1: public bank status label, 2: status id */
+		__( 'Статус: %1$s (%2$s)', 'mtunicredit' ),
+		$label,
+		$status_id
+	);
+
+	$body    = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111;">';
+	$body   .= '<p style="margin:0 0 12px;">' . esc_html( $lines[0] ) . '</p>';
+	$body   .= '<ul style="margin:0;padding-left:18px;">';
+	foreach ( array_slice( $lines, 2 ) as $line ) {
+		$body .= '<li style="margin:0 0 6px;">' . esc_html( $line ) . '</li>';
+	}
+	$body .= '</ul></div>';
+
+	$headers = array( 'Content-Type: text/html; charset=UTF-8' );
+
+	if ( function_exists( 'wc_mail' ) ) {
+		$sent = (bool) wc_mail( $to, $subject, $body, $headers );
+	} else {
+		$sent = (bool) wp_mail( $to, $subject, $body, $headers );
+	}
+
+	if ( ! $sent ) {
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- isolated diagnostic only.
+			error_log( 'MTUC satrudnik failure notification mail failed (order #' . $order->get_id() . ')' );
+		}
+		return;
+	}
+
+	$order->update_meta_data( MTUC_ORDER_META_SATRUDNIK_FAILURE_NOTIFICATION_SENT, 1 );
+	$order->save();
+}
+
+/**
+ * Format WC order created date for operational notifications.
+ *
+ * @param WC_Order $order Order instance.
+ * @return string
+ */
+function mtuc_format_order_date_for_notification( WC_Order $order ): string {
+	if ( ! method_exists( $order, 'get_date_created' ) ) {
+		return '';
+	}
+
+	$created = $order->get_date_created();
+	if ( ! $created ) {
+		return '';
+	}
+
+	$format = trim( (string) get_option( 'date_format', 'Y-m-d' ) . ' ' . (string) get_option( 'time_format', 'H:i' ) );
+	if ( '' === $format ) {
+		$format = 'Y-m-d H:i';
+	}
+
+	if ( is_object( $created ) && method_exists( $created, 'date_i18n' ) ) {
+		$formatted = $created->date_i18n( $format );
+		return is_string( $formatted ) ? $formatted : '';
+	}
+
+	if ( $created instanceof DateTimeInterface ) {
+		if ( function_exists( 'wp_date' ) ) {
+			return (string) wp_date( $format, $created->getTimestamp() );
+		}
+		return $created->format( 'Y-m-d H:i' );
+	}
+
+	return '';
 }

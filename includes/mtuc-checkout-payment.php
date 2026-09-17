@@ -111,11 +111,17 @@ function mtuc_apply_payment_gateway_to_order( WC_Order $order, string $status_no
 
 	if ( $order->get_status() !== $target_status ) {
 		$order->update_status( $target_status, $note );
+		if ( function_exists( 'mtuc_maybe_notify_satrudnik_bank_send_failure' ) ) {
+			mtuc_maybe_notify_satrudnik_bank_send_failure( $order );
+		}
 		return;
 	}
 
 	$order->save();
 	mtuc_send_leasing_order_notifications_once( $order );
+	if ( function_exists( 'mtuc_maybe_notify_satrudnik_bank_send_failure' ) ) {
+		mtuc_maybe_notify_satrudnik_bank_send_failure( $order );
+	}
 
 	if ( '' !== $note ) {
 		$order->add_order_note( $note );
