@@ -14,6 +14,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Mtuc_Shop_Cache {
 
+	/** Presentation reads may use eligible LKG after a transient refresh failure. */
+	public const PURPOSE_PRESENTATION = 'presentation';
+
+	/** Submission reads require fresh configuration and never use LKG. */
+	public const PURPOSE_SUBMISSION = 'submission';
+
 	/**
 	 * Cache table name without prefix.
 	 *
@@ -116,9 +122,10 @@ class Mtuc_Shop_Cache {
 	 *
 	 * @param string|null $unicid        Store unicid (defaults to settings).
 	 * @param bool        $force_refresh Skip cache and always call CP API.
+	 * @param string      $purpose       Presentation or submission policy.
 	 * @return array<string, mixed>|WP_Error Shop `data` object from API.
 	 */
-	public static function get_shop_data( $unicid = null, bool $force_refresh = false ) {
+	public static function get_shop_data( $unicid = null, bool $force_refresh = false, string $purpose = self::PURPOSE_PRESENTATION ) {
 		if ( null === $unicid ) {
 			$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
 		}
@@ -131,7 +138,10 @@ class Mtuc_Shop_Cache {
 			);
 		}
 
-		if ( ! $force_refresh ) {
+		$purpose = self::PURPOSE_SUBMISSION === $purpose ? self::PURPOSE_SUBMISSION : self::PURPOSE_PRESENTATION;
+		$fenced  = self::has_security_fence( $unicid );
+
+		if ( ! $force_refresh && ! $fenced ) {
 			$cached = self::get_fresh_row( $unicid );
 			if ( null !== $cached ) {
 				$data = self::decode_shop_data( $cached['shop_data'], $unicid );
@@ -141,36 +151,42 @@ class Mtuc_Shop_Cache {
 			}
 		}
 
-		$stale_row = $force_refresh ? null : self::get_stale_eligible_row( $unicid );
+		$stale_row  = ( $force_refresh || $fenced ) ? null : self::get_stale_eligible_row( $unicid );
+		$lock_token = self::acquire_refresh_lock( $unicid );
 
-		if ( ! self::acquire_refresh_lock( $unicid ) ) {
-			if ( null !== $stale_row ) {
+		if ( false === $lock_token ) {
+			if ( self::PURPOSE_PRESENTATION === $purpose && null !== $stale_row ) {
 				self::maybe_log_stale_fallback( $unicid, 'refresh_lock_contention' );
-				$data = self::decode_shop_data( $stale_row['shop_data'], $unicid );
+				$data = self::decode_shop_data( $stale_row['shop_data'], $unicid, true );
 				if ( ! is_wp_error( $data ) ) {
 					return $data;
 				}
 			}
 
-			$fresh_after_wait = self::get_fresh_row( $unicid );
+			$fresh_after_wait = self::wait_for_fresh_row( $unicid );
 			if ( null !== $fresh_after_wait ) {
 				$data = self::decode_shop_data( $fresh_after_wait['shop_data'], $unicid );
 				if ( ! is_wp_error( $data ) ) {
 					return $data;
 				}
 			}
+
+			return new WP_Error(
+				'mtuc_cache_refresh_in_progress',
+				__( 'Конфигурацията се обновява. Моля, опитайте отново.', 'mtunicredit' )
+			);
 		}
 
 		$result = self::refresh_from_api( $unicid, false );
-		self::release_refresh_lock( $unicid );
+		self::release_refresh_lock( $unicid, $lock_token );
 
 		if ( ! is_wp_error( $result ) ) {
 			return $result;
 		}
 
-		if ( null !== $stale_row && self::is_stale_fallback_allowed( $result ) ) {
+		if ( self::PURPOSE_PRESENTATION === $purpose && null !== $stale_row && self::is_stale_fallback_allowed( $result ) && ! self::has_security_fence( $unicid ) ) {
 			self::maybe_log_stale_fallback( $unicid, mtuc_normalize_error( $result, 'configuration' )['category'] ?? 'configuration_error' );
-			$data = self::decode_shop_data( $stale_row['shop_data'], $unicid );
+			$data = self::decode_shop_data( $stale_row['shop_data'], $unicid, true );
 			if ( ! is_wp_error( $data ) ) {
 				return $data;
 			}
@@ -190,6 +206,8 @@ class Mtuc_Shop_Cache {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public static function refresh_from_api( $unicid = null, bool $force_purge = true ) {
+		// Retained for backward-compatible callers; class C is never purged.
+		unset( $force_purge );
 		if ( null === $unicid ) {
 			$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
 		}
@@ -204,8 +222,8 @@ class Mtuc_Shop_Cache {
 
 		$response = Mtuc_Cp_Api_Client::fetch_shop();
 		if ( is_wp_error( $response ) ) {
-			if ( $force_purge ) {
-				self::purge_on_api_failure( $response );
+			if ( 'authoritative' === self::classify_refresh_failure( $response ) ) {
+				self::set_security_fence( $unicid, $response );
 			}
 			return $response;
 		}
@@ -220,8 +238,13 @@ class Mtuc_Shop_Cache {
 			array( __CLASS__, 'persist_sanitized_snapshot' )
 		);
 		if ( is_wp_error( $snapshot ) ) {
+			if ( self::snapshot_identity_mismatch( $snapshot ) ) {
+				self::set_security_fence( $unicid, $snapshot );
+			}
 			return $snapshot;
 		}
+
+		self::clear_security_fence( $unicid );
 
 		return $snapshot;
 	}
@@ -250,6 +273,8 @@ class Mtuc_Shop_Cache {
 		if ( is_wp_error( $snapshot ) ) {
 			return $snapshot;
 		}
+
+		self::clear_security_fence( $unicid );
 
 		$meta = self::get_cache_meta( $unicid );
 		if ( null === $meta ) {
@@ -439,20 +464,117 @@ class Mtuc_Shop_Cache {
 	 * @return bool
 	 */
 	private static function is_stale_fallback_allowed( WP_Error $error ): bool {
-		if ( self::is_irrecoverable_api_failure( $error ) ) {
-			return false;
+		return 'transient' === self::classify_refresh_failure( $error );
+	}
+
+	/**
+	 * Classify refresh failure by semantic meaning.
+	 *
+	 * @param WP_Error $error Refresh error.
+	 * @return string transient|authoritative|contract
+	 */
+	private static function classify_refresh_failure( WP_Error $error ): string {
+		$code     = (string) $error->get_error_code();
+		$data     = $error->get_error_data();
+		$data     = is_array( $data ) ? $data : array();
+		$status   = isset( $data['status'] ) ? (int) $data['status'] : 0;
+		$cp_error = isset( $data['cp_error'] ) ? sanitize_key( (string) $data['cp_error'] ) : '';
+
+		if ( 401 === $status || in_array( $code, array( 'mtuc_api_missing_credentials', 'mtuc_api_no_access_token', 'mtuc_api_refresh_failed' ), true ) ) {
+			return 'authoritative';
 		}
 
-		if ( function_exists( 'mtuc_normalize_error' ) ) {
-			$normalized = mtuc_normalize_error( $error, 'configuration' );
-			return in_array(
-				$normalized['category'],
-				array( 'cp_timeout', 'cp_network', 'cp_server', 'configuration_error' ),
-				true
-			);
+		$authoritative_codes = array( 'shop_deleted', 'shop_not_found', 'shop_disabled', 'shop_revoked', 'invalid_shop', 'wrong_unicid', 'credential_mismatch', 'forbidden' );
+		if ( in_array( $status, array( 403, 404 ), true ) && in_array( $cp_error, $authoritative_codes, true ) ) {
+			return 'authoritative';
 		}
 
-		return true;
+		if ( 'http_request_failed' === $code || in_array( $status, array( 408, 429 ), true ) || $status >= 500 ) {
+			return 'transient';
+		}
+
+		return 'contract';
+	}
+
+	/**
+	 * Whether invalid snapshot evidence proves a wrong shop identity.
+	 *
+	 * @param WP_Error $error Snapshot validation error.
+	 * @return bool
+	 */
+	private static function snapshot_identity_mismatch( WP_Error $error ): bool {
+		$data = $error->get_error_data();
+		return is_array( $data )
+			&& isset( $data['violations'] )
+			&& is_array( $data['violations'] )
+			&& in_array( 'unicid_mismatch', $data['violations'], true );
+	}
+
+	/**
+	 * Build the per-shop security-fence option key.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return string
+	 */
+	private static function security_fence_option_key( string $unicid ): string {
+		return 'mtuc_scf_' . md5( $unicid );
+	}
+
+	/**
+	 * Whether an authoritative/security fence blocks this shop scope.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return bool
+	 */
+	public static function has_security_fence( string $unicid ): bool {
+		return false !== get_option( self::security_fence_option_key( $unicid ), false );
+	}
+
+	/**
+	 * Persist an authoritative/security fence without sensitive error data.
+	 *
+	 * @param string   $unicid Store unicid.
+	 * @param WP_Error $error  Authoritative failure.
+	 * @return void
+	 */
+	private static function set_security_fence( string $unicid, WP_Error $error ): void {
+		update_option(
+			self::security_fence_option_key( $unicid ),
+			array(
+				'class' => 'authoritative',
+				'code'  => sanitize_key( (string) $error->get_error_code() ),
+				'ts'    => time(),
+			),
+			false
+		);
+	}
+
+	/**
+	 * Clear the per-shop fence after validated authoritative replacement.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return void
+	 */
+	private static function clear_security_fence( string $unicid ): void {
+		delete_option( self::security_fence_option_key( $unicid ) );
+	}
+
+	/**
+	 * Bounded contender wait. The owner alone performs remote work.
+	 *
+	 * @param string $unicid Store unicid.
+	 * @return array<string, string>|null
+	 */
+	private static function wait_for_fresh_row( string $unicid ): ?array {
+		for ( $attempt = 0; $attempt < 5; $attempt++ ) {
+			usleep( 100000 );
+			$row = self::get_fresh_row( $unicid );
+			if ( null !== $row && ! self::has_security_fence( $unicid ) ) {
+				return $row;
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -469,32 +591,49 @@ class Mtuc_Shop_Cache {
 	 * Acquire atomic refresh lock.
 	 *
 	 * @param string $unicid Store unicid.
-	 * @return bool True when this request owns the refresh.
+	 * @return string|false Owner token, or false when another request owns it.
 	 */
-	private static function acquire_refresh_lock( string $unicid ): bool {
-		$key = self::refresh_lock_option_key( $unicid );
+	private static function acquire_refresh_lock( string $unicid ) {
+		$key     = self::refresh_lock_option_key( $unicid );
+		$token   = uniqid( 'mtuc_', true );
+		$payload = wp_json_encode(
+			array(
+				'started' => time(),
+				'token'   => $token,
+			)
+		);
 
-		if ( add_option( $key, (string) time(), '', 'no' ) ) {
-			return true;
+		if ( add_option( $key, $payload, '', 'no' ) ) {
+			return $token;
 		}
 
-		$started = (int) get_option( $key, 0 );
+		$current = get_option( $key, '' );
+		$decoded = is_string( $current ) ? json_decode( $current, true ) : null;
+		$started = is_array( $decoded )
+			? (int) ( $decoded['started'] ?? 0 )
+			: (int) $current;
 		if ( $started > 0 && ( time() - $started ) > self::REFRESH_LOCK_TTL ) {
 			delete_option( $key );
-			return add_option( $key, (string) time(), '', 'no' );
+			return add_option( $key, $payload, '', 'no' ) ? $token : false;
 		}
 
 		return false;
 	}
 
 	/**
-	 * Release refresh lock.
+	 * Release refresh lock only when the stored token still belongs to this owner.
 	 *
 	 * @param string $unicid Store unicid.
+	 * @param string $token  Owner token.
 	 * @return void
 	 */
-	private static function release_refresh_lock( string $unicid ): void {
-		delete_option( self::refresh_lock_option_key( $unicid ) );
+	private static function release_refresh_lock( string $unicid, string $token ): void {
+		$key     = self::refresh_lock_option_key( $unicid );
+		$current = get_option( $key, '' );
+		$decoded = is_string( $current ) ? json_decode( $current, true ) : null;
+		if ( is_array( $decoded ) && isset( $decoded['token'] ) && hash_equals( (string) $decoded['token'], $token ) ) {
+			delete_option( $key );
+		}
 	}
 
 	/**
@@ -748,15 +887,29 @@ class Mtuc_Shop_Cache {
 	 * Lazily migrates legacy plaintext credential rows into the dedicated store.
 	 *
 	 * @param string $shop_json JSON encoded shop data.
-	 * @param string $unicid    Store unicid for migration scope.
+	 * @param string $unicid      Store unicid for migration scope.
+	 * @param bool   $validate_lkg Apply cheap structural/scope validation for stale reads.
 	 * @return array<string, mixed>|WP_Error
 	 */
-	private static function decode_shop_data( string $shop_json, string $unicid = '' ) {
+	private static function decode_shop_data( string $shop_json, string $unicid = '', bool $validate_lkg = false ) {
 		$data = json_decode( $shop_json, true );
 		if ( ! is_array( $data ) ) {
 			return new WP_Error(
 				'mtuc_cache_corrupt',
 				__( 'Кешираните shop данни са повредени.', 'mtunicredit' )
+			);
+		}
+
+		$lkg_violations = $validate_lkg && function_exists( 'mtuc_validate_shop_snapshot' )
+			? mtuc_validate_shop_snapshot( $data, $unicid )
+			: array();
+		if ( $validate_lkg && ( ! isset( $data['unicid'] ) || ! is_string( $data['unicid'] ) || ! hash_equals( $unicid, $data['unicid'] ) ) ) {
+			$lkg_violations[] = 'unicid_missing_or_mismatch';
+		}
+		if ( ! empty( $lkg_violations ) ) {
+			return new WP_Error(
+				'mtuc_cache_invalid_lkg',
+				__( 'Кешираните shop данни не отговарят на очакваната структура.', 'mtunicredit' )
 			);
 		}
 

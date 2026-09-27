@@ -338,10 +338,13 @@ function mtuc_res_seed_cache_row( string $unicid, bool $fresh, bool $stale_windo
 	$now        = time();
 	$expires_ts = $fresh ? $now + HOUR_IN_SECONDS : ( $stale_window ? $now - HOUR_IN_SECONDS : $now - 8 * HOUR_IN_SECONDS );
 	$payload    = array(
-		'id'          => 10,
+		'id'           => 10,
+		'unicid'       => $unicid,
+		'uni_status'   => 1,
 		'uni_zaglavie' => 'cached-title',
-		'uni_eur'     => 0,
+		'uni_eur'      => 0,
 	);
+	unset( $GLOBALS['mtuc_test_options'][ 'mtuc_scf_' . md5( $unicid ) ] );
 	$GLOBALS['mtuc_shop_cache_rows'][ $unicid ] = array(
 		'shop_data'  => wp_json_encode( $payload ),
 		'fetched_at' => gmdate( 'Y-m-d H:i:s', $now - DAY_IN_SECONDS ),
@@ -447,6 +450,80 @@ mtuc_res_queue_cp_fetch(
 $mtuc_res_cp_fetch_calls = 0;
 $after_lock = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
 mtuc_res_assert( 1 === $mtuc_res_cp_fetch_calls && ! is_wp_error( $after_lock ), 'abandoned refresh lock must recover and refresh' );
+
+// --- REM-WOO-CACHE-001: frozen cache lifecycle contract ---
+
+// Exact expiry is stale and revalidates.
+mtuc_res_seed_cache_row( 'test-unicid-0001', false, true );
+$GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001']['expires_at'] = gmdate( 'Y-m-d H:i:s', time() );
+mtuc_res_queue_cp_fetch( array( 'success' => true, 'data' => array( 'id' => 10, 'unicid' => 'test-unicid-0001', 'uni_status' => 1 ) ) );
+$mtuc_res_cp_fetch_calls = 0;
+$boundary = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( 1 === $mtuc_res_cp_fetch_calls && ! is_wp_error( $boundary ), 'exact expiry boundary must revalidate' );
+
+// Submission never receives LKG.
+mtuc_res_seed_cache_row( 'test-unicid-0001', false, true );
+mtuc_res_queue_cp_fetch( new WP_Error( 'http_request_failed', 'timeout' ) );
+$strict = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001', false, Mtuc_Shop_Cache::PURPOSE_SUBMISSION );
+mtuc_res_assert( is_wp_error( $strict ), 'submission must fail closed instead of using eligible LKG' );
+
+// Authoritative failure fences the scope; later transient failure cannot resurrect LKG.
+mtuc_res_seed_cache_row( 'test-unicid-0001', false, true );
+mtuc_res_queue_cp_fetch( new WP_Error( 'mtuc_api_http_error', 'Unauthorized', array( 'status' => 401 ) ) );
+$fenced = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( is_wp_error( $fenced ) && Mtuc_Shop_Cache::has_security_fence( 'test-unicid-0001' ), '401 must establish a per-shop security fence' );
+mtuc_res_queue_cp_fetch( new WP_Error( 'http_request_failed', 'timeout' ) );
+$fenced_timeout = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( is_wp_error( $fenced_timeout ), 'transient failure must not resurrect a fenced snapshot' );
+
+// Successful authoritative pull clears the fence.
+mtuc_res_queue_cp_fetch( array( 'success' => true, 'data' => array( 'id' => 10, 'unicid' => 'test-unicid-0001', 'uni_status' => 1 ) ) );
+$recovered = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( ! is_wp_error( $recovered ) && ! Mtuc_Shop_Cache::has_security_fence( 'test-unicid-0001' ), 'successful GET /shop must clear the fence' );
+
+// Class C preserves the prior row, does not fence, and does not use LKG in that attempt.
+mtuc_res_seed_cache_row( 'test-unicid-0001', false, true );
+$row_before = $GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001'];
+mtuc_res_queue_cp_fetch( new WP_Error( 'mtuc_api_http_error', 'Invalid configuration', array( 'status' => 422, 'cp_error' => 'validation_failed' ) ) );
+$invalid = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( is_wp_error( $invalid ), '422 contract failure must fail the current attempt without LKG' );
+mtuc_res_assert( $row_before === $GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001'] && ! Mtuc_Shop_Cache::has_security_fence( 'test-unicid-0001' ), '422 must preserve the row byte-identically and create no fence' );
+mtuc_res_queue_cp_fetch( new WP_Error( 'http_request_failed', 'timeout' ) );
+$after_invalid = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( ! is_wp_error( $after_invalid ), 'a later independent transient failure may reconsider eligible LKG after class C' );
+
+// Malformed/invalid response has the same class-C policy.
+mtuc_res_seed_cache_row( 'test-unicid-0001', false, true );
+$row_before = $GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001'];
+mtuc_res_queue_cp_fetch( new WP_Error( 'mtuc_api_invalid_json', 'Malformed JSON', array( 'status' => 200 ) ) );
+$malformed = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( is_wp_error( $malformed ) && $row_before === $GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001'] && ! Mtuc_Shop_Cache::has_security_fence( 'test-unicid-0001' ), 'malformed 2xx must preserve the known-good row without fencing or LKG' );
+
+// Wrong authoritative identity fences without overwriting the old row.
+mtuc_res_seed_cache_row( 'test-unicid-0001', false, true );
+$row_before = $GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001'];
+mtuc_res_queue_cp_fetch( array( 'success' => true, 'data' => array( 'id' => 10, 'unicid' => 'wrong-unicid', 'uni_status' => 1 ) ) );
+$wrong_identity = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( is_wp_error( $wrong_identity ) && $row_before === $GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001'] && Mtuc_Shop_Cache::has_security_fence( 'test-unicid-0001' ), 'wrong UNICID must fence and leave the existing row untouched' );
+
+// A valid authoritative CP push replaces stale data and clears a fence.
+$pushed = Mtuc_Shop_Cache::update_from_cp_push( 'test-unicid-0001', array( 'id' => 10, 'unicid' => 'test-unicid-0001', 'uni_status' => 1, 'uni_container_status' => 0 ) );
+mtuc_res_assert( ! is_wp_error( $pushed ) && ! Mtuc_Shop_Cache::has_security_fence( 'test-unicid-0001' ), 'valid CP push must replace the row and clear the fence' );
+
+// Active lock covers missing cache too: contender waits bounded and never fetches.
+unset( $GLOBALS['mtuc_shop_cache_rows']['test-unicid-0001'] );
+$GLOBALS['mtuc_test_options'][ $lock_key ] = wp_json_encode( array( 'started' => time(), 'token' => 'owner' ) );
+mtuc_res_queue_cp_fetch( new WP_Error( 'http_request_failed', 'must not execute' ) );
+$mtuc_res_cp_fetch_calls = 0;
+$missing_contender = Mtuc_Shop_Cache::get_shop_data( 'test-unicid-0001' );
+mtuc_res_assert( is_wp_error( $missing_contender ) && 0 === $mtuc_res_cp_fetch_calls, 'missing-cache contender must not duplicate the owner refresh' );
+unset( $GLOBALS['mtuc_test_options'][ $lock_key ] );
+
+// Container status remains advertising-only; financing status is a separate gate.
+$functions_source = file_get_contents( MTUC_PLUGIN_DIR . '/includes/functions.php' );
+$product_source   = file_get_contents( MTUC_PLUGIN_DIR . '/includes/mtuc-product-frontend.php' );
+mtuc_res_assert( is_string( $functions_source ) && false !== strpos( $functions_source, "shop['uni_container_status']" ), 'homepage advertising must honor uni_container_status' );
+mtuc_res_assert( is_string( $product_source ) && false === strpos( $product_source, 'uni_container_status' ) && false !== strpos( $product_source, "shop['uni_status']" ), 'product financing must use uni_status without conflating container status' );
 
 // --- AUD-WOO-011: secrets ---
 

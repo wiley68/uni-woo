@@ -128,6 +128,18 @@ function mtuc_get_shop_data( $unicid = null ) {
 }
 
 /**
+ * Resolve shop configuration for a financing submission boundary.
+ *
+ * This path never returns stale/LKG configuration.
+ *
+ * @param string|null $unicid Store unicid (defaults to settings).
+ * @return array<string, mixed>|WP_Error
+ */
+function mtuc_get_shop_data_for_submission( $unicid = null ) {
+	return Mtuc_Shop_Cache::get_shop_data( $unicid, false, Mtuc_Shop_Cache::PURPOSE_SUBMISSION );
+}
+
+/**
  * CDN picture URL from shop cache (PC or mobile).
  *
  * @param array<string, mixed> $shop   Shop `data` object.

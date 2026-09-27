@@ -540,7 +540,7 @@ function mtuc_resolve_smartucf_trust_shop( array $shop = array() ) {
 		return null;
 	}
 
-	$resolved = mtuc_get_shop_data();
+	$resolved = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 	if ( is_wp_error( $resolved ) || ! is_array( $resolved ) || empty( $resolved ) ) {
 		return null;
 	}

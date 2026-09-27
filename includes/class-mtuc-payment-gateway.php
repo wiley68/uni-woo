@@ -171,7 +171,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			return false;
 		}
 
-		$shop = mtuc_get_shop_data();
+		$shop = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 		if ( is_wp_error( $shop ) ) {
 			mtuc_add_customer_safe_notice( $shop, 'configuration' );
 			return false;
@@ -231,7 +231,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			);
 		}
 
-		$shop = mtuc_get_shop_data();
+		$shop = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 
 		if ( function_exists( 'mtuc_classify_order_process_identity' )
 			&& function_exists( 'mtuc_resolve_order_process_for_banking' )

@@ -1949,7 +1949,7 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $customer;
 	}
 
-	$shop = mtuc_get_shop_data();
+	$shop = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		return $shop;
@@ -3530,7 +3530,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 		mtuc_send_customer_safe_json_error( $cart_state, 400, 'general' );
 	}
 
-	$shop = mtuc_get_shop_data();
+	$shop = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		mtuc_send_customer_safe_json_error( $shop, 500, 'configuration' );
@@ -3902,7 +3902,7 @@ function mtuc_ajax_popup_submit(): void {
 		);
 	}
 
-	$shop = mtuc_get_shop_data();
+	$shop = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 	$process2 = ! is_wp_error( $shop ) && is_array( $shop ) && mtuc_is_shop_process_2( $shop );
 
 	$customer = mtuc_validate_popup_customer_payload( $_POST, $process2 );
@@ -3963,7 +3963,7 @@ function mtuc_ajax_popup_submit(): void {
 		);
 	}
 
-	$shop = mtuc_get_shop_data();
+	$shop = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 	if ( is_wp_error( $shop ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		mtuc_send_customer_safe_json_error( $shop, 500, 'configuration' );
