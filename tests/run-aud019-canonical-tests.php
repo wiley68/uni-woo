@@ -1012,7 +1012,7 @@ mtuc_a19_assert( ! empty( $invalid_snapshot->get_error_data()['violations'] ), '
 $raw_snapshot = array(
 	'unicid'        => 'SHOP-UNICID',
 	'uni_zaglavie'  => 'Магазин',
-	'uni_eur'       => 1,
+	'uni_eur'       => 3,
 	'uni_proces'    => 2,
 	'uni_user'      => 'bank-user',
 	'uni_password'  => 'bank-pass',
@@ -1046,7 +1046,13 @@ foreach ( array( 'tt', 'bb', 'cs', 'pk', 'ak' ) as $secret ) {
 }
 
 mtuc_a19_assert( 'Магазин' === $clean['uni_zaglavie'], 'F07 business title preserved' );
-mtuc_a19_assert( 1 === $clean['uni_eur'], 'F07 currency flag preserved' );
+mtuc_a19_assert( 3 === $clean['uni_eur'], 'F07 temporary extra snapshot field preserved as opaque data' );
+$without_legacy_currency = $raw_snapshot;
+unset( $without_legacy_currency['uni_eur'] );
+$clean_without_legacy_currency = mtuc_prepare_shop_snapshot( $without_legacy_currency, 'SHOP-UNICID' );
+mtuc_a19_assert( is_array( $clean_without_legacy_currency ), 'F07 snapshot without obsolete currency field is valid' );
+$clean_without_legacy_currency['uni_eur'] = 3;
+mtuc_a19_assert( $clean == $clean_without_legacy_currency, 'F07 temporary extra field has no effect on other snapshot data' );
 mtuc_a19_assert( 2 === $clean['uni_proces'], 'F07 process flag preserved' );
 mtuc_a19_assert( 'CAT' === $clean['nested']['uni_kop'], 'F07 nested business field preserved' );
 mtuc_a19_assert( 24 === $clean['nested']['deep']['uni_months'], 'F07 deeply nested business field preserved' );

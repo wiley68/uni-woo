@@ -342,7 +342,6 @@ function mtuc_res_seed_cache_row( string $unicid, bool $fresh, bool $stale_windo
 		'unicid'       => $unicid,
 		'uni_status'   => 1,
 		'uni_zaglavie' => 'cached-title',
-		'uni_eur'      => 0,
 	);
 	unset( $GLOBALS['mtuc_test_options'][ 'mtuc_scf_' . md5( $unicid ) ] );
 	$GLOBALS['mtuc_shop_cache_rows'][ $unicid ] = array(
@@ -381,8 +380,7 @@ mtuc_res_queue_cp_fetch(
 			// AUD-WOO-019-F07: a snapshot must name the shop it belongs to.
 			'unicid'       => 'test-unicid-0001',
 			'uni_zaglavie' => 'refreshed',
-			'uni_eur'      => 0,
-		),
+			),
 	)
 );
 $mtuc_res_cp_fetch_calls = 0;
@@ -444,7 +442,7 @@ $GLOBALS['mtuc_test_options'][ $lock_key ] = (string) ( time() - 200 );
 mtuc_res_queue_cp_fetch(
 	array(
 		'success' => true,
-		'data'    => array( 'id' => 10, 'unicid' => 'test-unicid-0001', 'uni_zaglavie' => 'after-lock', 'uni_eur' => 0 ),
+		'data'    => array( 'id' => 10, 'unicid' => 'test-unicid-0001', 'uni_zaglavie' => 'after-lock' ),
 	)
 );
 $mtuc_res_cp_fetch_calls = 0;

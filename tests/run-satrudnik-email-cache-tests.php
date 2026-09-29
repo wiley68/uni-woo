@@ -47,7 +47,7 @@ function mtuc_se_shop( array $extra = array() ): array {
 			'uni_proces'   => 1,
 			'uni_zaglavie' => 'Магазин',
 			'uni_email'    => 'owner-fallback@example.com',
-			'uni_eur'      => 1,
+			'uni_eur'      => 3,
 		),
 		$extra
 	);
@@ -159,7 +159,7 @@ $e = mtuc_se_prepare_and_capture(
 );
 mtuc_se_assert( 1 === ( $e['cached']['uni_proces'] ?? null ), 'E: uni_proces preserved' );
 mtuc_se_assert( 'Магазин' === ( $e['cached']['uni_zaglavie'] ?? null ), 'E: uni_zaglavie preserved' );
-mtuc_se_assert( 1 === ( $e['cached']['uni_eur'] ?? null ), 'E: uni_eur preserved' );
+mtuc_se_assert( 3 === ( $e['cached']['uni_eur'] ?? null ), 'E: temporary extra field preserved without altering email cache' );
 mtuc_se_assert( 'owner-fallback@example.com' === ( $e['cached']['uni_email'] ?? null ), 'E: uni_email untouched' );
 mtuc_se_assert( 'CAT' === ( $e['cached']['nested']['uni_kop'] ?? null ), 'E: nested business field preserved' );
 mtuc_se_assert( null === $e['cached']['satrudnik_email'], 'E: null satrudnik_email does not fall back to uni_email' );

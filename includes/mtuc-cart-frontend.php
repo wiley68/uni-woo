@@ -424,7 +424,6 @@ function mtuc_enqueue_cart_calculator_assets( array $context ): void {
 			'defaultSchemeByOffer' => isset( $popup_context['default_scheme_by_offer'] ) && is_array( $popup_context['default_scheme_by_offer'] )
 				? $popup_context['default_scheme_by_offer']
 				: array(),
-			'currencyDual'         => ! empty( $popup_context['currency']['dual'] ),
 			'customer'             => isset( $popup_context['customer'] ) && is_array( $popup_context['customer'] )
 				? $popup_context['customer']
 				: mtuc_get_popup_customer_defaults(),

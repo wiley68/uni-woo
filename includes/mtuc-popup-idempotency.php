@@ -662,12 +662,7 @@ function mtuc_order_requires_popup_init_complete_for_remote( WC_Order $order ): 
 		return true;
 	}
 
-	$via = (string) $order->get_created_via();
-	if ( in_array( $via, array( 'mtuc_product_popup', 'mtuc_cart_popup' ), true ) ) {
-		return true;
-	}
-
-	if ( 0 === strpos( $via, 'mtuc:' ) ) {
+	if ( mtuc_order_has_popup_created_via( $order ) ) {
 		return true;
 	}
 
@@ -1133,6 +1128,11 @@ function mtuc_complete_product_popup_bank_submission(
 	array $shop,
 	bool $process2
 ) {
+	$currency_ok = mtuc_require_eur_order_operation_provenance( $order, 'product_popup' );
+	if ( is_wp_error( $currency_ok ) ) {
+		return $currency_ok;
+	}
+
 	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {
 		$process_id = mtuc_resolve_order_process_for_banking( $order, $shop );
 		if ( is_wp_error( $process_id ) ) {

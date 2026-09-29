@@ -99,17 +99,12 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			return false;
 		}
 
-		$currency = function_exists( 'get_woocommerce_currency' ) ? get_woocommerce_currency() : '';
-		if ( ! in_array( $currency, array( 'BGN', 'EUR' ), true ) ) {
+		if ( ! mtuc_is_eur_transaction_currency() ) {
 			return false;
 		}
 
 		$shop = function_exists( 'mtuc_get_shop_data' ) ? mtuc_get_shop_data() : null;
 		if ( is_wp_error( $shop ) || ! is_array( $shop ) ) {
-			return false;
-		}
-
-		if ( ! mtuc_is_transaction_currency_compatible( $shop, $currency ) ) {
 			return false;
 		}
 

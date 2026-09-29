@@ -450,59 +450,22 @@ function mtuc_build_button_offer( string $type, string $kop_code, int $months, f
 		'gpr'                 => round( $gpr, 2 ),
 		'total_amount'        => round( $price, 2 ),
 		'kimb'                => $kimb,
-		'price_text'          => mtuc_format_installment_price_text( $months, $monthly_installment, $shop ),
+		'price_text'          => mtuc_format_installment_price_text( $months, $monthly_installment ),
 	);
 }
 
 /**
- * Format button subtitle: "{months} x {amount primary} ({amount secondary})".
+ * Format the EUR installment subtitle without changing the calculated amount.
  *
- * @param int                  $months              Installment count.
- * @param float                $monthly_installment Monthly installment amount.
- * @param array<string, mixed> $shop                Shop `data` object from CP.
+ * @param int   $months              Installment count.
+ * @param float $monthly_installment Monthly installment amount.
  * @return string
  */
-function mtuc_format_installment_price_text( int $months, float $monthly_installment, array $shop ): string {
-	$uni_eur = (int) ( $shop['uni_eur'] ?? 0 );
-	$rate    = 1.95583;
-
-	switch ( $uni_eur ) {
-		case 1:
-			$primary_amount   = $monthly_installment;
-			$secondary_amount = round( $monthly_installment / $rate, 2 );
-			$primary_sign     = __( 'лева', 'mtunicredit' );
-			$secondary_sign   = __( 'евро', 'mtunicredit' );
-			break;
-		case 2:
-			$primary_amount   = $monthly_installment;
-			$secondary_amount = round( $monthly_installment * $rate, 2 );
-			$primary_sign     = __( 'евро', 'mtunicredit' );
-			$secondary_sign   = __( 'лева', 'mtunicredit' );
-			break;
-		case 3:
-			return sprintf(
-				/* translators: 1: installment count, 2: monthly amount */
-				__( '%1$d x %2$s евро', 'mtunicredit' ),
-				$months,
-				number_format( $monthly_installment, 2, '.', '' )
-			);
-		case 0:
-		default:
-			return sprintf(
-				/* translators: 1: installment count, 2: monthly amount */
-				__( '%1$d x %2$s лв.', 'mtunicredit' ),
-				$months,
-				number_format( $monthly_installment, 2, '.', '' )
-			);
-	}
-
+function mtuc_format_installment_price_text( int $months, float $monthly_installment ): string {
 	return sprintf(
-		/* translators: 1: installment count, 2: primary amount, 3: primary currency, 4: secondary amount, 5: secondary currency */
-		__( '%1$d x %2$s %3$s (%4$s %5$s)', 'mtunicredit' ),
+		/* translators: 1: installment count, 2: monthly amount */
+		__( '%1$d x %2$s евро', 'mtunicredit' ),
 		$months,
-		number_format( $primary_amount, 2, '.', '' ),
-		$primary_sign,
-		number_format( $secondary_amount, 2, '.', '' ),
-		$secondary_sign
+		number_format( $monthly_installment, 2, '.', '' )
 	);
 }

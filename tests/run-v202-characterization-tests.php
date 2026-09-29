@@ -59,9 +59,8 @@ if ( ! function_exists( 'mtuc_format_popup_percent_display' ) ) {
 	}
 }
 if ( ! function_exists( 'mtuc_format_popup_amount_display' ) ) {
-	function mtuc_format_popup_amount_display( float $value, array $shop ): array {
-		unset( $shop );
-		return array( 'primary' => number_format( $value, 2, '.', '' ), 'secondary' => '', 'dual' => false );
+	function mtuc_format_popup_amount_display( float $value ): array {
+		return array( 'primary' => number_format( $value, 2, '.', '' ) . ' евро' );
 	}
 }
 
@@ -116,7 +115,6 @@ mtuc_v202_assert( 'p:24:4' === mtuc_pick_default_checkout_scheme_key( $checkout_
 // Confirmed Cart parity fixture: representative and popup use the locked parva.
 $shop = array(
 	'uni_first_vnoska' => 0,
-	'uni_eur'          => 3,
 	'kop'              => array(
 		'by_schema' => array(
 			'filters' => array(

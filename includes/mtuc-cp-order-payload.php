@@ -131,26 +131,6 @@ function mtuc_validate_cp_order_field_limits( array $payload ) {
 }
 
 /**
- * Resolve CP order currency code — must match Woo transaction currency.
- *
- * Requires compatibility between WooCommerce currency and shop `uni_eur` mode.
- * Dual-display modes (1/2) do not change the submitted transaction currency.
- *
- * @param array<string, mixed> $shop        Shop `data` object from CP.
- * @param string|null          $wc_currency Optional Woo/order currency override.
- * @return string BGN|EUR
- */
-function mtuc_get_cp_order_currency( array $shop, ?string $wc_currency = null ): string {
-	$resolved = mtuc_resolve_transaction_currency( $shop, $wc_currency );
-	if ( is_wp_error( $resolved ) ) {
-		// Callers must gate availability; fall back to expected bank currency for typing only.
-		return mtuc_get_expected_transaction_currency( $shop );
-	}
-
-	return $resolved;
-}
-
-/**
  * CP type_client: 0 = mobile, 1 = desktop/PC.
  *
  * @return int 0|1
@@ -195,6 +175,11 @@ function mtuc_assemble_cp_order_payload(
 	array $shop,
 	array $cp_products
 ) {
+	$currency = mtuc_require_eur_transaction_currency( $order->get_currency() );
+	if ( is_wp_error( $currency ) ) {
+		return $currency;
+	}
+
 	$cp_addresses = mtuc_resolve_cp_order_addresses( $order, $customer );
 
 	/*
@@ -217,7 +202,7 @@ function mtuc_assemble_cp_order_payload(
 		'products_name' => $cp_products['products_name'],
 		'products_q'    => $cp_products['products_q'],
 		'type_client'   => mtuc_get_cp_type_client(),
-		'currency'      => mtuc_get_cp_order_currency( $shop, $order->get_currency() ),
+		'currency'      => 'EUR',
 		'version'       => mtuc_get_cp_order_version(),
 	);
 

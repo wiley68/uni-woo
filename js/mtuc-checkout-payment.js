@@ -155,10 +155,10 @@
 		};
 	};
 
-	const setDualAmount = (prefix, display) => {
-		const data = display || {};
-		$("#mtuc-checkout-" + prefix + "-primary").text(data.primary || "");
-		$("#mtuc-checkout-" + prefix + "-secondary").text(data.secondary || "");
+	const setAmount = (prefix, display) => {
+		$("#mtuc-checkout-" + prefix + "-primary").text(
+			display ? display.primary || "" : "",
+		);
 	};
 
 	const syncHiddenFields = ($schemeKey, $parva, $parvaHidden, $months) => {
@@ -352,10 +352,10 @@
 		onReadyChange,
 	) => {
 		lastCalculation = data;
-		setDualAmount("price", data.price_display);
-		setDualAmount("loan", data.loan_display);
-		setDualAmount("monthly", data.monthly_display);
-		setDualAmount("total", data.total_display);
+		setAmount("price", data.price_display);
+		setAmount("loan", data.loan_display);
+		setAmount("monthly", data.monthly_display);
+		setAmount("total", data.total_display);
 		$("#mtuc-checkout-glp").text(
 			(data.glp_display || formatPercent(data.glp)) + "%",
 		);

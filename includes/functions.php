@@ -1303,7 +1303,7 @@ function mtuc_find_coeff_entry( array $coeff_list, string $kop_code, int $months
 	return null;
 }
 
-// Button offer build / dual-currency price text live in includes/mtuc-product-offer-selection.php (AUD-WOO-016 Step 5).
+// Button offer build and EUR installment text live in includes/mtuc-product-offer-selection.php (AUD-WOO-016 Step 5).
 
 /**
  * GPR / financial-rate implementations live in includes/mtuc-financing-calculator.php (AUD-WOO-016).

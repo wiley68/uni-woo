@@ -227,18 +227,6 @@ body.mtuc-popup-open {
 	color: var(--mtuc-popup-red);
 }
 
-.mtuc-popup__amount-secondary {
-	display: none;
-	margin-left: 6px;
-	color: var(--mtuc-popup-red);
-	font-size: 70%;
-	font-weight: 400;
-}
-
-.mtuc-popup__value--dual .mtuc-popup__amount-secondary {
-	display: inline;
-}
-
 .mtuc-popup__select,
 .mtuc-popup__input:not(.mtuc-popup__input--text) {
 	box-sizing: border-box;

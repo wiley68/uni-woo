@@ -46,7 +46,7 @@ if ( ! function_exists( 'get_woocommerce_currency' ) ) {
 	 * @return string
 	 */
 	function get_woocommerce_currency() {
-		return $GLOBALS['mtuc_test_wc_currency'] ?? 'BGN';
+		return $GLOBALS['mtuc_test_wc_currency'] ?? 'EUR';
 	}
 }
 
@@ -217,7 +217,7 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		/** @var float */
 		public $total = 0.0;
 		/** @var string */
-		public $currency = 'BGN';
+		public $currency = 'EUR';
 		/** @var array<string, mixed> */
 		public $meta = array();
 		/** @var list<WC_Order_Item_Product> */
@@ -346,7 +346,7 @@ $smart_src       = (string) file_get_contents( MTUC_PLUGIN_DIR . '/includes/clas
 function mtuc_cp_fixture_product_context( int $order_id = 874 ): array {
 	$order                  = new WC_Order( $order_id );
 	$order->total           = 1234.56; // products+shipping+fee+tax-discount fixture total.
-	$order->currency        = 'BGN';
+	$order->currency        = 'EUR';
 	$order->meta[ MTUC_ORDER_META_CP_SHOP_ORDER_ID ] = (string) $order_id;
 
 	$product = new WC_Product( 42, 'Тестов продукт_с_долна_черта' );
@@ -383,11 +383,9 @@ $GLOBALS['mtuc_test_user_id']     = 0;
 $fx = mtuc_cp_fixture_product_context( 874 );
 $shop_p1 = array(
 	'uni_proces' => 0,
-	'uni_eur'    => 0,
 );
 $shop_p2 = array(
 	'uni_proces' => 1,
-	'uni_eur'    => 0,
 );
 
 // ---------------------------------------------------------------------------
@@ -422,7 +420,7 @@ $expected_p1 = array(
 	'products_name' => 'Тестов продукт_с_долна_черта',
 	'products_q'    => '2',
 	'type_client'   => 1,
-	'currency'      => 'BGN',
+	'currency'      => 'EUR',
 	'version'       => '2.0.3',
 );
 
@@ -475,7 +473,7 @@ mtuc_cp_assert( false === strpos( (string) $actual_p1['order_id'], 'OA' ), 'no b
 
 $legacy = new WC_Order( 875 );
 $legacy->total = 10.0;
-$legacy->currency = 'BGN';
+$legacy->currency = 'EUR';
 $legacy->meta[ MTUC_ORDER_META_CP_SHOP_ORDER_ID ] = 'W0000000000OA';
 $legacy_payload = mtuc_build_cp_order_payload(
 	$legacy,
@@ -526,51 +524,34 @@ mtuc_cp_assert(
 );
 
 // ---------------------------------------------------------------------------
-// Currency BGN / EUR
+// EUR order currency is authoritative even when the store context differs.
 // ---------------------------------------------------------------------------
 
 $fx['order']->currency = 'EUR';
-$shop_eur = array(
-	'uni_proces' => 0,
-	'uni_eur'    => 3,
-);
+$GLOBALS['mtuc_test_wc_currency'] = 'BGN';
 $eur_payload = mtuc_build_cp_order_payload(
-	$fx['order'],
-	$fx['customer'],
-	$fx['calculation'],
-	$fx['product'],
-	42,
-	0,
-	1,
-	$shop_eur
+	$fx['order'], $fx['customer'], $fx['calculation'], $fx['product'], 42, 0, 1, $shop_p1
 );
-mtuc_cp_assert( 'EUR' === $eur_payload['currency'], 'EUR transaction currency preserved' );
+mtuc_cp_assert( 'EUR' === $eur_payload['currency'], 'EUR order remains EUR with BGN store context' );
+$GLOBALS['mtuc_test_wc_currency'] = 'EUR';
 
-$fx['order']->currency = 'BGN';
-$mismatch_shop = array(
-	'uni_proces' => 0,
-	'uni_eur'    => 3, // expects EUR
-);
-$mismatch = mtuc_build_cp_order_payload(
-	$fx['order'],
-	$fx['customer'],
-	$fx['calculation'],
-	$fx['product'],
-	42,
-	0,
-	1,
-	$mismatch_shop
-);
-// Current behavior: on mismatch, get_cp_order_currency falls back to expected bank currency.
-mtuc_cp_assert( 'EUR' === $mismatch['currency'], 'mismatch path uses expected bank currency fallback' );
+foreach ( array( 'BGN', 'USD', '' ) as $invalid_currency ) {
+	$fx['order']->currency = $invalid_currency;
+	$rejected = mtuc_build_cp_order_payload(
+		$fx['order'], $fx['customer'], $fx['calculation'], $fx['product'], 42, 0, 1, $shop_p1
+	);
+	mtuc_cp_assert( is_wp_error( $rejected ), 'CP rejects order currency ' . $invalid_currency );
+}
+$fx['order']->currency = 'EUR';
 
+// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Cart / multi-line popup payload (checkout + cart share this builder)
 // ---------------------------------------------------------------------------
 
 $cart_order = new WC_Order( 900);
 $cart_order->total    = 250.0;
-$cart_order->currency = 'BGN';
+$cart_order->currency = 'EUR';
 $cart_order->meta[ MTUC_ORDER_META_CP_SHOP_ORDER_ID ] = '900';
 
 $p_a              = new WC_Product( 10, 'A_one' );
@@ -611,7 +592,7 @@ $expected_cart = array(
 	'products_name' => 'A_one_B_two',
 	'products_q'    => '1_3',
 	'type_client'   => 1,
-	'currency'      => 'BGN',
+	'currency'      => 'EUR',
 	'version'       => '2.0.3',
 );
 

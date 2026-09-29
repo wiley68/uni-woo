@@ -16,7 +16,6 @@ $popup               = isset( $context['popup'] ) && is_array( $context['popup']
 $popup_source        = isset( $popup['source'] ) ? (string) $popup['source'] : 'product';
 $hide_add_to_cart    = ! empty( $popup['hide_add_to_cart'] ) || 'cart' === $popup_source;
 $show_first_vnoska   = ! empty( $popup['show_first_vnoska'] );
-$currency            = isset( $popup['currency'] ) && is_array( $popup['currency'] ) ? $popup['currency'] : mtuc_get_currency_display_config( array( 'uni_eur' => 0 ) );
 $customer            = isset( $popup['customer'] ) && is_array( $popup['customer'] ) ? $popup['customer'] : mtuc_get_popup_customer_defaults();
 $banner_url          = isset( $popup['banner_url'] ) ? (string) $popup['banner_url'] : '';
 $banner_url_mobile   = isset( $popup['banner_url_mobile'] ) ? (string) $popup['banner_url_mobile'] : '';
@@ -26,7 +25,6 @@ $reklama_url         = isset( $popup['reklama_url'] ) ? (string) $popup['reklama
 $product_id          = (int) ( $popup['product_id'] ?? 0 );
 $badge_logo_url      = mtuc_get_uni_mini_logo_url();
 $parva_row_class     = $show_first_vnoska ? '' : ' mtuc-popup__row--hidden';
-$currency_dual_class = ! empty( $currency['dual'] ) ? ' mtuc-popup__value--dual' : '';
 $process2            = ! empty( $popup['process2'] );
 $consents            = isset( $popup['consents'] ) && is_array( $popup['consents'] ) ? $popup['consents'] : array();
 ?>
@@ -64,9 +62,8 @@ $consents            = isset( $popup['consents'] ) && is_array( $popup['consents
 							<div class="mtuc-popup__calc-fields">
 								<div class="mtuc-popup__row">
 									<div class="mtuc-popup__label"><?php echo 'cart' === $popup_source ? esc_html__( 'Цена на количката', 'mtunicredit' ) : esc_html__( 'Цена на артикула', 'mtunicredit' ); ?></div>
-									<div class="mtuc-popup__value<?php echo esc_attr( $currency_dual_class ); ?>">
+									<div class="mtuc-popup__value">
 										<span id="mtuc-popup-price-primary" class="mtuc-popup__amount-primary"></span>
-										<span id="mtuc-popup-price-secondary" class="mtuc-popup__amount-secondary"></span>
 									</div>
 								</div>
 
@@ -96,9 +93,8 @@ $consents            = isset( $popup['consents'] ) && is_array( $popup['consents
 
 								<div class="mtuc-popup__row">
 									<div class="mtuc-popup__label"><?php esc_html_e( 'Обща сума на заема', 'mtunicredit' ); ?></div>
-									<div class="mtuc-popup__value<?php echo esc_attr( $currency_dual_class ); ?>">
+									<div class="mtuc-popup__value">
 										<span id="mtuc-popup-loan-primary" class="mtuc-popup__amount-primary"></span>
-										<span id="mtuc-popup-loan-secondary" class="mtuc-popup__amount-secondary"></span>
 									</div>
 								</div>
 
@@ -107,17 +103,15 @@ $consents            = isset( $popup['consents'] ) && is_array( $popup['consents
 										<span class="mtuc-popup__label-desktop"><?php esc_html_e( 'Размер на погасителна вноска', 'mtunicredit' ); ?></span>
 										<span class="mtuc-popup__label-mobile"><?php esc_html_e( 'Погасителна вноска', 'mtunicredit' ); ?></span>
 									</div>
-									<div class="mtuc-popup__value<?php echo esc_attr( $currency_dual_class ); ?>">
+									<div class="mtuc-popup__value">
 										<span id="mtuc-popup-monthly-primary" class="mtuc-popup__amount-primary"></span>
-										<span id="mtuc-popup-monthly-secondary" class="mtuc-popup__amount-secondary"></span>
 									</div>
 								</div>
 
 								<div class="mtuc-popup__row">
 									<div class="mtuc-popup__label"><?php esc_html_e( 'Обща дължима сума', 'mtunicredit' ); ?></div>
-									<div class="mtuc-popup__value<?php echo esc_attr( $currency_dual_class ); ?>">
+									<div class="mtuc-popup__value">
 										<span id="mtuc-popup-total-primary" class="mtuc-popup__amount-primary"></span>
-										<span id="mtuc-popup-total-secondary" class="mtuc-popup__amount-secondary"></span>
 									</div>
 								</div>
 

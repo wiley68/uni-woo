@@ -281,7 +281,7 @@ function mtuc_build_cart_calculator_context(): ?array {
 		return null;
 	}
 
-	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
+	if ( ! mtuc_is_eur_transaction_currency() ) {
 		return null;
 	}
 
@@ -477,11 +477,8 @@ function mtuc_build_cart_split_notification_body( array $shop, array $lines, flo
 		$sku      = $product->get_sku();
 		$quantity = max( 1, (int) ( $line['quantity'] ?? 1 ) );
 		$total    = round( (float) ( $line['line_total'] ?? 0 ), 2 );
-		$display  = mtuc_format_popup_amount_display( $total, $shop );
+		$display  = mtuc_format_popup_amount_display( $total );
 		$price    = $display['primary'];
-		if ( ! empty( $display['dual'] ) && ! empty( $display['secondary'] ) ) {
-			$price .= ' / ' . $display['secondary'];
-		}
 
 		$label = $name;
 		if ( '' !== $sku ) {
@@ -495,11 +492,8 @@ function mtuc_build_cart_split_notification_body( array $shop, array $lines, flo
 			. '</tr>';
 	}
 
-	$cart_total_display = mtuc_format_popup_amount_display( $cart_total, $shop );
+	$cart_total_display = mtuc_format_popup_amount_display( $cart_total );
 	$cart_total_text    = $cart_total_display['primary'];
-	if ( ! empty( $cart_total_display['dual'] ) && ! empty( $cart_total_display['secondary'] ) ) {
-		$cart_total_text .= ' / ' . $cart_total_display['secondary'];
-	}
 
 	$html  = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111;">';
 	$html .= '<p style="margin:0 0 16px;">' . esc_html( $message ) . '</p>';
@@ -630,7 +624,6 @@ function mtuc_get_cart_popup_context( array $shop, array $context, float $cart_t
 		'shop_months'             => mtuc_get_shop_enabled_months( $shop ),
 		'enabled_months_by_offer' => $enabled_by_offer,
 		'default_scheme_by_offer' => $default_by_offer,
-		'currency'                => mtuc_get_currency_display_config( $shop ),
 		'customer'                => mtuc_get_popup_customer_defaults(),
 		'has_standard'            => ! empty( $common_standard ),
 		'has_promo'               => ! empty( $common_promo ),
@@ -670,10 +663,10 @@ function mtuc_resolve_cart_scheme_state() {
 		return $shop;
 	}
 
-	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
+	if ( ! mtuc_is_eur_transaction_currency() ) {
 		return new WP_Error(
 			'mtuc_currency_mismatch',
-			__( 'Валутата на магазина не съвпада с конфигурацията за финансиране.', 'mtunicredit' )
+			__( 'Финансирането е достъпно само за поръчки в евро.', 'mtunicredit' )
 		);
 	}
 
@@ -833,10 +826,10 @@ function mtuc_calculate_cart_popup_credit(
 		'gpr'                 => $gpr,
 		'glp_display'         => mtuc_format_popup_percent_display( $glp ),
 		'gpr_display'         => mtuc_format_popup_percent_display( $gpr ),
-		'price_display'       => mtuc_format_popup_amount_display( $cart_total, $shop ),
-		'parva_display'       => mtuc_format_popup_amount_display( $parva, $shop ),
-		'loan_display'        => mtuc_format_popup_amount_display( $loan_amount, $shop ),
-		'monthly_display'     => mtuc_format_popup_amount_display( $monthly_installment, $shop ),
-		'total_display'       => mtuc_format_popup_amount_display( $total_payable, $shop ),
+		'price_display'       => mtuc_format_popup_amount_display( $cart_total ),
+		'parva_display'       => mtuc_format_popup_amount_display( $parva ),
+		'loan_display'        => mtuc_format_popup_amount_display( $loan_amount ),
+		'monthly_display'     => mtuc_format_popup_amount_display( $monthly_installment ),
+		'total_display'       => mtuc_format_popup_amount_display( $total_payable ),
 	);
 }

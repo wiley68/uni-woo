@@ -346,6 +346,8 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		/** @var string */
 		public $payment_method = 'mtunicredit';
 		/** @var string */
+		public $currency = 'EUR';
+		/** @var string */
 		public $order_key = 'wc_order_test';
 		/** @var string */
 		public $created_via = '';
@@ -366,6 +368,15 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 
 		public function get_payment_method(): string {
 			return $this->payment_method;
+		}
+
+		/**
+		 * Return the test order currency.
+		 *
+		 * @return string
+		 */
+		public function get_currency(): string {
+			return $this->currency;
 		}
 
 		/**
@@ -649,6 +660,7 @@ if ( ! function_exists( 'status_header' ) ) {
 $GLOBALS['wp'] = (object) array( 'query_vars' => array( 'order-received' => 0 ) );
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-submission-lock.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financial-integrity.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-error-normalizer.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-order-diagnostics.php';
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-bank-lifecycle.php';
@@ -809,6 +821,7 @@ mtuc_p2_assert(
 // Product/Cart/Classic convergence: complete_order_bank_submission uses durable identity.
 $cart_like = new WC_Order();
 $cart_like->id = 1414;
+$cart_like->update_meta_data( MTUC_ORDER_META_PREFIX . 'submission_source', 'checkout' );
 mtuc_p2_seed_identity( $cart_like, 2 );
 $cart_like->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 7001 );
 $cart_like->update_meta_data( MTUC_ORDER_META_CP_CREATE_OUTCOME, 'created' );
@@ -831,6 +844,7 @@ mtuc_p2_assert( 2 === mtuc_get_order_process_identity( $cart_like ), 'identity u
 
 $p1_re = new WC_Order();
 $p1_re->id = 1415;
+$p1_re->update_meta_data( MTUC_ORDER_META_PREFIX . 'submission_source', 'checkout' );
 mtuc_p2_seed_identity( $p1_re, 1 );
 $p1_re->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 7002 );
 $p1_re->update_meta_data( MTUC_ORDER_META_CP_CREATE_OUTCOME, 'created' );

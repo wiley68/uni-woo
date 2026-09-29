@@ -248,7 +248,6 @@ foreach ( $rounding_cases as $idx => $case ) {
 // Cart calculator path uses the same round points.
 $shop_min = array(
 	'uni_first_vnoska' => 1,
-	'uni_eur'          => 3,
 );
 $coeff_list = array(
 	array(
@@ -344,15 +343,11 @@ if ( function_exists( 'mtuc_find_coeff_entry' ) && function_exists( 'mtuc_resolv
 	if ( ! function_exists( 'mtuc_format_popup_amount_display' ) ) {
 		/**
 		 * @param float                $amount Amount.
-		 * @param array<string, mixed> $shop Shop.
-		 * @return array{primary:string,secondary:string,dual:bool}
+		 * @return array{primary:string}
 		 */
-		function mtuc_format_popup_amount_display( float $amount, array $shop ): array {
-			unset( $shop );
+		function mtuc_format_popup_amount_display( float $amount ): array {
 			return array(
-				'primary'   => number_format( round( $amount, 2 ), 2, '.', '' ),
-				'secondary' => '',
-				'dual'      => false,
+				'primary' => number_format( round( $amount, 2 ), 2, '.', '' ) . ' евро',
 			);
 		}
 	}

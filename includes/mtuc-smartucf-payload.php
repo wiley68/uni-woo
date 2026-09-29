@@ -98,14 +98,19 @@ function mtuc_build_smartucf_items_from_order( WC_Order $order ): array {
  * @param array<string, string> $customer    Validated customer fields.
  * @param array<string, mixed>  $calculation Server-side calculation snapshot.
  * @param array<string, mixed>  $shop        Shop data.
- * @return array<string, mixed>
+ * @return array<string, mixed>|WP_Error
  */
 function mtuc_assemble_smartucf_session_payload(
 	WC_Order $order,
 	array $customer,
 	array $calculation,
 	array $shop
-): array {
+) {
+	$currency = mtuc_require_eur_transaction_currency( $order->get_currency() );
+	if ( is_wp_error( $currency ) ) {
+		return $currency;
+	}
+
 	return array(
 		'user'                  => (string) ( $shop['uni_user'] ?? '' ),
 		'pass'                  => (string) ( $shop['uni_password'] ?? '' ),
@@ -131,14 +136,14 @@ function mtuc_assemble_smartucf_session_payload(
  * @param array<string, string> $customer    Validated customer fields.
  * @param array<string, mixed>  $calculation Server-side calculation snapshot.
  * @param array<string, mixed>  $shop        Shop data.
- * @return array<string, mixed>
+ * @return array<string, mixed>|WP_Error
  */
 function mtuc_build_cart_smartucf_session_payload(
 	WC_Order $order,
 	array $customer,
 	array $calculation,
 	array $shop
-): array {
+) {
 	return mtuc_assemble_smartucf_session_payload( $order, $customer, $calculation, $shop );
 }
 
@@ -156,7 +161,7 @@ function mtuc_build_cart_smartucf_session_payload(
  * @param int                   $variation_id Variation ID (0 if none).
  * @param int                   $quantity     Line quantity.
  * @param array<string, mixed>  $shop         Shop `data` object from CP.
- * @return array<string, mixed>
+ * @return array<string, mixed>|WP_Error
  */
 function mtuc_build_smartucf_session_payload(
 	WC_Order $order,
@@ -167,7 +172,7 @@ function mtuc_build_smartucf_session_payload(
 	int $variation_id,
 	int $quantity,
 	array $shop
-): array {
+) {
 	unset( $product, $parent_id, $variation_id, $quantity );
 
 	return mtuc_assemble_smartucf_session_payload( $order, $customer, $calculation, $shop );

@@ -279,7 +279,6 @@ mtuc_pos_assert( is_array( $lowest ) && 40.0 === (float) $lowest['monthly_instal
 
 $shop_locked = array(
 	'uni_first_vnoska' => 0,
-	'uni_eur'          => 0,
 );
 $filter_locked = array( 'uni_parva' => 1, 'id' => 7 );
 $price_cases   = array(
@@ -322,7 +321,7 @@ foreach ( $price_cases as $idx => $case ) {
 }
 
 // Zero / non-locked parva preview: full price as principal.
-$shop_open = array( 'uni_first_vnoska' => 1, 'uni_eur' => 0 );
+$shop_open = array( 'uni_first_vnoska' => 1 );
 $state_zero = mtuc_resolve_parva_calculation_state( $shop_open, 100.01, 12, 0.0, array( 'uni_parva' => 0 ) );
 mtuc_pos_assert( 0.0 === $state_zero['parva'] && false === $state_zero['parva_locked'], 'editable zero parva' );
 
@@ -342,10 +341,9 @@ mtuc_pos_assert(
 	'zero-parva button/popup monthly parity'
 );
 
-// Dual-currency text modes preserved (format only).
-$text0 = mtuc_format_installment_price_text( 12, 8.33, array( 'uni_eur' => 0 ) );
-$text3 = mtuc_format_installment_price_text( 12, 8.33, array( 'uni_eur' => 3 ) );
-mtuc_pos_assert( false !== strpos( $text0, '8.33' ) && false !== strpos( $text0, 'лв.' ), 'uni_eur=0 BGN text' );
-mtuc_pos_assert( false !== strpos( $text3, '8.33' ) && false !== strpos( $text3, 'евро' ), 'uni_eur=3 EUR text' );
+// EUR subtitle preserves the calculated monthly value without secondary FX.
+$text = mtuc_format_installment_price_text( 12, 8.33 );
+mtuc_pos_assert( '12 x 8.33 евро' === $text, 'EUR-only installment text' );
+mtuc_pos_assert( false === strpos( $text, '(' ) && false === strpos( $text, '/' ), 'no secondary amount' );
 
 fwrite( STDOUT, 'OK product-offer-selection ' . $mtuc_pos_assert_count . " assertions\n" );

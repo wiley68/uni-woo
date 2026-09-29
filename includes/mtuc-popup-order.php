@@ -1784,6 +1784,12 @@ function mtuc_complete_order_bank_submission(
 	array $calculation,
 	array $shop
 ) {
+	$source      = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'submission_source' );
+	$currency_ok = mtuc_require_eur_order_operation_provenance( $order, $source );
+	if ( is_wp_error( $currency_ok ) ) {
+		return $currency_ok;
+	}
+
 	$process_id = function_exists( 'mtuc_resolve_order_process_for_banking' )
 		? mtuc_resolve_order_process_for_banking( $order, $shop )
 		: ( mtuc_is_shop_process_2( $shop ) ? 2 : 1 );
@@ -1964,7 +1970,7 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		$order->save();
 	}
 
-	$currency = mtuc_resolve_transaction_currency( $shop, $order->get_currency() );
+	$currency = mtuc_require_eur_transaction_currency( $order->get_currency() );
 	if ( is_wp_error( $currency ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		return $currency;
@@ -2192,7 +2198,84 @@ function mtuc_operation_snapshot_currency(): string {
 		}
 	}
 
-	return 'BGN';
+	return '';
+}
+
+/**
+ * Require a saved operation and its Woo order to agree on EUR.
+ *
+ * @param WC_Order             $order    Resumed order.
+ * @param array<string, mixed> $snapshot Immutable operation snapshot.
+ * @return true|WP_Error
+ */
+function mtuc_require_eur_operation_snapshot( WC_Order $order, array $snapshot ) {
+	if ( 'EUR' !== mtuc_get_woocommerce_transaction_currency( (string) ( $snapshot['currency'] ?? '' ) )
+		|| ! mtuc_is_eur_transaction_currency( $order->get_currency() )
+	) {
+		return new WP_Error(
+			'mtuc_currency_mismatch',
+			__( 'Валутата на възстановената заявка не е EUR.', 'mtunicredit' )
+		);
+	}
+
+	return true;
+}
+
+/**
+ * Whether WooCommerce created_via identifies a popup order.
+ *
+ * @param WC_Order $order WooCommerce order.
+ * @return bool
+ */
+function mtuc_order_has_popup_created_via( WC_Order $order ): bool {
+	$via = (string) $order->get_created_via();
+	return in_array( $via, array( 'mtuc_product_popup', 'mtuc_cart_popup' ), true )
+		|| 0 === strpos( $via, 'mtuc:' );
+}
+
+/**
+ * Require EUR provenance before completing or replaying an order submission.
+ *
+ * Checkout orders have no popup operation snapshot; popup orders require one.
+ *
+ * @param WC_Order $order  WooCommerce order.
+ * @param string   $source Submission source.
+ * @return true|WP_Error
+ */
+function mtuc_require_eur_order_operation_provenance( WC_Order $order, string $source ) {
+	if ( 'checkout' === $source ) {
+		if ( '' !== (string) $order->get_meta( MTUC_ORDER_META_PRODUCT_OP_SNAPSHOT )
+			|| '' !== (string) $order->get_meta( MTUC_ORDER_META_CART_OP_SNAPSHOT )
+			|| '' !== (string) $order->get_meta( MTUC_ORDER_META_OPERATION_TOKEN )
+			|| '' !== (string) $order->get_meta( MTUC_ORDER_META_CREATION_REF )
+			|| mtuc_order_has_popup_created_via( $order )
+		) {
+			return new WP_Error(
+				'mtuc_currency_mismatch',
+				__( 'Валутата на възстановената заявка не е EUR.', 'mtunicredit' )
+			);
+		}
+
+		$currency = mtuc_require_eur_transaction_currency( $order->get_currency() );
+		return is_wp_error( $currency ) ? $currency : true;
+	}
+
+	if ( 'product_popup' === $source ) {
+		$snapshot = mtuc_read_product_operation_snapshot( $order );
+	} elseif ( 'cart_popup' === $source ) {
+		$snapshot = mtuc_read_cart_operation_snapshot( $order );
+	} else {
+		$snapshot = null;
+	}
+
+	if ( null === $snapshot ) {
+		return new WP_Error(
+			'mtuc_currency_mismatch',
+			__( 'Валутата на възстановената заявка не е EUR.', 'mtunicredit' )
+		);
+	}
+
+	return mtuc_require_eur_operation_snapshot( $order, $snapshot );
 }
 
 /**
@@ -2759,6 +2842,10 @@ function mtuc_create_popup_pending_order(
 				__( 'Непълната заявка не може да бъде възстановена безопасно.', 'mtunicredit' )
 			);
 		}
+		$currency_ok = mtuc_require_eur_operation_snapshot( $order, $snapshot );
+		if ( is_wp_error( $currency_ok ) ) {
+			return $currency_ok;
+		}
 		$customer     = is_array( $snapshot['customer'] ) ? $snapshot['customer'] : $customer;
 		$calculation  = is_array( $snapshot['calculation'] ) ? $snapshot['calculation'] : $calculation;
 		$parent_id    = (int) ( $snapshot['product_id'] ?? $parent_id );
@@ -2815,9 +2902,13 @@ function mtuc_create_popup_pending_order(
 		if ( ! $order instanceof WC_Order ) {
 			return new WP_Error( 'mtuc_order_create_failed', __( 'Поръчката не може да бъде създадена.', 'mtunicredit' ) );
 		}
-
 		if ( is_callable( $on_created ) ) {
 			$on_created( $order );
+		}
+
+		$currency = mtuc_require_eur_transaction_currency( $order->get_currency() );
+		if ( is_wp_error( $currency ) ) {
+			return $currency;
 		}
 
 		$snapshot = mtuc_build_product_operation_snapshot(
@@ -2828,6 +2919,10 @@ function mtuc_create_popup_pending_order(
 			$quantity,
 			$line_price
 		);
+		$currency_ok = mtuc_require_eur_operation_snapshot( $order, $snapshot );
+		if ( is_wp_error( $currency_ok ) ) {
+			return $currency_ok;
+		}
 		$persisted = mtuc_persist_product_operation_snapshot( $order, $snapshot );
 		if ( is_wp_error( $persisted ) ) {
 			return $persisted;
@@ -2920,6 +3015,10 @@ function mtuc_create_cart_popup_pending_order(
 				__( 'Непълната заявка не може да бъде възстановена безопасно.', 'mtunicredit' )
 			);
 		}
+		$currency_ok = mtuc_require_eur_operation_snapshot( $order, $snapshot );
+		if ( is_wp_error( $currency_ok ) ) {
+			return $currency_ok;
+		}
 		$customer    = is_array( $snapshot['customer'] ) ? $snapshot['customer'] : $customer;
 		$calculation = is_array( $snapshot['calculation'] ) ? $snapshot['calculation'] : $calculation;
 		$adjustments = isset( $snapshot['adjustments'] ) && is_array( $snapshot['adjustments'] )
@@ -2999,9 +3098,13 @@ function mtuc_create_cart_popup_pending_order(
 		if ( ! $order instanceof WC_Order ) {
 			return new WP_Error( 'mtuc_order_create_failed', __( 'Поръчката не може да бъде създадена.', 'mtunicredit' ) );
 		}
-
 		if ( is_callable( $on_created ) ) {
 			$on_created( $order );
+		}
+
+		$currency = mtuc_require_eur_transaction_currency( $order->get_currency() );
+		if ( is_wp_error( $currency ) ) {
+			return $currency;
 		}
 
 		$adjustments = mtuc_capture_cart_adjustments_for_snapshot();
@@ -3012,6 +3115,10 @@ function mtuc_create_cart_popup_pending_order(
 			$adjustments,
 			(float) ( $calculation['price'] ?? 0 )
 		);
+		$currency_ok = mtuc_require_eur_operation_snapshot( $order, $snapshot );
+		if ( is_wp_error( $currency_ok ) ) {
+			return $currency_ok;
+		}
 		$persisted = mtuc_persist_cart_operation_snapshot( $order, $snapshot );
 		if ( is_wp_error( $persisted ) ) {
 			return $persisted;
@@ -3429,6 +3536,9 @@ function mtuc_send_cart_popup_order_to_smartucf(
 	}
 
 	$payload = mtuc_build_cart_smartucf_session_payload( $order, $customer, $calculation, $shop );
+	if ( is_wp_error( $payload ) ) {
+		return $payload;
+	}
 
 	if ( function_exists( 'mtuc_acquire_smartucf_p1_send_claim' ) ) {
 		$claimed = mtuc_acquire_smartucf_p1_send_claim( $order );
@@ -3829,6 +3939,9 @@ function mtuc_send_popup_order_to_smartucf(
 		$quantity,
 		$shop
 	);
+	if ( is_wp_error( $payload ) ) {
+		return $payload;
+	}
 
 	if ( function_exists( 'mtuc_acquire_smartucf_p1_send_claim' ) ) {
 		$claimed = mtuc_acquire_smartucf_p1_send_claim( $order );
@@ -3969,7 +4082,7 @@ function mtuc_ajax_popup_submit(): void {
 		mtuc_send_customer_safe_json_error( $shop, 500, 'configuration' );
 	}
 
-	$currency = mtuc_resolve_transaction_currency( $shop );
+	$currency = mtuc_require_eur_transaction_currency();
 	if ( is_wp_error( $currency ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		mtuc_send_customer_safe_json_error( $currency, 400, 'general' );

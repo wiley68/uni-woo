@@ -87,7 +87,7 @@ function mtuc_get_product_calculator_context(): ?array {
 		return null;
 	}
 
-	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
+	if ( ! mtuc_is_eur_transaction_currency() ) {
 		return null;
 	}
 
@@ -260,7 +260,6 @@ function mtuc_enqueue_product_assets(): void {
 			'defaultSchemeByOffer' => isset( $popup_context['default_scheme_by_offer'] ) && is_array( $popup_context['default_scheme_by_offer'] )
 				? $popup_context['default_scheme_by_offer']
 				: array(),
-			'currencyDual'         => ! empty( $popup_context['currency']['dual'] ),
 			'hideAddToCart'        => ! empty( $popup_context['hide_add_to_cart'] ),
 			'process2'             => ! empty( $popup_context['process2'] ),
 			'payBtn'               => Mtuc_Settings::get_paybtn_mode(),

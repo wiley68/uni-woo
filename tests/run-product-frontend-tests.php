@@ -113,7 +113,6 @@ foreach (
 		"'productId'",
 		"'enabledMonthsByOffer'",
 		"'defaultSchemeByOffer'",
-		"'currencyDual'",
 		"'process2'",
 		"'i18n'",
 	) as $needle

@@ -296,24 +296,10 @@
 				});
 		};
 
-		const setDualAmount = (prefix, display) => {
-			const $primary = $("#mtuc-popup-" + prefix + "-primary");
-			const $secondary = $("#mtuc-popup-" + prefix + "-secondary");
-
-			if (!display) {
-				$primary.text("");
-				$secondary.text("");
-				return;
-			}
-
-			$primary.text(display.primary || "");
-			if (mtucPopup.currencyDual && display.dual) {
-				$secondary.text(
-					display.secondary ? "(" + display.secondary + ")" : "",
-				);
-			} else {
-				$secondary.text("");
-			}
+		const setAmount = (prefix, display) => {
+			$("#mtuc-popup-" + prefix + "-primary").text(
+				display ? display.primary || "" : "",
+			);
 		};
 
 		const prefersReducedMotion = () => {
@@ -786,10 +772,10 @@
 		const applyCalculation = (data) => {
 			lastCalculation = data;
 
-			setDualAmount("price", data.price_display);
-			setDualAmount("loan", data.loan_display);
-			setDualAmount("monthly", data.monthly_display);
-			setDualAmount("total", data.total_display);
+			setAmount("price", data.price_display);
+			setAmount("loan", data.loan_display);
+			setAmount("monthly", data.monthly_display);
+			setAmount("total", data.total_display);
 
 			$("#mtuc-popup-glp").text(
 				(data.glp_display || formatPercent(data.glp)) + "%",

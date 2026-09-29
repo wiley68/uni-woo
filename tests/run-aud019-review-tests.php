@@ -303,7 +303,7 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		}
 
 		public function get_currency(): string {
-			return 'BGN';
+			return 'EUR';
 		}
 
 		public function get_payment_method(): string {

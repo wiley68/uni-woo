@@ -44,7 +44,7 @@ if ( ! function_exists( 'get_woocommerce_currency' ) ) {
 	 * @return string
 	 */
 	function get_woocommerce_currency() {
-		return $GLOBALS['mtuc_test_wc_currency'] ?? 'BGN';
+		return $GLOBALS['mtuc_test_wc_currency'] ?? 'EUR';
 	}
 }
 
@@ -183,7 +183,7 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		/** @var float */
 		public $total = 0.0;
 		/** @var string */
-		public $currency = 'BGN';
+		public $currency = 'EUR';
 		/** @var string */
 		public $status = 'pending';
 		/** @var array<string, mixed> */
@@ -343,7 +343,7 @@ $item->total_tax = 40.0; // unit inc tax = 120.00
 
 $order                        = new WC_Order( 874 );
 $order->total                 = 1234.56;
-$order->currency              = 'BGN';
+$order->currency              = 'EUR';
 $order->items                 = array( $item );
 $order->shipping_address_1    = 'ул. Доставка 1';
 $order->shipping_city         = 'София';
@@ -372,7 +372,6 @@ $shop = array(
 	'uni_user'     => 'shop-user',
 	'uni_password' => 'shop-pass',
 	'uni_proces'   => 0,
-	'uni_eur'      => 0,
 );
 
 $expected_p1 = array(
@@ -423,6 +422,16 @@ mtuc_su_assert_same( $expected_p1, $actual_product, 'Process 1 product SmartUCF 
 
 $actual_cart = mtuc_build_cart_smartucf_session_payload( $order, $customer, $calculation, $shop );
 mtuc_su_assert_same( $expected_p1, $actual_cart, 'cart/checkout SmartUCF payload matches product entry contract' );
+$GLOBALS['mtuc_test_wc_currency'] = 'EUR';
+foreach ( array( 'BGN', 'USD', '' ) as $invalid_currency ) {
+	$order->currency = $invalid_currency;
+	$product_rejected = mtuc_build_smartucf_session_payload( $order, $customer, $calculation, $product, 42, 0, 2, $shop );
+	$cart_rejected = mtuc_build_cart_smartucf_session_payload( $order, $customer, $calculation, $shop );
+	mtuc_su_assert( is_wp_error( $product_rejected ), 'product SmartUCF rejects order currency ' . $invalid_currency );
+	mtuc_su_assert( is_wp_error( $cart_rejected ), 'cart SmartUCF rejects order currency ' . $invalid_currency );
+}
+$order->currency = 'EUR';
+
 
 // ---------------------------------------------------------------------------
 // Multi-line cart products

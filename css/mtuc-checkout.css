@@ -189,20 +189,8 @@
 }
 
 :is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__amount-primary,
-:is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__amount-secondary,
 :is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__percent {
 	color: var(--mtuc-checkout-red);
-}
-
-:is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__amount-secondary {
-	display: none;
-	margin-left: 6px;
-	font-size: 70%;
-	font-weight: 400;
-}
-
-:is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__value--dual .mtuc-popup__amount-secondary {
-	display: inline;
 }
 
 :is(.payment_box.payment_method_mtunicredit, .mtuc-checkout-blocks-payment__fields) .mtuc-checkout-payment .mtuc-popup__select,

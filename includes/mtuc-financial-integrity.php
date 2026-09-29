@@ -12,33 +12,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Expected bank/CP transaction currency from shop `uni_eur` mode.
- *
- * Semantics (display vs transaction):
- * - 0: BGN only (transaction BGN)
- * - 1: BGN primary + EUR dual display (transaction BGN)
- * - 2: EUR primary + BGN dual display (transaction EUR)
- * - 3: EUR only (transaction EUR)
- *
- * Dual-display modes do not change the transaction currency.
- *
- * @param array<string, mixed> $shop Shop `data` from CP.
- * @return string BGN|EUR
- */
-function mtuc_get_expected_transaction_currency( array $shop ): string {
-	$uni_eur = (int) ( $shop['uni_eur'] ?? 0 );
-
-	return in_array( $uni_eur, array( 2, 3 ), true ) ? 'EUR' : 'BGN';
-}
-
-/**
  * Current WooCommerce shop/order currency ISO code.
  *
  * @param string|null $override Optional explicit currency (e.g. order currency).
  * @return string Uppercase ISO or empty.
  */
 function mtuc_get_woocommerce_transaction_currency( ?string $override = null ): string {
-	if ( null !== $override && '' !== trim( $override ) ) {
+	if ( null !== $override ) {
 		return strtoupper( trim( $override ) );
 	}
 
@@ -50,42 +30,30 @@ function mtuc_get_woocommerce_transaction_currency( ?string $override = null ): 
 }
 
 /**
- * Whether WooCommerce currency matches the CP financing transaction currency.
+ * Whether the authoritative WooCommerce currency supports financing.
  *
- * @param array<string, mixed> $shop     Shop `data` from CP.
- * @param string|null          $currency Optional Woo currency override.
+ * @param string|null $currency Optional explicit order currency.
  * @return bool
  */
-function mtuc_is_transaction_currency_compatible( array $shop, ?string $currency = null ): bool {
-	$iso = mtuc_get_woocommerce_transaction_currency( $currency );
-	if ( ! in_array( $iso, array( 'BGN', 'EUR' ), true ) ) {
-		return false;
-	}
-
-	return $iso === mtuc_get_expected_transaction_currency( $shop );
+function mtuc_is_eur_transaction_currency( ?string $currency = null ): bool {
+	return 'EUR' === mtuc_get_woocommerce_transaction_currency( $currency );
 }
 
 /**
- * Resolve validated transaction currency for CP/SmartUCF payloads.
+ * Require EUR from the current WooCommerce context or an explicit order.
  *
- * Returns Woo currency only when compatible with `uni_eur`; otherwise WP_Error.
- * Never converts amounts between BGN and EUR.
- *
- * @param array<string, mixed> $shop     Shop `data` from CP.
- * @param string|null          $currency Optional Woo/order currency.
- * @return string|WP_Error BGN|EUR
+ * @param string|null $currency Optional explicit order currency.
+ * @return string|WP_Error EUR or a controlled currency error.
  */
-function mtuc_resolve_transaction_currency( array $shop, ?string $currency = null ) {
-	$iso = mtuc_get_woocommerce_transaction_currency( $currency );
-
-	if ( ! mtuc_is_transaction_currency_compatible( $shop, $iso ) ) {
+function mtuc_require_eur_transaction_currency( ?string $currency = null ) {
+	if ( ! mtuc_is_eur_transaction_currency( $currency ) ) {
 		return new WP_Error(
 			'mtuc_currency_mismatch',
-			__( 'Валутата на магазина не съвпада с конфигурацията за финансиране.', 'mtunicredit' )
+			__( 'Финансирането е достъпно само за поръчки в евро.', 'mtunicredit' )
 		);
 	}
 
-	return $iso;
+	return 'EUR';
 }
 
 /**

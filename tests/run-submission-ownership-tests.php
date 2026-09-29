@@ -147,6 +147,8 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 		public $order_number = '';
 		/** @var string */
 		public $created_via = '';
+		/** @var string */
+		public $currency = 'EUR';
 		/** @var array<string, mixed> */
 		public $meta = array();
 		/** @var int */
@@ -174,8 +176,21 @@ if ( ! class_exists( 'WC_Order', false ) ) {
 			return $this->total;
 		}
 
+		public function get_currency(): string {
+			return $this->currency;
+		}
+
 		public function get_order_number(): string {
 			return $this->order_number;
+		}
+
+		/**
+		 * Return the test order receipt URL.
+		 *
+		 * @return string
+		 */
+		public function get_checkout_order_received_url(): string {
+			return 'https://shop.example/order-received/' . $this->id;
 		}
 
 		public function get_payment_method(): string {
@@ -326,10 +341,16 @@ if ( ! defined( 'MTUC_ORDER_META_PREFIX' ) ) {
 			return 1 === (int) ( $shop['uni_proces'] ?? 0 );
 		}
 	}
+	if ( ! function_exists( 'get_woocommerce_currency' ) ) {
+		function get_woocommerce_currency() {
+			return $GLOBALS['mtuc_so_wc_currency'] ?? 'EUR';
+		}
+	}
 	$GLOBALS['mtuc_so_shop'] = array( 'uni_proces' => 0 );
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-bank-lifecycle.php';
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-process-identity.php';
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-submission-lock.php';
+	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financial-integrity.php';
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-order.php';
 	require_once MTUC_PLUGIN_DIR . '/includes/mtuc-popup-idempotency.php';
 }
@@ -2343,7 +2364,11 @@ $prod_calc = array(
 	'kop_code'            => 'C1',
 	'filter_id'           => 0,
 );
+$GLOBALS['mtuc_so_wc_currency'] = '';
+mtuc_so_assert( '' === mtuc_operation_snapshot_currency(), 'missing Woo currency has no fabricated fallback' );
+$GLOBALS['mtuc_so_wc_currency'] = 'EUR';
 $prod_snap = mtuc_build_cart_operation_snapshot( $cust_a, $prod_calc, $prod_lines, $prod_capture, 100.0 );
+mtuc_so_assert( 'EUR' === $prod_snap['currency'], 'operation snapshot stores real EUR currency' );
 
 $token_prod = 'p7p7p7p7p7p7p7p7p7p7p7p7p7p7p7p7';
 $scope_prod = 'cart-prod-recovery-scope';
@@ -2351,6 +2376,13 @@ $begin_prod = mtuc_begin_financing_operation( $token_prod, $scope_prod );
 mtuc_so_assert( is_array( $begin_prod ) && true === $begin_prod['claimed'], 'prod-path: begin claim' );
 
 $order_prod = new Mtuc_So_Recoverable_Cart_Order( 1701 );
+mtuc_so_assert( true === mtuc_require_eur_operation_snapshot( $order_prod, $prod_snap ), 'EUR snapshot/order match' );
+$order_prod->currency = 'BGN';
+mtuc_so_assert( is_wp_error( mtuc_require_eur_operation_snapshot( $order_prod, $prod_snap ) ), 'resumed non-EUR order rejected' );
+$order_prod->currency = 'EUR';
+$bad_currency_snap = $prod_snap;
+$bad_currency_snap['currency'] = 'BGN';
+mtuc_so_assert( is_wp_error( mtuc_require_eur_operation_snapshot( $order_prod, $bad_currency_snap ) ), 'resumed non-EUR snapshot rejected' );
 $GLOBALS['mtuc_test_orders'][ 1701 ] = $order_prod;
 $order_prod->update_meta_data( MTUC_ORDER_META_CREATION_REF, mtuc_financing_creation_ref( $token_prod ) );
 $order_prod->update_meta_data( MTUC_ORDER_META_POPUP_INIT_STATE, MTUC_POPUP_INIT_INITIALIZING );
@@ -2426,6 +2458,191 @@ mtuc_so_assert( mtuc_financing_amounts_equal( (float) $order_mm->get_total(), 99
 mtuc_so_assert( MTUC_POPUP_INIT_INITIALIZING === (string) $order_mm->get_meta( MTUC_ORDER_META_POPUP_INIT_STATE ), 'prod-mismatch: stays initializing' );
 $remote_mm_prod = mtuc_assert_popup_order_ready_for_remote( $order_mm );
 mtuc_so_assert( is_wp_error( $remote_mm_prod ), 'prod-mismatch: remote gate rejects' );
+
+// EUR-WOO-004/006: completed product/cart replays require EUR provenance and popup origin.
+$generic_popup_marker = mtuc_financing_created_via_marker( mtuc_financing_creation_ref( 'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1' ) );
+foreach ( array( 'product_popup', 'cart_popup' ) as $replay_source ) {
+	foreach ( array( 1, 2 ) as $replay_process ) {
+		$valid_popup_marker = 'product_popup' === $replay_source ? $generic_popup_marker : 'mtuc_cart_popup';
+
+		$replay_cases = array(
+			'valid'             => array( 'EUR', 'EUR', false ),
+			'valid_with_marker' => array( 'EUR', 'EUR', false, false, null, false, $valid_popup_marker ),
+			'order_bgn'         => array( 'EUR', 'BGN', false ),
+			'order_usd'         => array( 'EUR', 'USD', false ),
+			'order_missing'     => array( 'EUR', '', false ),
+			'snapshot_bgn'      => array( 'BGN', 'EUR', false ),
+			'snapshot_missing'  => array( null, 'EUR', false ),
+			'no_snapshot'       => array( null, 'EUR', true ),
+			'both_non_eur'      => array( 'BGN', 'USD', false ),
+		);
+		if ( 1 === $replay_process ) {
+			$replay_cases['pending_session'] = array( 'BGN', 'EUR', false, true );
+		}
+		if ( 'cart_popup' === $replay_source ) {
+			$replay_cases['source_checkout_snapshot']    = array( 'BGN', 'EUR', false, false, 'checkout' );
+			$replay_cases['source_checkout_no_snapshot'] = array( null, 'EUR', true, false, 'checkout', true );
+			$replay_cases['marker_only_cart']            = array( null, 'EUR', true, false, 'checkout', false, 'mtuc_cart_popup' );
+			$replay_cases['marker_only_generic']         = array( null, 'EUR', true, false, 'checkout', false, $generic_popup_marker );
+		} else {
+			$replay_cases['marker_only_generic'] = array( null, 'EUR', true, false, 'checkout', false, $generic_popup_marker );
+		}
+
+		foreach ( $replay_cases as $case_name => $values ) {
+			list( $snapshot_currency, $order_currency, $omit_snapshot ) = $values;
+
+			$recover_session = ! empty( $values[3] );
+
+			$replay_order = mtuc_so_create_test_order();
+
+			$replay_order->currency = $order_currency;
+			if ( ! empty( $values[6] ) ) {
+				$replay_order->set_created_via( $values[6] );
+			}
+			$replay_order->update_meta_data( MTUC_ORDER_META_PREFIX . 'submission_source', $values[4] ?? $replay_source );
+			if ( ! empty( $values[5] ) ) {
+				$replay_order->update_meta_data( MTUC_ORDER_META_OPERATION_TOKEN, 'existing-popup-token' );
+			}
+			$replay_order->update_meta_data( MTUC_ORDER_META_PROCESS, $replay_process );
+			$replay_order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 9000 );
+			$replay_order->update_meta_data( MTUC_ORDER_META_CP_CREATE_OUTCOME, 'created' );
+			$replay_order->update_meta_data(
+				MTUC_ORDER_META_BANK_STATUS,
+				$recover_session ? '' : ( 1 === $replay_process ? MTUC_BANK_STATUS_SENT_PROCESS1 : MTUC_BANK_STATUS_SENT_PROCESS2 )
+			);
+			if ( 1 === $replay_process ) {
+				$replay_order->update_meta_data( MTUC_ORDER_META_SMARTUCF_REDIRECT_URL, 'https://bank.example/existing-session' );
+				if ( $recover_session ) {
+					$replay_order->update_meta_data( MTUC_ORDER_META_PREFIX . 'smartucf_session_id', 'existing-session' );
+				}
+			}
+
+			if ( ! $omit_snapshot ) {
+				$snapshot = 'product_popup' === $replay_source
+					? array(
+						'product_id'  => 101,
+						'quantity'    => 1,
+						'calculation' => array(),
+						'customer'    => array(),
+					)
+					: array(
+						'lines'       => array(
+							array(
+								'product_id' => 101,
+								'quantity'   => 1,
+							),
+						),
+						'calculation' => array(),
+						'customer'    => array(),
+					);
+				if ( null !== $snapshot_currency ) {
+					$snapshot['currency'] = $snapshot_currency;
+				}
+				if ( 'cart_popup' === $replay_source ) {
+					$snapshot['fingerprint'] = mtuc_cart_operation_snapshot_fingerprint( $snapshot );
+				}
+				$replay_order->update_meta_data(
+					'product_popup' === $replay_source ? MTUC_ORDER_META_PRODUCT_OP_SNAPSHOT : MTUC_ORDER_META_CART_OP_SNAPSHOT,
+					wp_json_encode( $snapshot )
+				);
+			}
+
+			$save_count    = $replay_order->save_count;
+			$replay_result = 'product_popup' === $replay_source && 'marker_only_generic' !== $case_name
+				? mtuc_complete_product_popup_bank_submission(
+					$replay_order,
+					array(),
+					array(),
+					new WC_Product( 101 ),
+					101,
+					0,
+					1,
+					array( 'uni_proces' => $replay_process - 1 ),
+					2 === $replay_process
+				)
+				: mtuc_complete_order_bank_submission(
+					$replay_order,
+					array(),
+					array(),
+					array( 'uni_proces' => $replay_process - 1 )
+				);
+
+			$label = $replay_source . ' P' . $replay_process . ' ' . $case_name;
+			if ( in_array( $case_name, array( 'valid', 'valid_with_marker' ), true ) ) {
+				mtuc_so_assert( is_array( $replay_result ) && 9000 === (int) ( $replay_result['cp_order_id'] ?? 0 ), $label . ' replays existing result' );
+				mtuc_so_assert(
+					1 !== $replay_process || 'https://bank.example/existing-session' === ( $replay_result['redirect_url'] ?? '' ),
+					$label . ' preserves Process 1 redirect'
+				);
+				mtuc_so_assert( 2 !== $replay_process || ! empty( $replay_result['process2'] ), $label . ' remains Process 2' );
+			} else {
+				mtuc_so_assert( is_wp_error( $replay_result ) && 'mtuc_currency_mismatch' === $replay_result->get_error_code(), $label . ' fails closed' );
+				mtuc_so_assert( $save_count === $replay_order->save_count, $label . ' has no order mutation or send claim' );
+				mtuc_so_assert( $order_currency === $replay_order->get_currency(), $label . ' retains order currency' );
+			}
+		}
+	}
+}
+
+// A resolved reservation can return an order by ID without restoring missing meta markers.
+foreach ( array( 1, 2 ) as $reservation_process ) {
+	$reserved_order = mtuc_so_create_test_order();
+	$reserved_order->set_created_via( 'mtuc_cart_popup' );
+	$reserved_order->update_meta_data( MTUC_ORDER_META_PREFIX . 'submission_source', 'checkout' );
+	$reserved_order->update_meta_data( MTUC_ORDER_META_PROCESS, $reservation_process );
+	$reserved_order->update_meta_data( MTUC_ORDER_META_PREFIX . 'cp_order_id', 9100 );
+	$reserved_order->update_meta_data( MTUC_ORDER_META_CP_CREATE_OUTCOME, 'created' );
+	$reserved_order->update_meta_data(
+		MTUC_ORDER_META_BANK_STATUS,
+		1 === $reservation_process ? MTUC_BANK_STATUS_SENT_PROCESS1 : MTUC_BANK_STATUS_SENT_PROCESS2
+	);
+	if ( 1 === $reservation_process ) {
+		$reserved_order->update_meta_data( MTUC_ORDER_META_SMARTUCF_REDIRECT_URL, 'https://bank.example/reserved-session' );
+	}
+
+	$reservation_token = 1 === $reservation_process
+		? 'd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1'
+		: 'd2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2';
+	$reservation_scope = 'marker-only-reservation-scope-' . $reservation_process;
+	$reservation_key   = mtuc_financing_operation_option_key( $reservation_token );
+
+	$GLOBALS['mtuc_test_options'][ $reservation_key ] = wp_json_encode(
+		array(
+			'token'        => $reservation_token,
+			'scope'        => $reservation_scope,
+			'wc_order_id'  => $reserved_order->get_id(),
+			'created_at'   => time(),
+			'creation_ref' => '',
+		)
+	);
+
+	$created_again = 0;
+
+	$recovered = mtuc_resolve_popup_financing_order(
+		$reservation_token,
+		$reservation_scope,
+		static function () use ( &$created_again ) {
+			++$created_again;
+			return mtuc_so_create_test_order();
+		}
+	);
+
+	$label = 'marker-only reservation P' . $reservation_process;
+	mtuc_so_assert( is_array( $recovered ) && $reserved_order === $recovered['order'], $label . ' returns saved order' );
+	mtuc_so_assert( 0 === $created_again, $label . ' creates no replacement order' );
+	mtuc_so_assert( '' === (string) $reserved_order->get_meta( MTUC_ORDER_META_OPERATION_TOKEN ), $label . ' token remains absent' );
+	mtuc_so_assert( '' === (string) $reserved_order->get_meta( MTUC_ORDER_META_CREATION_REF ), $label . ' creation reference remains absent' );
+	$save_count = $reserved_order->save_count;
+
+	$rejected = mtuc_complete_order_bank_submission(
+		$reserved_order,
+		array(),
+		array(),
+		array( 'uni_proces' => $reservation_process - 1 )
+	);
+	mtuc_so_assert( is_wp_error( $rejected ) && 'mtuc_currency_mismatch' === $rejected->get_error_code(), $label . ' blocks successful replay' );
+	mtuc_so_assert( $save_count === $reserved_order->save_count, $label . ' stops before save or send claim' );
+}
 
 fwrite( STDOUT, "OK: {$mtuc_assert_count} submission ownership assertions passed\n" );
 exit( 0 );

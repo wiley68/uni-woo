@@ -163,7 +163,6 @@ foreach (
 		"'cartTotal'",
 		"'enabledMonthsByOffer'",
 		"'defaultSchemeByOffer'",
-		"'currencyDual'",
 		"'process2'",
 		"'hideAddToCart'",
 		"'source'",

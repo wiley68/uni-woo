@@ -623,7 +623,6 @@ function mtuc_get_checkout_payment_script_config( ?array $context = null ): arra
 		'process2'         => ! empty( $popup_context['process2'] ),
 		'enabledSchemes'   => array_values( $enabled_schemes ),
 		'defaultSchemeKey' => isset( $popup_context['default_scheme_key'] ) ? (string) $popup_context['default_scheme_key'] : '',
-		'currencyDual'     => ! empty( $popup_context['currency']['dual'] ),
 		'showFirstVnoska'  => ! empty( $popup_context['show_first_vnoska'] ),
 		'i18n'             => mtuc_get_calculator_i18n_strings(),
 		'prefillActive'    => false,

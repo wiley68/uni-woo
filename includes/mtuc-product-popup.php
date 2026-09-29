@@ -341,48 +341,6 @@ function mtuc_get_popup_enabled_months(
 // Option enable/default pick helpers live in includes/mtuc-product-offer-selection.php (AUD-WOO-016 Step 5).
 
 /**
- * Currency labels for popup display.
- *
- * @param array<string, mixed> $shop Shop `data` object from CP.
- * @return array{mode:int,primary_sign:string,secondary_sign:string,dual:bool}
- */
-function mtuc_get_currency_display_config( array $shop ): array {
-	$mode = (int) ( $shop['uni_eur'] ?? 0 );
-
-	switch ( $mode ) {
-		case 1:
-			return array(
-				'mode'           => 1,
-				'primary_sign'   => __( 'лв.', 'mtunicredit' ),
-				'secondary_sign' => __( 'евро', 'mtunicredit' ),
-				'dual'           => true,
-			);
-		case 2:
-			return array(
-				'mode'           => 2,
-				'primary_sign'   => __( 'евро', 'mtunicredit' ),
-				'secondary_sign' => __( 'лв.', 'mtunicredit' ),
-				'dual'           => true,
-			);
-		case 3:
-			return array(
-				'mode'           => 3,
-				'primary_sign'   => __( 'евро', 'mtunicredit' ),
-				'secondary_sign' => '',
-				'dual'           => false,
-			);
-		case 0:
-		default:
-			return array(
-				'mode'           => 0,
-				'primary_sign'   => __( 'лв.', 'mtunicredit' ),
-				'secondary_sign' => '',
-				'dual'           => false,
-			);
-	}
-}
-
-/**
  * Format percent value for popup rows (always positive, 2 decimals).
  *
  * @param float $value Percent value.
@@ -393,37 +351,14 @@ function mtuc_format_popup_percent_display( float $value ): string {
 }
 
 /**
- * Format amount for popup rows (primary + optional secondary currency).
+ * Format an EUR amount for popup rows.
  *
- * @param float                $amount Amount in calculator currency.
- * @param array<string, mixed> $shop   Shop `data` object from CP.
- * @return array{primary:string,secondary:string,dual:bool}
+ * @param float $amount Amount in EUR.
+ * @return array{primary:string}
  */
-function mtuc_format_popup_amount_display( float $amount, array $shop ): array {
-	$config = mtuc_get_currency_display_config( $shop );
-	$rate   = 1.95583;
-	$amount = round( abs( $amount ), 2 );
-
-	$primary = number_format( $amount, 2, '.', '' ) . ' ' . $config['primary_sign'];
-
-	if ( ! $config['dual'] ) {
-		return array(
-			'primary'   => $primary,
-			'secondary' => '',
-			'dual'      => false,
-		);
-	}
-
-	if ( 1 === $config['mode'] ) {
-		$secondary_amount = round( $amount / $rate, 2 );
-	} else {
-		$secondary_amount = round( $amount * $rate, 2 );
-	}
-
+function mtuc_format_popup_amount_display( float $amount ): array {
 	return array(
-		'primary'   => $primary,
-		'secondary' => number_format( $secondary_amount, 2, '.', '' ) . ' ' . $config['secondary_sign'],
-		'dual'      => true,
+		'primary' => number_format( round( abs( $amount ), 2 ), 2, '.', '' ) . ' ' . __( 'евро', 'mtunicredit' ),
 	);
 }
 
@@ -653,7 +588,6 @@ function mtuc_get_product_popup_context( array $shop, array $context, ?WC_Produc
 		'shop_months'             => $shop_months,
 		'enabled_months_by_offer' => $enabled_by_offer,
 		'default_scheme_by_offer' => $default_by_offer,
-		'currency'                => mtuc_get_currency_display_config( $shop ),
 		'customer'                => mtuc_get_popup_customer_defaults(),
 		'has_standard'            => ! empty( $context['standard']['visible'] ),
 		'has_promo'               => ! empty( $context['promo']['visible'] ),
@@ -1054,11 +988,11 @@ function mtuc_calculate_popup_credit(
 		'gpr'                 => $gpr,
 		'glp_display'         => mtuc_format_popup_percent_display( $glp ),
 		'gpr_display'         => mtuc_format_popup_percent_display( $gpr ),
-		'price_display'       => mtuc_format_popup_amount_display( $price, $shop ),
-		'parva_display'       => mtuc_format_popup_amount_display( $parva, $shop ),
-		'loan_display'        => mtuc_format_popup_amount_display( $loan_amount, $shop ),
-		'monthly_display'     => mtuc_format_popup_amount_display( $monthly_installment, $shop ),
-		'total_display'       => mtuc_format_popup_amount_display( $total_payable, $shop ),
+		'price_display'       => mtuc_format_popup_amount_display( $price ),
+		'parva_display'       => mtuc_format_popup_amount_display( $parva ),
+		'loan_display'        => mtuc_format_popup_amount_display( $loan_amount ),
+		'monthly_display'     => mtuc_format_popup_amount_display( $monthly_installment ),
+		'total_display'       => mtuc_format_popup_amount_display( $total_payable ),
 	);
 }
 
@@ -1168,9 +1102,9 @@ function mtuc_ajax_popup_calculate(): void {
 		mtuc_send_customer_safe_json_error( $shop, 500, 'configuration' );
 	}
 
-	if ( ! mtuc_is_transaction_currency_compatible( $shop ) ) {
+	if ( ! mtuc_is_eur_transaction_currency() ) {
 		wp_send_json_error(
-			array( 'message' => __( 'Валутата на магазина не съвпада с конфигурацията за финансиране.', 'mtunicredit' ) ),
+			array( 'message' => __( 'Финансирането е достъпно само за поръчки в евро.', 'mtunicredit' ) ),
 			400
 		);
 	}

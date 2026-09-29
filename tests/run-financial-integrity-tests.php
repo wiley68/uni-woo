@@ -14,11 +14,12 @@ if ( ! function_exists( 'get_woocommerce_currency' ) ) {
 	 * @return string
 	 */
 	function get_woocommerce_currency() {
-		return $GLOBALS['mtuc_test_wc_currency'] ?? 'BGN';
+		return $GLOBALS['mtuc_test_wc_currency'] ?? 'EUR';
 	}
 }
 
 require_once MTUC_PLUGIN_DIR . '/includes/mtuc-financial-integrity.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-product-popup.php';
 
 /**
  * Minimal WC_Product stand-in for quantity/price authority tests.
@@ -140,9 +141,8 @@ final class Mtuc_Financial_Integrity_Test_Runner {
 	private $errors = array();
 
 	public function run(): int {
-		$this->test_currency_modes();
-		$this->test_currency_compatibility_matrix();
-		$this->test_no_hidden_conversion_in_resolve();
+		$this->test_eur_currency_invariant();
+		$this->test_eur_amount_display();
 		$this->test_quantity_validation();
 		$this->test_authoritative_line_total_ignores_client_price();
 		$this->test_variation_parent_mismatch();
@@ -157,39 +157,27 @@ final class Mtuc_Financial_Integrity_Test_Runner {
 		return $this->failed > 0 ? 1 : 0;
 	}
 
-	private function test_currency_modes(): void {
-		$this->assert_true( 'BGN' === mtuc_get_expected_transaction_currency( array( 'uni_eur' => 0 ) ), 'uni_eur 0 => BGN' );
-		$this->assert_true( 'BGN' === mtuc_get_expected_transaction_currency( array( 'uni_eur' => 1 ) ), 'uni_eur 1 dual display => BGN txn' );
-		$this->assert_true( 'EUR' === mtuc_get_expected_transaction_currency( array( 'uni_eur' => 2 ) ), 'uni_eur 2 dual display => EUR txn' );
-		$this->assert_true( 'EUR' === mtuc_get_expected_transaction_currency( array( 'uni_eur' => 3 ) ), 'uni_eur 3 => EUR' );
-	}
-
-	private function test_currency_compatibility_matrix(): void {
-		$GLOBALS['mtuc_test_wc_currency'] = 'BGN';
-		$this->assert_true( mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 0 ) ), 'Woo BGN + CP BGN allowed' );
-		$this->assert_true( mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 1 ) ), 'Woo BGN + CP dual-BGN allowed' );
-		$this->assert_true( ! mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 2 ) ), 'Woo BGN + CP EUR rejected' );
-		$this->assert_true( ! mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 3 ) ), 'Woo BGN + CP EUR-only rejected' );
-
+	private function test_eur_currency_invariant(): void {
 		$GLOBALS['mtuc_test_wc_currency'] = 'EUR';
-		$this->assert_true( mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 2 ) ), 'Woo EUR + CP EUR allowed' );
-		$this->assert_true( mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 3 ) ), 'Woo EUR + CP EUR-only allowed' );
-		$this->assert_true( ! mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 0 ) ), 'Woo EUR + CP BGN rejected' );
-		$this->assert_true( ! mtuc_is_transaction_currency_compatible( array( 'uni_eur' => 1 ) ), 'Woo EUR + CP dual-BGN rejected' );
+		$this->assert_true( mtuc_is_eur_transaction_currency(), 'Woo EUR is eligible' );
+		$this->assert_true( 'EUR' === mtuc_require_eur_transaction_currency(), 'Woo EUR resolves as EUR' );
+		$this->assert_true( 'EUR' === mtuc_require_eur_transaction_currency( ' EUR ' ), 'explicit EUR is compared safely' );
 
-		$resolved = mtuc_resolve_transaction_currency( array( 'uni_eur' => 3 ), 'EUR' );
-		$this->assert_true( 'EUR' === $resolved, 'resolve returns Woo EUR when compatible' );
+		foreach ( array( 'BGN', 'USD', 'GBP', '', 'invalid' ) as $currency ) {
+			$this->assert_true( ! mtuc_is_eur_transaction_currency( $currency ), $currency . ' is ineligible' );
+			$this->assert_true( is_wp_error( mtuc_require_eur_transaction_currency( $currency ) ), $currency . ' fails closed' );
+		}
 
-		$mismatch = mtuc_resolve_transaction_currency( array( 'uni_eur' => 0 ), 'EUR' );
-		$this->assert_true( is_wp_error( $mismatch ), 'resolve fails on mismatch without converting' );
+		$GLOBALS['mtuc_test_wc_currency'] = 'BGN';
+		$this->assert_true( ! mtuc_is_eur_transaction_currency(), 'Woo BGN is ineligible' );
+		$this->assert_true( 'EUR' === mtuc_require_eur_transaction_currency( 'EUR' ), 'explicit order EUR is authoritative over store BGN' );
+		$GLOBALS['mtuc_test_wc_currency'] = 'EUR';
+		$this->assert_true( is_wp_error( mtuc_require_eur_transaction_currency( 'BGN' ) ), 'order BGN is rejected despite store EUR' );
 	}
 
-	private function test_no_hidden_conversion_in_resolve(): void {
-		$amount_bgn = 195.583;
-		// Dual display must not rewrite the financed amount — resolve currency only.
-		$currency = mtuc_resolve_transaction_currency( array( 'uni_eur' => 1 ), 'BGN' );
-		$this->assert_true( 'BGN' === $currency, 'dual display keeps BGN transaction currency' );
-		$this->assert_true( 195.583 === $amount_bgn, 'amount unchanged (no FX conversion)' );
+	private function test_eur_amount_display(): void {
+		$display = mtuc_format_popup_amount_display( 8.33 );
+		$this->assert_true( array( 'primary' => '8.33 евро' ) === $display, 'single EUR amount has no secondary currency' );
 	}
 
 	private function test_quantity_validation(): void {
