@@ -7,6 +7,7 @@
  * @package MTUC
  */
 
+require_once __DIR__ . '/cp-destination-stubs.php';
 require_once __DIR__ . '/bootstrap.php';
 
 if ( ! class_exists( 'Mtuc_Settings', false ) ) {
@@ -1468,9 +1469,10 @@ mtuc_so_assert( 'mtuc_operation_contention' === $amb_second->get_error_code(), '
 // Pass 5 — CP per-request ownership checkpoints (refresh/login/orders/ssl)
 // ---------------------------------------------------------------------------
 
-if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
-	define( 'MTUC_API_BASE_URL', 'https://cp.example.test/api/v1/' );
+if ( ! defined( 'MTUC_CONTROL_PANEL_URL' ) ) {
+	define( 'MTUC_CONTROL_PANEL_URL', 'https://cp.ownership.example' );
 }
+require_once MTUC_PLUGIN_DIR . '/includes/config.php';
 if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 	define( 'DAY_IN_SECONDS', 86400 );
 }
@@ -1507,6 +1509,7 @@ if ( ! function_exists( 'wp_remote_request' ) ) {
 	 * @return array<string, mixed>
 	 */
 	function wp_remote_request( $url, $args = array() ) {
+		mtuc_cp_test_prepare_http( (string) $url, $args );
 		$GLOBALS['mtuc_test_wp_remote_urls'][] = (string) $url;
 		$path = (string) ( parse_url( (string) $url, PHP_URL_PATH ) ?? '' );
 		// AUD-WOO-019-F02: every CP response is a canonical envelope.

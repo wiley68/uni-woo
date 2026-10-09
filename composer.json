@@ -20,6 +20,9 @@
 		"phpcs": "phpcs",
 		"phpcbf": "phpcbf",
 		"lint": "phpcs",
-		"format": "phpcbf"
+		"format": "phpcbf",
+		"package": "@php tools/package.php build",
+		"package:verify": "@php tools/package.php verify",
+		"test:package": "@php tests/run-packaging-tests.php"
 	}
 }

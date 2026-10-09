@@ -268,6 +268,7 @@ require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-pair-validator.
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-consumer-lease.php';
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-local-store.php';
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-certificate-synchronizer.php';
+require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-cp-destination-policy.php';
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-smartucf-endpoint-policy.php';
 require_once MTUC_PLUGIN_DIR . '/includes/class-mtuc-smartucf-api-client.php';
 

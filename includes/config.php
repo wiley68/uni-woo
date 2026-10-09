@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Базов URL на Контролния панел (без trailing slash).
+ * Единствен адрес на Контролния панел: HTTPS origin, без path/query/fragment.
  *
  * Пример: https://uni.avalonbg.com
  */
@@ -21,14 +21,8 @@ if ( ! defined( 'MTUC_CONTROL_PANEL_URL' ) ) {
 	define( 'MTUC_CONTROL_PANEL_URL', 'https://uni.avalonbg.com' );
 }
 
-/**
- * Базов URL на CP API v1.
- *
- * Съставя се автоматично: {MTUC_CONTROL_PANEL_URL}/api/v1
- */
-if ( ! defined( 'MTUC_API_BASE_URL' ) ) {
-	define( 'MTUC_API_BASE_URL', untrailingslashit( MTUC_CONTROL_PANEL_URL ) . '/api/v1' );
-}
+// CP API base is derived after validation by MTUC\Cp_Destination_Policy.
+// There is deliberately no independently configurable API-base constant.
 
 /**
  * SmartUCF mTLS private-key password — not in Git source.

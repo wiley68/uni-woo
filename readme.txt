@@ -41,6 +41,10 @@ Later SmartUCF statuses are stored and shown exactly as returned by SmartUCF.
 
 == Deployment (vendor) ==
 
+The only Control Panel destination value is `MTUC_CONTROL_PANEL_URL` in `includes/config.php`. Change that one value before assembling an environment's ZIP; copy this ordinary runtime file unchanged. Use an absolute public HTTPS origin (optional trailing slash or explicit port 443), without a path, credentials, query or fragment. The API base is validated and derived as `{origin}/api/v1`; legacy `MTUC_API_BASE_URL` definitions have no effect.
+
+CP requests validate every DNS A/AAAA answer, pin a checked public address while preserving the hostname for TLS, verify TLS and never follow redirects. DNS failures, unsafe answers, configured HTTP proxies and transports without cURL pinning fail closed. CP connectivity requires working DNS, cURL with `CURLOPT_RESOLVE` and direct outbound HTTPS. WordPress's additional safe-URL check can reject IPv6-only DNS names; use a public A record as well. These controls do not change the separate SmartUCF endpoint policy.
+
 Before creating the production installation ZIP, add `secrets/smartucf-key.php` containing the SmartUCF private-key password.
 
 The ZIP is prepared manually and uploaded to the Bank/CP portal. It contains Git source plus deployment-only files (certificates, `secrets/smartucf-key.php`). Merchants install the ZIP normally; they do not edit wp-config or environment variables for the SSL password.

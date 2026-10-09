@@ -488,16 +488,6 @@ class Mtuc_Cp_Api_Client {
 	}
 
 	/**
-	 * Build full API URL.
-	 *
-	 * @param string $path Relative path (e.g. auth/login).
-	 * @return string
-	 */
-	private static function api_url( string $path ): string {
-		return trailingslashit( MTUC_API_BASE_URL ) . ltrim( $path, '/' );
-	}
-
-	/**
 	 * Execute wp_remote_request against CP.
 	 *
 	 * @param string                    $method  HTTP method.
@@ -508,6 +498,12 @@ class Mtuc_Cp_Api_Client {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	private static function request( string $method, string $path, $body = null, $token = null, bool $with_shop = false ) {
+		// DNS work must not consume the renewed HTTP ownership lease.
+		$destination = \MTUC\Cp_Destination_Policy::resolve( $path );
+		if ( is_wp_error( $destination ) ) {
+			return $destination;
+		}
+
 		/*
 		 * Every CP transport (login, refresh, orders, SSL, …) renews under an armed
 		 * financing fence immediately before HTTP. No fence → no-op (non-financing OK).
@@ -547,18 +543,19 @@ class Mtuc_Cp_Api_Client {
 		}
 
 		$args = array(
-			'method'      => $method,
-			'timeout'     => self::TIMEOUT,
-			'redirection' => 3,
-			'headers'     => $headers,
+			'method'             => $method,
+			'timeout'            => self::TIMEOUT,
+			'redirection'        => 0,
+			'reject_unsafe_urls' => true,
+			'sslverify'          => true,
+			'headers'            => $headers,
 		);
 
 		if ( null !== $body ) {
 			$args['body'] = wp_json_encode( $body );
 		}
 
-		$url      = self::api_url( $path );
-		$response = wp_remote_request( $url, $args );
+		$response = \MTUC\Cp_Destination_Policy::send( $destination, $args );
 
 		if ( is_wp_error( $response ) ) {
 			return $response;
