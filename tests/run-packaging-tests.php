@@ -88,7 +88,7 @@ final class Mtuc_Packaging_Test_Runner {
 			$this->check( $before === $this->source_fingerprint(), 'Build preserves all source bytes and mtimes.' );
 			$this->check( is_file( $this->facts['path'] ), 'Build succeeds.' );
 			$version = Mtuc_Distribution_Package::version( file_get_contents( $this->fixture . '/mtunicredit.php' ) );
-			$this->check( basename( $this->facts['path'] ) === 'CC_Woocommerce_UNI_v.' . $version . '.zip', 'Filename derived from canonical runtime version.' );
+			$this->check( basename( $this->facts['path'] ) === 'woo_uni_' . $version . '.zip', 'Filename derived from canonical runtime version.' );
 			$this->check( $this->facts['version'] === $version, 'Build version equals runtime version.' );
 			$this->check( count( $manifest['required_files'] ) === $this->facts['files'], 'Every manifest file included.' );
 			$this->check( $this->facts === $this->package->verify( $this->facts['path'] ), 'Generated package verifier succeeds.' );
@@ -238,7 +238,7 @@ final class Mtuc_Packaging_Test_Runner {
 			},
 			'Malformed ZIP rejected.'
 		);
-		$wrong = $bad_dir . '/CC_Woocommerce_UNI_v.999.0.0.zip';
+		$wrong = $bad_dir . '/woo_uni_999.0.0.zip';
 		file_put_contents( $wrong, $original );
 		$this->reject(
 			function () use ( $wrong ): void {
@@ -321,7 +321,7 @@ final class Mtuc_Packaging_Test_Runner {
 		$next = preg_replace( '/(\*\s*Version:\s*)\S+/', '${1}9.8.7', $next );
 		$this->put( 'mtunicredit.php', $next );
 		$facts = $this->package->build();
-		$this->check( 'CC_Woocommerce_UNI_v.9.8.7.zip' === basename( $facts['path'] ), 'Changed runtime version drives filename.' );
+		$this->check( 'woo_uni_9.8.7.zip' === basename( $facts['path'] ), 'Changed runtime version drives filename.' );
 		$this->check( '9.8.7' === $this->package->verify( $facts['path'] )['version'], 'Packaged source and filename versions agree.' );
 		$this->put( 'mtunicredit.php', $main );
 	}

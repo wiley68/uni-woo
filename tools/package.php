@@ -21,7 +21,7 @@ try {
 	} elseif ( 'verify' === $command && 3 === $argc ) {
 		$result = $package->verify( $argv[2] );
 	} else {
-		throw new RuntimeException( 'Usage: composer package OR composer package:verify -- dist/CC_Woocommerce_UNI_v.<VERSION>.zip' );
+		throw new RuntimeException( 'Usage: composer package OR composer package:verify -- dist/woo_uni_<VERSION>.zip' );
 	}
 	fwrite( STDOUT, "Verified package: {$result['path']}\nVersion: {$result['version']}\nFiles: {$result['files']}\nBytes: {$result['bytes']}\nSHA-256: {$result['sha256']}\nDeployment config and all runtime files match current source exactly.\n" );
 } catch ( Throwable $error ) {

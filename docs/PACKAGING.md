@@ -6,7 +6,7 @@ Prepare the desired environment in `includes/config.php`, then run from the plug
 composer package
 ```
 
-The result is `dist/CC_Woocommerce_UNI_v.<VERSION>.zip`. The version comes from the literal `MTUC_VERSION` runtime declaration in `mtunicredit.php` and must agree with its WordPress `Version` header. The ZIP contains one plugin directory, `mtunicredit/`. Install it through **WordPress → Plugins → Add Plugin → Upload Plugin**, with WooCommerce installed and active.
+The result is `dist/woo_uni_<VERSION>.zip`, using all three version components (for example, `dist/woo_uni_2.0.3.zip`). The version comes from the literal `MTUC_VERSION` runtime declaration in `mtunicredit.php` and must agree with its WordPress `Version` header. The ZIP contains one plugin directory, `mtunicredit/`. Install it through **WordPress → Plugins → Add Plugin → Upload Plugin**, with WooCommerce installed and active.
 
 This command replaces manual ZIP assembly. It builds from the **current working source**, including intentional uncommitted runtime changes. It does not stage, commit, reset, rewrite configuration, change source timestamps or modify source `vendor/`. `includes/config.php` is copied byte-for-byte; no environment template or second deployment config is created. Preserve the existing CP destination policy when preparing a release.
 
@@ -31,7 +31,7 @@ The builder copies inputs into a private temporary staging tree, checks parity, 
 Verify an artifact against the current working source with:
 
 ```bash
-composer package:verify -- dist/CC_Woocommerce_UNI_v.<VERSION>.zip
+composer package:verify -- dist/woo_uni_<VERSION>.zip
 ```
 
 The verifier checks the exact filename, single plugin root, exact sorted manifest, regular files, no extra or missing entries, canonical version and byte parity for **every** runtime/deployment input, including config and secrets. It rejects malformed archives, unexpected development content, nested roots and stale artifacts. Its output contains only archive facts and a checksum of the entire ZIP; it does not list secret contents or secret checksums.
@@ -48,7 +48,7 @@ The CLI user must be able to read every listed runtime/deployment input, travers
 composer validate --strict
 composer test:package
 composer package
-composer package:verify -- dist/CC_Woocommerce_UNI_v.<VERSION>.zip
+composer package:verify -- dist/woo_uni_<VERSION>.zip
 git diff --check
 ```
 

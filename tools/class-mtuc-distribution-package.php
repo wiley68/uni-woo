@@ -374,7 +374,7 @@ final class Mtuc_Distribution_Package {
 	 * @return string ZIP basename.
 	 */
 	public static function filename( string $version ): string {
-		return 'CC_Woocommerce_UNI_v.' . $version . '.zip';
+		return 'woo_uni_' . $version . '.zip';
 	}
 
 	/**
