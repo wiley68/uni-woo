@@ -128,7 +128,7 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 						<label for="mtuc_secret_key"><?php esc_html_e( 'Секретен код на магазина Ви', 'mtunicredit' ); ?></label>
 					</th>
 					<td>
-						<input type="password" class="regular-text" name="<?php echo esc_attr( Mtuc_Settings::OPTION_SECRET_KEY ); ?>" id="mtuc_secret_key" value="" maxlength="64" autocomplete="new-password" <?php echo '' === $mtuc_settings[ Mtuc_Settings::OPTION_SECRET_KEY ] ? 'required' : ''; ?> />
+						<input type="password" class="regular-text" name="<?php echo esc_attr( Mtuc_Settings::OPTION_SECRET_KEY ); ?>" id="mtuc_secret_key" value="" placeholder="<?php echo '' !== $mtuc_settings[ Mtuc_Settings::OPTION_SECRET_KEY ] ? esc_attr__( 'Токенът е въведен ✓', 'mtunicredit' ) : esc_attr__( 'Въведете токен', 'mtunicredit' ); ?>" maxlength="64" autocomplete="new-password" <?php echo '' === $mtuc_settings[ Mtuc_Settings::OPTION_SECRET_KEY ] ? 'required' : ''; ?> />
 						<p class="description">
 							<?php esc_html_e( 'Секретен код на магазина Ви в системата на УниКредит.', 'mtunicredit' ); ?>
 							<?php if ( '' !== $mtuc_settings[ Mtuc_Settings::OPTION_SECRET_KEY ] ) : ?>

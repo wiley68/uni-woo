@@ -36,6 +36,14 @@ msgstr ""
 msgid "Запази настройките"
 msgstr ""
 
+#: includes/admin-settings-page.php:131
+msgid "Токенът е въведен ✓"
+msgstr ""
+
+#: includes/admin-settings-page.php:131
+msgid "Въведете токен"
+msgstr ""
+
 #: includes/admin.php:41
 msgid "Нямате достатъчно права за достъп до тази страница."
 msgstr ""
