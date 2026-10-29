@@ -158,6 +158,11 @@ function mtuc_build_cart_button_offer_from_options(
 			continue;
 		}
 
+		// The standard popup also contains promo rows; those cannot create a standard button.
+		if ( $offer_type !== (string) ( $option['scheme_type'] ?? 'standard' ) ) {
+			continue;
+		}
+
 		$kop_code = trim( (string) ( $option['kop_code'] ?? '' ) );
 		$months   = (int) ( $option['months'] ?? 0 );
 		if ( '' === $kop_code || $months <= 0 ) {
@@ -231,8 +236,11 @@ function mtuc_cart_has_any_line_scheme_options(
 		}
 
 		$options = mtuc_get_cart_line_scheme_options( $shop, $coeff_list, $cart_total, $line['product'], $offer_type );
-		if ( ! empty( $options ) ) {
-			return true;
+		foreach ( $options as $option ) {
+			// Image-only fallback buttons require a match in their own financing flow too.
+			if ( is_array( $option ) && $offer_type === (string) ( $option['scheme_type'] ?? 'standard' ) ) {
+				return true;
+			}
 		}
 	}
 
