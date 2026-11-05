@@ -386,10 +386,12 @@ function mtuc_enqueue_cart_calculator_assets( array $context ): void {
 		true
 	);
 
+	mtuc_register_shop_consents_script();
+
 	wp_enqueue_script(
 		'mtuc-product-popup',
 		MTUC_JS_URI . '/mtuc-product-popup.js',
-		array( 'jquery', 'mtuc-cart-calculator' ),
+		array( 'jquery', 'mtuc-cart-calculator', 'mtuc-shop-consents' ),
 		file_exists( $popup_js ) ? (string) filemtime( $popup_js ) : MTUC_VERSION,
 		true
 	);

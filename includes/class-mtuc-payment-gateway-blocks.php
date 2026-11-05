@@ -64,10 +64,12 @@ final class Mtuc_Payment_Gateway_Blocks extends AbstractPaymentMethodType {
 		$payment_js = MTUC_PLUGIN_DIR . '/js/mtuc-checkout-payment.js';
 		$blocks_js  = MTUC_PLUGIN_DIR . '/js/mtuc-checkout-blocks.js';
 
+		mtuc_register_shop_consents_script();
+
 		wp_register_script(
 			'mtuc-checkout-payment',
 			MTUC_JS_URI . '/mtuc-checkout-payment.js',
-			array( 'jquery' ),
+			array( 'jquery', 'mtuc-shop-consents' ),
 			file_exists( $payment_js ) ? (string) filemtime( $payment_js ) : MTUC_VERSION,
 			true
 		);

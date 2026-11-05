@@ -30,10 +30,11 @@ $input_name = isset( $input_name ) ? (string) $input_name : 'mtuc_consent[]';
 		$mtuc_consent_input_id     = $id_prefix . '-' . $mtuc_consent_id;
 		$mtuc_consent_item_class   = 'mtuc-popup__consent' . ( $mtuc_consent_has_checkbox ? '' : ' mtuc-popup__consent--info' );
 		?>
-		<div class="<?php echo esc_attr( $mtuc_consent_item_class ); ?>">
+		<div class="<?php echo esc_attr( $mtuc_consent_item_class ); ?>" data-mtuc-consent-row="<?php echo esc_attr( (string) $mtuc_consent_id ); ?>" data-mtuc-interest-scope="<?php echo esc_attr( $mtuc_consent['interest_scope'] ?? 'all' ); ?>" hidden>
 			<?php if ( $mtuc_consent_has_checkbox ) : ?>
 				<input
 					type="checkbox"
+					disabled
 					class="mtuc-popup__consent-checkbox"
 					id="<?php echo esc_attr( $mtuc_consent_input_id ); ?>"
 					name="<?php echo esc_attr( $input_name ); ?>"

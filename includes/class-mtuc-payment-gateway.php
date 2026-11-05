@@ -200,7 +200,7 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 			}
 		}
 
-		$consents_valid = mtuc_validate_mandatory_consents_from_post( $_POST, $shop );
+		$consents_valid = mtuc_validate_mandatory_consents_from_post( $_POST, $shop, $calculation );
 		if ( is_wp_error( $consents_valid ) ) {
 			mtuc_add_customer_safe_notice( $consents_valid, 'general' );
 			return false;
@@ -296,9 +296,10 @@ class Mtuc_Payment_Gateway extends WC_Payment_Gateway {
 		}
 
 		$posted = array(
-			'scheme_key' => isset( $_POST['mtuc_scheme_key'] ) ? wp_unslash( $_POST['mtuc_scheme_key'] ) : '',
-			'offer_type' => isset( $_POST['mtuc_offer_type'] ) ? wp_unslash( $_POST['mtuc_offer_type'] ) : 'standard',
-			'parva'      => isset( $_POST['mtuc_parva'] ) ? wp_unslash( $_POST['mtuc_parva'] ) : '0',
+			'scheme_key'   => isset( $_POST['mtuc_scheme_key'] ) ? wp_unslash( $_POST['mtuc_scheme_key'] ) : '',
+			'offer_type'   => isset( $_POST['mtuc_offer_type'] ) ? wp_unslash( $_POST['mtuc_offer_type'] ) : 'standard',
+			'parva'        => isset( $_POST['mtuc_parva'] ) ? wp_unslash( $_POST['mtuc_parva'] ) : '0',
+			'mtuc_consent' => $_POST['mtuc_consent'] ?? array(),
 		);
 
 		$result = mtuc_process_checkout_order_payment( $order, $posted );

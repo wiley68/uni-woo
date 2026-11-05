@@ -37,6 +37,8 @@ function mtuc_get_customer_safe_error_codes(): array {
 		'mtuc_invalid_months',
 		'mtuc_invalid_offer_type',
 		'mtuc_missing_consent',
+		'mtuc_consents_required',
+		'mtuc_consents_unknown_interest',
 		'mtuc_invalid_customer',
 		'mtuc_invalid_egn',
 		'mtuc_invalid_phone',

@@ -80,6 +80,7 @@
     "js/mtuc-product-calculator.js",
     "js/mtuc-product-popup.js",
     "js/mtuc-reklama.js",
+    "js/mtuc-shop-consents.js",
     "keys/.htaccess",
     "keys/index.php",
     "languages/index.php",

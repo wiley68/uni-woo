@@ -709,3 +709,8 @@ body.mtuc-popup-open {
 		margin-left: auto;
 	}
 }
+
+/* Consent rows stay hidden until the current calculation selects them. */
+.mtuc-popup__consent[hidden] {
+	display: none;
+}

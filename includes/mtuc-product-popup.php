@@ -1078,6 +1078,7 @@ function mtuc_ajax_popup_calculate(): void {
 			mtuc_send_customer_safe_json_error( $result, 400, 'general' );
 		}
 
+		$result['consent_context'] = mtuc_get_calculation_consent_context( $shop, $result );
 		wp_send_json_success( $result );
 	}
 
@@ -1123,6 +1124,7 @@ function mtuc_ajax_popup_calculate(): void {
 		mtuc_send_customer_safe_json_error( $result, 400, 'general' );
 	}
 
+	$result['consent_context'] = mtuc_get_calculation_consent_context( $shop, $result );
 	wp_send_json_success( $result );
 }
 

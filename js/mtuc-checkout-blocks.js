@@ -56,6 +56,13 @@
 		const fieldsHostRef = useRef(null);
 		const controllerRef = useRef(null);
 		const fieldsHtmlRef = useRef(settings.fieldsHtml || "");
+		const refreshGeneration = useRef(0);
+		const disposed = useRef(false);
+		const invalidateFields = () => {
+			refreshGeneration.current += 1;
+			if (controllerRef.current) controllerRef.current.destroy();
+			controllerRef.current = null;
+		};
 
 		const mountFields = () => {
 			if (!fieldsHostRef.current) {
@@ -94,6 +101,8 @@
 				return;
 			}
 
+			invalidateFields();
+			const generation = refreshGeneration.current;
 			const params = new URLSearchParams();
 			params.append("action", "mtuc_checkout_blocks_refresh");
 			params.append("security", checkoutConfig.nonce);
@@ -110,6 +119,7 @@
 				})
 				.then((response) => response.json())
 				.then((response) => {
+					if (disposed.current || generation !== refreshGeneration.current) return;
 					if (!response || !response.success || !response.data) {
 						return;
 					}
@@ -130,9 +140,12 @@
 		};
 
 		useEffect(() => {
+			disposed.current = false;
 			mountFields();
 
 			return () => {
+				disposed.current = true;
+				refreshGeneration.current += 1;
 				if (controllerRef.current && controllerRef.current.destroy) {
 					controllerRef.current.destroy();
 				}
@@ -158,6 +171,7 @@
 					return;
 				}
 				cartSignature = nextSignature;
+				invalidateFields();
 				window.clearTimeout(refreshTimer);
 				refreshTimer = window.setTimeout(refreshFields, 400);
 			});
@@ -178,7 +192,7 @@
 					controllerRef.current &&
 					typeof controllerRef.current.validate === "function"
 						? controllerRef.current.validate()
-						: window.mtucGetCheckoutPaymentValidation();
+						: { valid: false, message: "Изчакайте изчислението или обновете страницата." };
 
 				if (!validation.valid) {
 					return {

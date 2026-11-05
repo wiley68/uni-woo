@@ -179,40 +179,6 @@
 		);
 	};
 
-	const areMandatoryConsentsChecked = ($scope) => {
-		const $boxes = getConsentCheckboxes($scope);
-		if (!$boxes.length) {
-			return true;
-		}
-
-		let allChecked = true;
-		$boxes.each(function () {
-			if (!this.checked) {
-				allChecked = false;
-				return false;
-			}
-		});
-
-		return allChecked;
-	};
-
-	const getCheckedConsentIds = ($scope) => {
-		const ids = [];
-		getConsentCheckboxes($scope)
-			.filter(":checked")
-			.each(function () {
-				const value = String($(this).val() || "").trim();
-				if (value) {
-					ids.push(value);
-				}
-			});
-		return ids;
-	};
-
-	const formatConsentsForPaymentData = ($scope) => {
-		return getCheckedConsentIds($scope).join(",");
-	};
-
 	const PHONE_VALID_PATTERN = /^[-0-9+() ]+$/;
 
 	const isValidCheckoutEgn = (value) => {
@@ -494,6 +460,7 @@
 		const $parva = $scope.find("#mtuc-checkout-parva");
 		const $parvaRow = $scope.find("#mtuc-checkout-parva-row");
 		const $consentCheckboxes = getConsentCheckboxes($scope);
+		const consents = window.mtucCreateShopConsents($root[0]);
 		const $egn = $scope.find("#mtuc-checkout-egn");
 		const $phone2 = $scope.find("#mtuc-checkout-phone2");
 		const isProcess2 = () => !!(config && config.process2);
@@ -556,7 +523,7 @@
 			if (getProcess2ValidationMessage()) {
 				return false;
 			}
-			return areMandatoryConsentsChecked($scope);
+			return consents.ready();
 		};
 
 		const isBlockedByConsentsOnly = () => {
@@ -564,7 +531,7 @@
 				isOurPaymentSelected() &&
 				!!String($schemeKey.val() || "") &&
 				!!lastCalculation &&
-				!areMandatoryConsentsChecked($scope)
+				!consents.ready()
 			);
 		};
 
@@ -616,7 +583,16 @@
 			}
 		};
 
+		const invalidateCalculation = () => {
+			lastCalculation = null;
+			const token = consents.begin(String($months.val() || ""));
+			onCheckoutReadyChange();
+			return token;
+		};
+
 		const calculateNow = () => {
+			window.clearTimeout(calculateTimer);
+			const token = invalidateCalculation();
 			const schemeKey = String($months.val() || "");
 			const scheme = parseSchemeKey(schemeKey);
 			if (!scheme.months) {
@@ -641,7 +617,12 @@
 				parva: parva.toFixed(2),
 			})
 				.done((response) => {
+					if (!consents.isCurrent(token)) return;
 					if (response && response.success && response.data) {
+						if (!consents.apply(token, response.data.consent_context)) {
+							window.alert("Обновете страницата и изберете схема отново.");
+							return;
+						}
 						applyCalculation(
 							response.data,
 							$parva,
@@ -659,6 +640,7 @@
 					);
 				})
 				.fail((xhr) => {
+					if (!consents.isCurrent(token)) return;
 					lastCalculation = null;
 					onCheckoutReadyChange();
 					let message = config.i18n.calcError;
@@ -674,6 +656,7 @@
 		};
 
 		const scheduleCalculate = () => {
+			invalidateCalculation();
 			window.clearTimeout(calculateTimer);
 			calculateTimer = window.setTimeout(
 				calculateNow,
@@ -737,7 +720,7 @@
 						window.alert(config.i18n.calcError);
 						return false;
 					}
-					if (!areMandatoryConsentsChecked($scope)) {
+					if (!consents.ready()) {
 						window.alert(
 							config.i18n.consentsRequired ||
 								"Моля, приемете всички задължителни съгласия.",
@@ -785,7 +768,7 @@
 					message: config.i18n.calcError,
 				};
 			}
-			if (!areMandatoryConsentsChecked($scope)) {
+			if (!consents.ready()) {
 				return {
 					valid: false,
 					message:
@@ -807,7 +790,7 @@
 						mtuc_scheme_key: String($schemeKey.val() || ""),
 						mtuc_offer_type: "standard",
 						mtuc_parva: String($parvaHidden.val() || "0"),
-						mtuc_consent: formatConsentsForPaymentData($scope),
+						mtuc_consent: consents.acceptedIds().join(","),
 					},
 					getProcess2PaymentFields(),
 				),
@@ -816,7 +799,13 @@
 
 		const controller = {
 			validate: () => buildValidationResult(),
+			invalidate: () => {
+				window.clearTimeout(calculateTimer);
+				invalidateCalculation();
+			},
 			destroy: () => {
+				consents.destroy();
+				window.clearTimeout(calculateTimer);
 				$months.off(NS);
 				$parva.off(NS);
 				$egn.add($phone2).off(NS);
@@ -851,7 +840,7 @@
 		) {
 			return activeController.validate();
 		}
-		return { valid: true, paymentMethodData: {} };
+		return { valid: false, message: "Изчакайте изчислението или обновете страницата." };
 	};
 
 	const bootClassicCheckoutPayment = () => {
@@ -908,6 +897,12 @@
 				window.mtucApplyCheckoutPrefillPaymentMethod();
 			}, 300);
 		}
+
+		$(document.body).on("update_checkout" + NS, function () {
+			if (activeController) {
+				activeController.invalidate();
+			}
+		});
 
 		$(document.body).on("updated_checkout" + NS, function () {
 			if (!$("#mtuc-checkout-payment").length) {

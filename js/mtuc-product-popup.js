@@ -46,6 +46,7 @@
 		const $egnError = $("#mtuc-popup-egn-error");
 		const $phone2Error = $("#mtuc-popup-phone2-error");
 		const $consentCheckboxes = $popup.find(".mtuc-popup__consent-checkbox");
+		const consents = window.mtucCreateShopConsents(popup);
 		let calculateTimer = null;
 		const PARVA_CALCULATE_DELAY = 900;
 		let lastCalculation = null;
@@ -202,6 +203,7 @@
 				action: "mtuc_popup_submit",
 				security: mtucPopup.nonce,
 				operation_token: getOperationToken(),
+				mtuc_consent: consents.acceptedIds(),
 				source: getPopupSource(),
 				product_id: lineContext.productId,
 				variation_id: lineContext.variationId,
@@ -375,21 +377,7 @@
 			return email !== "" && EMAIL_VALID_PATTERN.test(email);
 		};
 
-		const areMandatoryConsentsChecked = () => {
-			if (!$consentCheckboxes.length) {
-				return true;
-			}
-
-			let allChecked = true;
-			$consentCheckboxes.each(function () {
-				if (!this.checked) {
-					allChecked = false;
-					return false;
-				}
-			});
-
-			return allChecked;
-		};
+		const areMandatoryConsentsChecked = () => consents.ready();
 
 		const isStep2FormValid = () => {
 			const baseValid =
@@ -564,7 +552,7 @@
 		};
 
 		const updateSubmitState = () => {
-			const isValid = isStep2FormValid();
+			const isValid = !!lastCalculation && isStep2FormValid();
 			$submitBtn
 				.toggleClass("is-disabled", !isValid)
 				.attr("aria-disabled", isValid ? "false" : "true");
@@ -757,6 +745,7 @@
 
 			window.clearTimeout(calculateTimer);
 			calculateTimer = null;
+			invalidateCalculation();
 			releasePopupFocus();
 			$popup
 				.removeClass("is-open")
@@ -771,6 +760,7 @@
 
 		const applyCalculation = (data) => {
 			lastCalculation = data;
+			updateSubmitState();
 
 			setAmount("price", data.price_display);
 			setAmount("loan", data.loan_display);
@@ -816,7 +806,17 @@
 			};
 		};
 
+		const invalidateCalculation = () => {
+			lastCalculation = null;
+			const token = consents.begin(String($offerType.val()) + "|" + String($months.val() || ""));
+			$buyBtn.prop("disabled", true).addClass("is-disabled");
+			updateSubmitState();
+			return token;
+		};
+
 		const calculateNow = () => {
+			window.clearTimeout(calculateTimer);
+			const token = invalidateCalculation();
 			const schemeKey = String($months.val() || "");
 			const scheme = parseSchemeKey(schemeKey);
 			if (!scheme.months) {
@@ -843,7 +843,12 @@
 				parva: parva.toFixed(2),
 			})
 				.done((response) => {
+					if (!consents.isCurrent(token)) return;
 					if (response && response.success && response.data) {
+						if (!consents.apply(token, response.data.consent_context)) {
+							window.alert("Обновете страницата и изберете схема отново.");
+							return;
+						}
 						applyCalculation(response.data);
 						return;
 					}
@@ -854,6 +859,7 @@
 					);
 				})
 				.fail((xhr) => {
+					if (!consents.isCurrent(token)) return;
 					let message = mtucPopup.i18n.calcError;
 					if (
 						xhr.responseJSON &&
@@ -867,6 +873,7 @@
 		};
 
 		const scheduleCalculate = () => {
+			invalidateCalculation();
 			window.clearTimeout(calculateTimer);
 			calculateTimer = window.setTimeout(
 				calculateNow,
@@ -1092,7 +1099,7 @@
 			if (submitInFlight) {
 				return;
 			}
-			if (!validateStep2Form(true) || !areMandatoryConsentsChecked()) {
+			if (!lastCalculation || !validateStep2Form(true) || !areMandatoryConsentsChecked()) {
 				updateSubmitState();
 				return;
 			}

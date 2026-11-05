@@ -2031,6 +2031,12 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $calculation;
 	}
 
+	$consents_valid = mtuc_validate_mandatory_consents_from_post( $posted, $shop, $calculation );
+	if ( is_wp_error( $consents_valid ) ) {
+		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+		return $consents_valid;
+	}
+
 	$line_count = count( $order->get_items( 'line_item' ) );
 
 	mtuc_save_order_credit_meta(
@@ -3599,6 +3605,47 @@ function mtuc_send_cart_popup_order_to_smartucf(
 }
 
 /**
+ * Validate the effective immutable popup scheme before create/init and retry.
+ *
+ * @param array<string, mixed> $posted Accepted IDs only; browser flags are ignored.
+ * @param array<string, mixed> $shop Trusted submission snapshot.
+ * @param array<string, mixed> $calculation Newly resolved calculation.
+ * @param WC_Order|null $existing Existing operation order, if any.
+ * @param string $source product|cart.
+ * @return true|WP_Error
+ */
+function mtuc_validate_popup_operation_consents( array $posted, array $shop, array $calculation, ?WC_Order $existing, string $source ) {
+	if ( $existing instanceof WC_Order ) {
+		$snapshot = 'cart' === $source ? mtuc_read_cart_operation_snapshot( $existing ) : mtuc_read_product_operation_snapshot( $existing );
+		if ( null !== $snapshot && is_array( $snapshot['calculation'] ?? null ) ) {
+			$calculation = $snapshot['calculation'];
+		}
+	}
+
+	return mtuc_validate_mandatory_consents_from_post( $posted, $shop, $calculation );
+}
+
+/**
+ * Read-only consent preflight before reserving a new operation/creation intent.
+ *
+ * @param array<string, mixed> $posted Posted IDs.
+ * @param array<string, mixed> $shop Submission snapshot.
+ * @param array<string, mixed> $calculation Server calculation.
+ * @param string $token Operation token.
+ * @param string $scope Session scope.
+ * @param string $source product|cart.
+ * @return true|WP_Error
+ */
+function mtuc_preflight_popup_operation_consents( array $posted, array $shop, array $calculation, string $token, string $scope, string $source ) {
+	$existing = mtuc_find_order_for_financing_operation( $token, mtuc_financing_creation_ref( $token ) );
+	if ( $existing instanceof WC_Order && ! mtuc_operation_token_matches_order_scope( $existing, $scope ) ) {
+		return new WP_Error( 'mtuc_operation_scope_mismatch', __( 'Обновете страницата и опитайте отново.', 'mtunicredit' ) );
+	}
+
+	return mtuc_validate_popup_operation_consents( $posted, $shop, $calculation, $existing, $source );
+}
+
+/**
  * Process cart popup AJAX submit.
  *
  * @param array<string, string> $customer Validated customer fields.
@@ -3688,10 +3735,20 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 	}
 
 	$scope_key = mtuc_build_cart_operation_scope_key();
+	$consents_valid = mtuc_preflight_popup_operation_consents( $_POST, $shop, $calculation, $operation_token, $scope_key, 'cart' );
+	if ( is_wp_error( $consents_valid ) ) {
+		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+		mtuc_send_customer_safe_json_error( $consents_valid, 400, 'general' );
+	}
+
 	$resolved  = mtuc_resolve_popup_financing_order(
 		$operation_token,
 		$scope_key,
-		static function ( $early_bind = null, $existing = null, $bind_context = array() ) use ( $customer, $calculation, $cart_lines ) {
+		static function ( $early_bind = null, $existing = null, $bind_context = array() ) use ( $customer, $calculation, $cart_lines, $shop ) {
+			$consents_valid = mtuc_validate_popup_operation_consents( $_POST, $shop, $calculation, $existing, 'cart' );
+			if ( is_wp_error( $consents_valid ) ) {
+				return $consents_valid;
+			}
 			return mtuc_create_cart_popup_pending_order( $customer, $calculation, $cart_lines, $early_bind, $existing, $bind_context );
 		}
 	);
@@ -3699,6 +3756,9 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 	if ( is_wp_error( $resolved ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		$status = 'mtuc_operation_contention' === $resolved->get_error_code() ? 429 : 500;
+		if ( in_array( $resolved->get_error_code(), array( 'mtuc_consents_required', 'mtuc_consents_unknown_interest' ), true ) ) {
+			$status = 400;
+		}
 		mtuc_send_customer_safe_json_error( $resolved, $status, 'general' );
 	}
 
@@ -3742,6 +3802,12 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 			);
 			$order->save();
 		}
+	}
+
+	$consents_valid = mtuc_validate_mandatory_consents_from_post( $_POST, $shop, $calculation );
+	if ( is_wp_error( $consents_valid ) ) {
+		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+		mtuc_send_customer_safe_json_error( $consents_valid, 400, 'general' );
 	}
 
 	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {
@@ -4118,10 +4184,20 @@ function mtuc_ajax_popup_submit(): void {
 	}
 
 	$scope_key = mtuc_build_product_operation_scope_key( $parent_id, $variation_id );
+	$consents_valid = mtuc_preflight_popup_operation_consents( $_POST, $shop, $calculation, $operation_token, $scope_key, 'product' );
+	if ( is_wp_error( $consents_valid ) ) {
+		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+		mtuc_send_customer_safe_json_error( $consents_valid, 400, 'general' );
+	}
+
 	$resolved  = mtuc_resolve_popup_financing_order(
 		$operation_token,
 		$scope_key,
-		static function ( $early_bind = null, $existing = null, $bind_context = array() ) use ( $customer, $calculation, $product, $parent_id, $variation_id, $quantity, $price ) {
+		static function ( $early_bind = null, $existing = null, $bind_context = array() ) use ( $customer, $calculation, $product, $parent_id, $variation_id, $quantity, $price, $shop ) {
+			$consents_valid = mtuc_validate_popup_operation_consents( $_POST, $shop, $calculation, $existing, 'product' );
+			if ( is_wp_error( $consents_valid ) ) {
+				return $consents_valid;
+			}
 			return mtuc_create_popup_pending_order(
 				$customer,
 				$calculation,
@@ -4140,6 +4216,9 @@ function mtuc_ajax_popup_submit(): void {
 	if ( is_wp_error( $resolved ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
 		$status = 'mtuc_operation_contention' === $resolved->get_error_code() ? 429 : 500;
+		if ( in_array( $resolved->get_error_code(), array( 'mtuc_consents_required', 'mtuc_consents_unknown_interest' ), true ) ) {
+			$status = 400;
+		}
 		mtuc_send_customer_safe_json_error( $resolved, $status, 'general' );
 	}
 
@@ -4156,6 +4235,12 @@ function mtuc_ajax_popup_submit(): void {
 		if ( ! is_wp_error( $resolved_p ) ) {
 			$product = $resolved_p;
 		}
+	}
+
+	$consents_valid = mtuc_validate_mandatory_consents_from_post( $_POST, $shop, $calculation );
+	if ( is_wp_error( $consents_valid ) ) {
+		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
+		mtuc_send_customer_safe_json_error( $consents_valid, 400, 'general' );
 	}
 
 	if ( function_exists( 'mtuc_resolve_order_process_for_banking' ) ) {

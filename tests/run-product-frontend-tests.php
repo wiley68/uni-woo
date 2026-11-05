@@ -122,7 +122,7 @@ foreach (
 
 mtuc_pf_assert(
 	false !== strpos( $frontend_src, "array( 'jquery' )" )
-	&& false !== strpos( $frontend_src, "array( 'jquery', 'mtuc-product-calculator' )" )
+	&& false !== strpos( $frontend_src, "array( 'jquery', 'mtuc-product-calculator', 'mtuc-shop-consents' )" )
 	&& false !== strpos( $frontend_src, "array( 'mtuc-fonts' )" ),
 	'script/style dependencies preserved'
 );

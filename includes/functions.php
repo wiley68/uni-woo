@@ -191,7 +191,7 @@ function mtuc_get_uni_mini_logo_url(): string {
  * Normalized shop consents from CP cache (sorted by id).
  *
  * @param array<string, mixed> $shop Shop `data` object.
- * @return array<int, array{id:int,name:string,url:string,mandatory:bool,has_checkbox:bool}>
+ * @return array<int, array{id:int,name:string,url:string,mandatory:bool,has_checkbox:bool,interest_scope:string}>
  */
 function mtuc_get_shop_consents( array $shop ): array {
 	$raw = $shop['consents'] ?? null;
@@ -222,11 +222,12 @@ function mtuc_get_shop_consents( array $shop ): array {
 		$mandatory = mtuc_is_yes_flag( $item['mandatory'] ?? 0 );
 
 		$consents[] = array(
-			'id'           => $id,
-			'name'         => $name,
-			'url'          => $url,
-			'mandatory'    => $mandatory,
-			'has_checkbox' => $mandatory,
+			'id'             => $id,
+			'name'           => $name,
+			'url'            => $url,
+			'mandatory'      => $mandatory,
+			'has_checkbox'   => $mandatory,
+			'interest_scope' => mtuc_normalize_consent_interest_scope( $item['interest_scope'] ?? null ),
 		);
 	}
 
@@ -242,6 +243,92 @@ function mtuc_get_shop_consents( array $shop ): array {
 	);
 
 	return $consents;
+}
+
+/**
+ * Normalize old or unknown consent scopes without a cache migration.
+ *
+ * @param mixed $scope CP scope.
+ * @return string
+ */
+function mtuc_normalize_consent_interest_scope( $scope ): string {
+	return is_string( $scope ) && in_array( $scope, array( 'all', 'zero_interest', 'nonzero_interest' ), true ) ? $scope : 'all';
+}
+
+/**
+ * Classify raw coefficient interest using the established zero-interest rule.
+ * Invalid values must not reach the legacy helper's permissive float cast.
+ *
+ * @param array<string, mixed>|null $entry Selected coefficient.
+ * @return string zero|nonzero|unknown.
+ */
+function mtuc_get_consent_interest_state( ?array $entry ): string {
+	$glp = $entry['interestPercent'] ?? null;
+	if ( ! ( is_int( $glp ) || is_float( $glp ) || is_string( $glp ) )
+		|| ! is_numeric( $glp ) || ! is_finite( (float) $glp ) ) {
+		return 'unknown';
+	}
+
+	return mtuc_is_zero_interest_coeff_entry( $entry ) ? 'zero' : 'nonzero';
+}
+
+/**
+ * Consent applicability is independent of whether a checkbox is mandatory.
+ *
+ * @param string $scope Normalized scope.
+ * @param string $state Trusted interest state.
+ * @return bool
+ */
+function mtuc_is_consent_applicable( string $scope, string $state ): bool {
+	return 'all' === $scope || ( 'zero_interest' === $scope && 'zero' === $state )
+		|| ( 'nonzero_interest' === $scope && 'nonzero' === $state );
+}
+
+/**
+ * Resolve consent context only from a server-resolved calculation and its shop.
+ * Never use display GLP or browser interest/visibility/required-ID flags.
+ *
+ * @param array<string, mixed> $shop Trusted snapshot.
+ * @param array<string, mixed> $calculation Server-resolved KOP and months.
+ * @return array<string, mixed>
+ */
+function mtuc_get_calculation_consent_context( array $shop, array $calculation ): array {
+	$kop         = (string) ( $calculation['kop_code'] ?? '' );
+	$months      = (int) ( $calculation['months'] ?? 0 );
+	$entry       = '' !== $kop && $months > 0
+		? mtuc_find_coeff_entry( is_array( $shop['coeff_list'] ?? null ) ? $shop['coeff_list'] : array(), $kop, $months )
+		: null;
+	$coeff       = $entry['coeff'] ?? null;
+	$valid_coeff = ( is_int( $coeff ) || is_float( $coeff ) || is_string( $coeff ) )
+		&& is_numeric( $coeff ) && is_finite( (float) $coeff ) && (float) $coeff > 0;
+	$state   = $valid_coeff ? mtuc_get_consent_interest_state( $entry ) : 'unknown';
+	$context = array(
+		'interest_state'  => $state,
+		'scheme_identity' => wp_json_encode( array( $kop, $months, (int) ( $calculation['filter_id'] ?? 0 ), (string) ( $calculation['scheme_type'] ?? '' ), $state ) ),
+		'applicable_ids'  => array(),
+		'required_ids'    => array(),
+		'valid'           => true,
+	);
+	foreach ( mtuc_get_shop_consents( $shop ) as $consent ) {
+		if ( 'unknown' === $state && 'all' !== $consent['interest_scope'] ) {
+			$context['valid'] = false;
+		}
+		if ( ! mtuc_is_consent_applicable( $consent['interest_scope'], $state ) ) {
+			continue;
+		}
+		$context['applicable_ids'][] = $consent['id'];
+		if ( $consent['mandatory'] ) {
+			$context['required_ids'][] = $consent['id'];
+		}
+	}
+
+	return $context;
+}
+
+/** Register the shared popup / Classic / Blocks consent controller. */
+function mtuc_register_shop_consents_script(): void {
+	$path = MTUC_PLUGIN_DIR . '/js/mtuc-shop-consents.js';
+	wp_register_script( 'mtuc-shop-consents', MTUC_JS_URI . '/mtuc-shop-consents.js', array(), (string) filemtime( $path ), true );
 }
 
 /**
@@ -310,6 +397,9 @@ function mtuc_parse_accepted_consent_ids_from_post( array $posted ): array {
 
 	$accepted = array();
 	foreach ( $parts as $consent_id ) {
+		if ( ! is_scalar( $consent_id ) || is_bool( $consent_id ) ) {
+			continue;
+		}
 		$consent_id = absint( $consent_id );
 		if ( $consent_id > 0 ) {
 			$accepted[] = $consent_id;
@@ -323,11 +413,16 @@ function mtuc_parse_accepted_consent_ids_from_post( array $posted ): array {
  * Validate mandatory consents from checkout/popup POST.
  *
  * @param array<string, mixed> $posted Posted request data.
- * @param array<string, mixed> $shop   Shop `data` object.
+ * @param array<string, mixed> $shop   Trusted submission snapshot.
+ * @param array<string, mixed> $calculation Server-resolved calculation (never POST).
  * @return true|WP_Error
  */
-function mtuc_validate_mandatory_consents_from_post( array $posted, array $shop ) {
-	$required = mtuc_get_mandatory_consent_ids( $shop );
+function mtuc_validate_mandatory_consents_from_post( array $posted, array $shop, array $calculation = array() ) {
+	$context = mtuc_get_calculation_consent_context( $shop, $calculation );
+	if ( ! $context['valid'] ) {
+		return new WP_Error( 'mtuc_consents_unknown_interest', __( 'Лихвата на избраната схема не може да бъде определена. Обновете страницата и изберете схема отново.', 'mtunicredit' ) );
+	}
+	$required = $context['required_ids'];
 	if ( empty( $required ) ) {
 		return true;
 	}
@@ -338,7 +433,7 @@ function mtuc_validate_mandatory_consents_from_post( array $posted, array $shop 
 		if ( ! in_array( $consent_id, $accepted, true ) ) {
 			return new WP_Error(
 				'mtuc_consents_required',
-				__( 'Моля, приемете всички задължителни съгласия.', 'mtunicredit' )
+				__( 'Моля, приемете всички приложими задължителни съгласия. Ако липсват, обновете страницата.', 'mtunicredit' )
 			);
 		}
 	}

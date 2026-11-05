@@ -862,10 +862,12 @@ function mtuc_enqueue_checkout_payment_assets(): void {
 
 		$checkout_js = MTUC_PLUGIN_DIR . '/js/mtuc-checkout-payment.js';
 
+		mtuc_register_shop_consents_script();
+
 		wp_enqueue_script(
 			'mtuc-checkout-payment',
 			MTUC_JS_URI . '/mtuc-checkout-payment.js',
-			array( 'jquery' ),
+			array( 'jquery', 'mtuc-shop-consents' ),
 			file_exists( $checkout_js ) ? (string) filemtime( $checkout_js ) : MTUC_VERSION,
 			true
 		);
@@ -891,10 +893,12 @@ function mtuc_enqueue_checkout_payment_assets(): void {
 
 	mtuc_enqueue_checkout_payment_styles();
 
+	mtuc_register_shop_consents_script();
+
 	wp_enqueue_script(
 		'mtuc-checkout-payment',
 		MTUC_JS_URI . '/mtuc-checkout-payment.js',
-		array( 'jquery' ),
+		array( 'jquery', 'mtuc-shop-consents' ),
 		file_exists( $checkout_js ) ? (string) filemtime( $checkout_js ) : MTUC_VERSION,
 		true
 	);

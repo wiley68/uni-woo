@@ -176,7 +176,7 @@ foreach (
 
 mtuc_cf_assert(
 	false !== strpos( $frontend_src, "array( 'jquery' )" )
-	&& false !== strpos( $frontend_src, "array( 'jquery', 'mtuc-cart-calculator' )" )
+	&& false !== strpos( $frontend_src, "array( 'jquery', 'mtuc-cart-calculator', 'mtuc-shop-consents' )" )
 	&& false !== strpos( $frontend_src, "'wc-blocks-data'" )
 	&& false !== strpos( $frontend_src, "'wp-data'" )
 	&& false !== strpos( $frontend_src, "array( 'mtuc-fonts' )" ),

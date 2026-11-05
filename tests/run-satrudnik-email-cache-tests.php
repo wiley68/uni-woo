@@ -172,5 +172,13 @@ mtuc_se_assert(
 	'E: satrudnik_email is not treated as secret key'
 );
 
+// UNI-CONSENT-001: the shared pull/push ingress must preserve nested scopes.
+foreach ( array( 'all', 'zero_interest', 'nonzero_interest' ) as $scope ) {
+	$consents = array( array( 'id' => 1, 'name' => 'Consent', 'mandatory' => 1, 'interest_scope' => $scope ) );
+	$captured = mtuc_se_prepare_and_capture( mtuc_se_shop( array( 'consents' => $consents ) ) );
+	mtuc_se_assert( is_array( $captured['prepared'] ), 'Consent snapshot prepares: ' . $scope );
+	mtuc_se_assert( $consents === $captured['cached']['consents'], 'Cache writer preserves scope: ' . $scope );
+}
+
 fwrite( STDOUT, 'OK: ' . $mtuc_se_assert_count . " satrudnik_email cache assertions passed\n" );
 exit( 0 );
