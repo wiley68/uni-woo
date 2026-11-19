@@ -26,9 +26,6 @@ class Mtuc_Settings {
 	/** Option key: product page hook position. */
 	public const OPTION_HOOK = 'mtuc_hook';
 
-	/** Option key: homepage advertisement flag (0|1). */
-	public const OPTION_REKLAMA = 'mtuc_reklama';
-
 	/** Option key: debug mode flag (0|1). */
 	public const OPTION_DEBUG = 'mtuc_debug';
 
@@ -58,7 +55,6 @@ class Mtuc_Settings {
 			self::OPTION_UNICID,
 			self::OPTION_SECRET_KEY,
 			self::OPTION_HOOK,
-			self::OPTION_REKLAMA,
 			self::OPTION_DEBUG,
 			self::OPTION_GAP,
 			self::OPTION_PAYBTN,
@@ -74,7 +70,6 @@ class Mtuc_Settings {
 		return array(
 			self::OPTION_STATUS  => 1,
 			self::OPTION_HOOK    => self::DEFAULT_HOOK,
-			self::OPTION_REKLAMA => 0,
 			self::OPTION_DEBUG   => 0,
 			self::OPTION_GAP     => 0,
 			self::OPTION_PAYBTN  => self::PAYBTN_ADD_TO_CART,
@@ -282,7 +277,6 @@ class Mtuc_Settings {
 		update_option( self::OPTION_UNICID, $unicid );
 		update_option( self::OPTION_SECRET_KEY, $secret_key );
 		update_option( self::OPTION_HOOK, $hook );
-		update_option( self::OPTION_REKLAMA, self::post_flag_to_int( $post, self::OPTION_REKLAMA ) );
 		update_option( self::OPTION_DEBUG, self::post_flag_to_int( $post, self::OPTION_DEBUG ) );
 		update_option( self::OPTION_GAP, $gap );
 

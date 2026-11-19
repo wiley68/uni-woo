@@ -5,7 +5,7 @@ Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
 Requires Plugins: woocommerce
-Stable tag: 2.0.3
+Stable tag: 2.0.4
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -50,6 +50,12 @@ Before creating the production installation ZIP, add `secrets/smartucf-key.php` 
 The ZIP is prepared manually and uploaded to the Bank/CP portal. It contains Git source plus deployment-only files (certificates, `secrets/smartucf-key.php`). Merchants install the ZIP normally; they do not edit wp-config or environment variables for the SSL password.
 
 == Changelog ==
+
+= 2.0.4 =
+* Remove the merchant-side advertisement visibility checkbox.
+* Control advertisement visibility centrally through the existing UniCredit Control Panel configuration.
+* Ignore existing saved local advertisement visibility option values.
+* Preserve payment and financing functionality unchanged.
 
 = 2.0.3 =
 * Cache and expose CP `satrudnik_email` in the local shop snapshot.

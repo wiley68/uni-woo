@@ -456,10 +456,6 @@ function mtuc_get_reklama_context( bool $settings_only = false ): ?array {
 		return null;
 	}
 
-	if ( 1 !== (int) Mtuc_Settings::get( Mtuc_Settings::OPTION_REKLAMA ) ) {
-		return null;
-	}
-
 	$unicid = (string) Mtuc_Settings::get( Mtuc_Settings::OPTION_UNICID );
 	if ( '' === $unicid ) {
 		return null;

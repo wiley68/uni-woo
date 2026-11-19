@@ -153,15 +153,6 @@ $mtuc_cache    = Mtuc_Shop_Cache::get_cache_meta( (string) $mtuc_settings[ Mtuc_
 					</td>
 				</tr>
 				<tr>
-					<th scope="row"><?php esc_html_e( 'Визуализиране на реклама', 'mtunicredit' ); ?></th>
-					<td>
-						<label for="mtuc_reklama">
-							<input type="checkbox" name="<?php echo esc_attr( Mtuc_Settings::OPTION_REKLAMA ); ?>" id="mtuc_reklama" value="1" <?php checked( 1, (int) $mtuc_settings[ Mtuc_Settings::OPTION_REKLAMA ] ); ?> />
-							<?php esc_html_e( 'Можете да включвате или изключвате показването на реклама в началната страница на магазина.', 'mtunicredit' ); ?>
-						</label>
-					</td>
-				</tr>
-				<tr>
 					<th scope="row"><?php esc_html_e( 'Режим отстраняване на грешки', 'mtunicredit' ); ?></th>
 					<td>
 						<label for="mtuc_debug">
