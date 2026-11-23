@@ -329,7 +329,7 @@ mtuc_fe_assert(
 );
 
 // ---------------------------------------------------------------------------
-// Process 2 merchant email — ADMIN_EMAIL + EGN + recipients
+// Process 2 merchant email — ADMIN_EMAIL privacy + recipients
 // ---------------------------------------------------------------------------
 
 global $mtuc_fe_mail_log, $mtuc_fe_shop, $mtuc_fe_options;
@@ -345,8 +345,8 @@ mtuc_fe_assert(
 	&& in_array( 'Cc: other@example.com', $mtuc_fe_mail_log[0]['headers'], true ),
 	'Process 2 Cc includes remaining non-admin recipients'
 );
-mtuc_fe_assert( false !== strpos( $mtuc_fe_mail_log[0]['message'], $fake_egn ), 'Process 2 merchant body includes EGN' );
-mtuc_fe_assert( false !== strpos( $mtuc_fe_mail_log[0]['message'], 'ЕГН' ), 'Process 2 merchant body includes EGN label' );
+mtuc_fe_assert( false === strpos( $mtuc_fe_mail_log[0]['message'], $fake_egn ), 'Process 2 merchant body excludes historical EGN' );
+mtuc_fe_assert( false === strpos( $mtuc_fe_mail_log[0]['message'], 'ЕГН' ), 'Process 2 merchant body excludes historical EGN label' );
 mtuc_fe_assert( 1 === (int) $p2->get_meta( MTUC_ORDER_META_PROCESS2_UNI_EMAIL_SENT ), 'Process 2 send-once meta set after success' );
 
 $mtuc_fe_mail_log = array();
@@ -367,7 +367,23 @@ mtuc_fe_assert( false !== strpos( $customer_html, 'Месечна вноска' 
 ob_start();
 mtuc_email_after_order_table_credit_details( $p2, true, false, null );
 $admin_html = (string) ob_get_clean();
-mtuc_fe_assert( false !== strpos( $admin_html, $fake_egn ), 'Process 2 admin Woo email HTML includes EGN' );
+mtuc_fe_assert( false === strpos( $admin_html, $fake_egn ), 'Process 2 admin Woo email HTML excludes historical EGN' );
+
+// Both HTML and plain text must suppress historical values and labels.
+foreach ( array( false, true ) as $admin ) {
+	foreach ( array( false, true ) as $plain ) {
+		ob_start();
+		mtuc_email_after_order_table_credit_details( $p2, $admin, $plain, null );
+		$body = (string) ob_get_clean();
+		foreach ( array( $fake_egn, '0888123456', 'ЕГН', 'Втори телефон' ) as $removed ) {
+			mtuc_fe_assert( false === strpos( $body, $removed ), 'historical field absent from Woo email audience/format' );
+		}
+		mtuc_fe_assert( false !== strpos( $body, mtuc_get_process2_confirmation_message() ), 'Woo email retains Process 2 confirmation' );
+	}
+}
+foreach ( array( '0888123456', 'Втори телефон' ) as $removed ) {
+	mtuc_fe_assert( false === strpos( $admin_html, $removed ), 'admin HTML excludes historical secondary phone' );
+}
 
 // ---------------------------------------------------------------------------
 // Empty / invalid merchant email — no invented fallback

@@ -9,7 +9,9 @@ define( 'ABSPATH', __DIR__ . '/../' );
 define( 'MTUC_PLUGIN_DIR', realpath( __DIR__ . '/..' ) );
 putenv( 'MTUC_SMARTUCF_KEY_PASSWORD=1234' );
 define( 'WP_DEBUG', true );
-define( 'WP_DEBUG_LOG', false );
+if ( ! defined( 'WP_DEBUG_LOG' ) ) {
+	define( 'WP_DEBUG_LOG', false );
+}
 
 /*
  * Explicit SmartUCF credential test harness (AUD-WOO-018-V4).

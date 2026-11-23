@@ -13,28 +13,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/** Financing rows for customer emails / Thank You / order details (no EGN). */
+/** Financing rows for customer emails / Thank You / order details. */
 const MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER = 'customer';
 
-/** Financing rows for Woo admin order panel (standard business block only; no EGN). */
+/** Financing rows for Woo admin order panel (standard business block only). */
 const MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL = 'admin_panel';
 
 /**
- * Financing rows for Process 2 merchant emails used in the manual bank workflow (EGN allowed).
+ * Financing rows for Process 2 merchant emails used in the manual bank workflow.
  */
 const MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL = 'admin_email';
-
-/**
- * Whether the audience may include Process 2 EGN in rendered financing rows.
- *
- * Only Process 2 administrator/merchant email retains EGN for the manual bank process.
- *
- * @param string $audience Audience constant.
- * @return bool
- */
-function mtuc_credit_rows_audience_includes_egn( string $audience ): bool {
-	return MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL === $audience;
-}
 
 /**
  * Credit meta rows for a financing presentation audience (label => value).
@@ -105,19 +93,6 @@ function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): a
 	}
 
 	if ( mtuc_is_process2_order( $order ) ) {
-		// Presentation order matches Process 2 UI: phone2, then EGN.
-		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
-		if ( '' !== $phone2 && MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER !== $audience ) {
-			$rows[ __( 'Втори телефон', 'mtunicredit' ) ] = $phone2;
-		}
-
-		if ( mtuc_credit_rows_audience_includes_egn( $audience ) ) {
-			$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
-			if ( '' !== $egn ) {
-				$rows[ __( 'ЕГН', 'mtunicredit' ) ] = $egn;
-			}
-		}
-
 		$rows[ __( 'Съобщение', 'mtunicredit' ) ] = mtuc_get_process2_confirmation_message();
 	}
 
@@ -131,7 +106,7 @@ function mtuc_get_order_credit_meta_rows( WC_Order $order, string $audience ): a
 }
 
 /**
- * Credit meta rows for the Woo admin order financing panel (EGN excluded).
+ * Credit meta rows for the Woo admin order financing panel.
  *
  * @param WC_Order $order Order instance.
  * @return array<string, string>

@@ -28,6 +28,8 @@ This plugin currently has **no runtime Composer dependencies**, so the package h
 
 The builder copies inputs into a private temporary staging tree, checks parity, uses sorted entries with fixed ZIP timestamps, compression and permissions, verifies the archive, rechecks the current source, then atomically publishes it. It removes its staging tree after success or failure. A failed build leaves any previous completed ZIP in place; that previous artifact must pass verification against current source before use. Existing custom `dist/.htaccess` files are not overwritten.
 
+After successful verification and publication, the builder removes other regular files directly in `dist/` whose names exactly match `woo_uni_<VERSION>.zip` (the same three-component version syntax, including supported prerelease/build suffixes). It always keeps the newly published filename. Symlinks, directories, nested files, checksums, backups and unrelated artifacts are left untouched. Repeated builds are idempotent; generation, verification or publication failures do not trigger cleanup. If removing a previous installer fails, the command reports the cleanup failure and leaves the new verified ZIP in place.
+
 Verify an artifact against the current working source with:
 
 ```bash

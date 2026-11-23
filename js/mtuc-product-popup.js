@@ -36,15 +36,11 @@
 		const $address = $("#mtuc-popup-address");
 		const $phone = $("#mtuc-popup-phone");
 		const $email = $("#mtuc-popup-email");
-		const $egn = $("#mtuc-popup-egn");
-		const $phone2 = $("#mtuc-popup-phone2");
 		const $firstNameError = $("#mtuc-popup-first-name-error");
 		const $lastNameError = $("#mtuc-popup-last-name-error");
 		const $addressError = $("#mtuc-popup-address-error");
 		const $phoneError = $("#mtuc-popup-phone-error");
 		const $emailError = $("#mtuc-popup-email-error");
-		const $egnError = $("#mtuc-popup-egn-error");
-		const $phone2Error = $("#mtuc-popup-phone2-error");
 		const $consentCheckboxes = $popup.find(".mtuc-popup__consent-checkbox");
 		const consents = window.mtucCreateShopConsents(popup);
 		let calculateTimer = null;
@@ -175,24 +171,6 @@
 
 		const isProcess2 = () => !!mtucPopup.process2;
 
-		const isValidEgn = (value) => {
-			const egn = String(value || "").replace(/\D/g, "");
-			if (!/^\d{10}$/.test(egn)) {
-				return false;
-			}
-
-			const year = parseInt(egn.slice(0, 4), 10);
-			const month = parseInt(egn.slice(4, 6), 10);
-			const day = parseInt(egn.slice(6, 8), 10);
-			const date = new Date(year, month - 1, day);
-
-			return (
-				date.getFullYear() === year &&
-				date.getMonth() === month - 1 &&
-				date.getDate() === day
-			);
-		};
-
 		const getSubmitPayload = () => {
 			const schemeKey = String($months.val() || "");
 			const scheme = parseSchemeKey(schemeKey);
@@ -220,10 +198,8 @@
 				address: String($address.val() || "").trim(),
 				phone: String($phone.val() || "").trim(),
 				email: String($email.val() || "").trim(),
-				egn: isProcess2()
-					? String($egn.val() || "").replace(/\D/g, "")
-					: "",
-				phone2: isProcess2() ? String($phone2.val() || "").trim() : "",
+				// Preserve the legacy empty keys only for Process 1.
+				...(!isProcess2() ? { egn: "", phone2: "" } : {}),
 			};
 		};
 
@@ -391,12 +367,6 @@
 				return false;
 			}
 
-			if (isProcess2()) {
-				if (!isValidEgn($egn.val()) || !isValidPhone($phone2.val())) {
-					return false;
-				}
-			}
-
 			return areMandatoryConsentsChecked();
 		};
 
@@ -432,20 +402,6 @@
 			return "";
 		};
 
-		const getEgnFieldError = (value) => {
-			const egn = String(value || "").replace(/\D/g, "");
-			if (egn === "") {
-				return getRequiredFieldError();
-			}
-			if (!isValidEgn(egn)) {
-				return (
-					mtucPopup.i18n.egnInvalid ||
-					"Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD)."
-				);
-			}
-			return "";
-		};
-
 		const getStep2FieldErrors = () => {
 			const errors = {
 				firstName: isNonEmpty($firstName.val())
@@ -459,14 +415,7 @@
 					: getRequiredFieldError(),
 				phone: getPhoneFieldError($phone.val()),
 				email: getEmailFieldError($email.val()),
-				egn: "",
-				phone2: "",
 			};
-
-			if (isProcess2()) {
-				errors.egn = getEgnFieldError($egn.val());
-				errors.phone2 = getPhoneFieldError($phone2.val());
-			}
 
 			return errors;
 		};
@@ -477,10 +426,6 @@
 			$addressError.text(errors.address || "");
 			$phoneError.text(errors.phone || "");
 			$emailError.text(errors.email || "");
-			if (isProcess2()) {
-				$egnError.text(errors.egn || "");
-				$phone2Error.text(errors.phone2 || "");
-			}
 		};
 
 		const clearStep2FieldErrors = () => {
@@ -490,8 +435,6 @@
 				address: "",
 				phone: "",
 				email: "",
-				egn: "",
-				phone2: "",
 			});
 		};
 
@@ -518,10 +461,6 @@
 			$address.val(defaults.address);
 			$phone.val(defaults.phone);
 			$email.val(defaults.email);
-			if (isProcess2()) {
-				$egn.val("");
-				$phone2.val("");
-			}
 			$consentCheckboxes.prop("checked", false);
 			clearStep2FieldErrors();
 			updateSubmitState();
@@ -572,10 +511,6 @@
 				$phoneError.text(errors.phone);
 			} else if (fieldId === "mtuc-popup-email") {
 				$emailError.text(errors.email);
-			} else if (fieldId === "mtuc-popup-egn") {
-				$egnError.text(errors.egn);
-			} else if (fieldId === "mtuc-popup-phone2") {
-				$phone2Error.text(errors.phone2);
 			}
 
 			updateSubmitState();
@@ -1072,8 +1007,6 @@
 			.add($lastName)
 			.add($address)
 			.add($email)
-			.add($egn)
-			.add($phone2)
 			.on("input change", onStep2FieldInput);
 		$phone.on("input", function () {
 			const sanitized = sanitizePhoneValue($(this).val());

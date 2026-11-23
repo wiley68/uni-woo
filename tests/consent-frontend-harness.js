@@ -11,7 +11,7 @@ const contextFor = (zero, identity = zero ? "ZERO|12" : "BASE|6") => ({
 	valid: true, interest_state: zero ? "zero" : "nonzero", scheme_identity: identity,
 	applicable_ids: zero ? [1, 2, 3, 4] : [1, 2, 5, 6], required_ids: zero ? [2, 4] : [2, 6],
 });
-function environment(mode, source = "product") {
+function environment(mode, source = "product", process2 = false) {
 	const elements = new Map();
 	const requests = [];
 	const timers = new Map();
@@ -74,7 +74,7 @@ function environment(mode, source = "product") {
 		requests.push(request); return request;
 	};
 	const document = { events: {}, body: node("body"), getElementById: (id) => elements.get("#" + id) || null, addEventListener() {} };
-	const config = { ajaxUrl: "/fake", nonce: "test", blocks: mode === "blocks", source,
+	const config = { ajaxUrl: "/fake", nonce: "test", blocks: mode === "blocks", source, process2,
 		i18n: { calcError: "calculation error" }, enabledSchemes: [{ key: "6:0", months: 6 }, { key: "12:0", months: 12 }], defaultSchemeKey: "6:0" };
 	const sandbox = { document, jQuery: $, console, URLSearchParams, mtucCheckout: config,
 		mtucPopup: { ...config, source, productId: 10 },
@@ -97,9 +97,10 @@ function environment(mode, source = "product") {
 		checkIds: (...ids) => rows.forEach((r, i) => { if (r.checkbox) r.checkbox.checked = ids.includes(i + 1); }),
 	};
 }
+for (const process2 of [false, true]) {
 for (const [mode, source] of [["popup", "product"], ["popup", "cart"], ["classic", "checkout"], ["blocks", "checkout"]]) {
-	const e = environment(mode, source);
-	const label = mode + "/" + source;
+	const e = environment(mode, source, process2);
+	const label = `P${process2 ? 2 : 1}/${mode}/${source}`;
 	const first = e.change("6:0"); first.resolve(contextFor(false));
 	check(e.rows[2].hidden && e.rows[3].checkbox.disabled && !e.rows[4].hidden, label + " nonzero visibility");
 	e.checkIds(2, 6);
@@ -126,11 +127,29 @@ for (const [mode, source] of [["popup", "product"], ["popup", "cart"], ["classic
 	if (mode === "popup") {
 		for (const field of ["first-name", "last-name", "address"]) e.$("#mtuc-popup-" + field).val("Test");
 		e.$("#mtuc-popup-phone").val("+359888123456"); e.$("#mtuc-popup-email").val("test@example.com");
+		const beforeInvalid = e.requests.length;
+		for (const [field, invalid] of [["phone", "letters"], ["email", "invalid"], ["address", ""]]) {
+			const input = e.$("#mtuc-popup-" + field);
+			const valid = input.val(); input.val(invalid);
+			e.$("#mtuc-popup-submit").trigger("click");
+			check(e.requests.length === beforeInvalid, label + " rejects invalid " + field);
+			input.val(valid);
+		}
+		e.checkIds(); e.$("#mtuc-popup-submit").trigger("click");
+		check(e.requests.length === beforeInvalid, label + " requires mandatory consent");
+		e.checkIds(2, 6);
 		e.$("#mtuc-popup-submit").trigger("click");
+		const payload = e.requests.at(-1).payload;
+		check(payload.security === "test" && !!payload.operation_token, label + " retains nonce and operation token");
+		check(process2 ? !("egn" in payload) && !("phone2" in payload) : payload.egn === "" && payload.phone2 === "", label + " customer payload privacy and P1 compatibility");
 		check(JSON.stringify(e.requests.at(-1).payload.mtuc_consent) === '["2","6"]', label + " popup sends applicable accepted IDs");
 	} else {
 		const controller = e.sandbox.mtucCheckoutBlocksController;
 		check(controller.validate().valid && controller.validate().paymentMethodData.mtuc_consent === "2,6", label + " checkout CSV excludes scoped hidden IDs");
+		check(!("mtuc_egn" in controller.validate().paymentMethodData) && !("mtuc_phone2" in controller.validate().paymentMethodData), label + " checkout payment data omits retired fields");
+		if (mode === "classic") {
+			check(e.$("form.checkout")[0].events["checkout_place_order_mtunicredit.mtucCheckout"]() === true, label + " classic submit accepts absent retired fields");
+		}
 		if (mode === "classic") {
 			e.$(e.document.body).trigger("update_checkout");
 			check(!controller.validate().valid, "Classic refresh invalidates current form");
@@ -142,6 +161,7 @@ for (const [mode, source] of [["popup", "product"], ["popup", "cart"], ["classic
 		e.requests.at(-1).resolve(contextFor(true));
 		check(!replacement.validate().valid, label + " remount requires scoped reacceptance");
 	}
+}
 }
 // Direct helper checks for server context changes and missing current markup.
 const e = environment("popup");

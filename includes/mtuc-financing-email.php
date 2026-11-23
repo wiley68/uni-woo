@@ -3,7 +3,7 @@
  * Financing email orchestration (AUD-WOO-016 Step 7).
  *
  * Decides when financing emails are sent, to whom, and which explicit
- * presentation audience to request. Row shaping / EGN policy live in
+ * presentation audience to request. Row shaping / customer field policy live in
  * mtuc-financing-presentation.php — this module must not rebuild privacy rules.
  *
  * @package MTUC

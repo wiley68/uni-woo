@@ -25,7 +25,6 @@ $reklama_url         = isset( $popup['reklama_url'] ) ? (string) $popup['reklama
 $product_id          = (int) ( $popup['product_id'] ?? 0 );
 $badge_logo_url      = mtuc_get_uni_mini_logo_url();
 $parva_row_class     = $show_first_vnoska ? '' : ' mtuc-popup__row--hidden';
-$process2            = ! empty( $popup['process2'] );
 $consents            = isset( $popup['consents'] ) && is_array( $popup['consents'] ) ? $popup['consents'] : array();
 ?>
 <div id="mtuc-product-popup" class="mtuc-popup" aria-hidden="true" hidden>
@@ -199,24 +198,6 @@ $consents            = isset( $popup['consents'] ) && is_array( $popup['consents
 								<input type="email" id="mtuc-popup-email" class="mtuc-popup__input" value="<?php echo esc_attr( (string) ( $customer['email'] ?? '' ) ); ?>" required aria-required="true" autocomplete="email" />
 								<span class="mtuc-popup__field-error" id="mtuc-popup-email-error" role="alert"></span>
 							</div>
-							<?php if ( $process2 ) : ?>
-							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-phone2">
-									<?php esc_html_e( 'Втори телефон', 'mtunicredit' ); ?>
-									<span class="mtuc-popup__required" aria-hidden="true">*</span>
-								</label>
-								<input type="tel" id="mtuc-popup-phone2" class="mtuc-popup__input" value="" required aria-required="true" autocomplete="tel" inputmode="tel" />
-								<span class="mtuc-popup__field-error" id="mtuc-popup-phone2-error" role="alert"></span>
-							</div>
-							<div class="mtuc-popup__field">
-								<label class="mtuc-popup__field-label" for="mtuc-popup-egn">
-									<?php esc_html_e( 'ЕГН', 'mtunicredit' ); ?>
-									<span class="mtuc-popup__required" aria-hidden="true">*</span>
-								</label>
-								<input type="text" id="mtuc-popup-egn" class="mtuc-popup__input" value="" required aria-required="true" inputmode="numeric" maxlength="10" pattern="\d{10}" autocomplete="off" />
-								<span class="mtuc-popup__field-error" id="mtuc-popup-egn-error" role="alert"></span>
-							</div>
-							<?php endif; ?>
 						</div>
 
 						<?php

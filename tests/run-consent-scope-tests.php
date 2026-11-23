@@ -32,8 +32,15 @@ function sanitize_email( $v ) { return $v; }
 function wp_unslash( $v ) { return $v; }
 function is_email( $v ) { return false !== filter_var( $v, FILTER_VALIDATE_EMAIL ); }
 function current_time( $v ) { return '2026-11-05'; }
-function is_user_logged_in() { return false; }
-function get_current_user_id() { return 0; }
+function is_user_logged_in() { return 0 !== get_current_user_id(); }
+function get_current_user_id() { return $GLOBALS['test_user_id'] ?? 0; }
+class WP_User {
+	public $first_name = 'Test';
+	public $last_name = 'User';
+	public $user_email = 'test@example.com';
+}
+function wp_get_current_user() { return new WP_User(); }
+function get_user_meta( ...$args ) { return ''; }
 function check_ajax_referer( ...$args ) {}
 function get_woocommerce_currency() { return 'EUR'; }
 function mtuc_is_eur_transaction_currency() { return true; }
@@ -83,6 +90,9 @@ function WC() { return (object) array( 'cart' => new WC_Cart(), 'session' => nul
 class WC_Order {
 	public $meta = array();
 	public function get_meta( $key ) { return $this->meta[ $key ] ?? ''; }
+	public function update_meta_data( $key, $value ) { $this->meta[ $key ] = $value; }
+	public function delete_meta_data( $key ) { unset( $this->meta[ $key ] ); }
+	public function save() {}
 	public function get_id() { return 1; }
 	public function get_currency() { return 'EUR'; }
 	public function get_items( ...$args ) { throw new Mtuc_Consent_Stop( 'checkout-passed' ); }
@@ -261,4 +271,80 @@ foreach ( array( 'cart', 'checkout' ) as $source ) {
 	consent_assert( array( 2, 4 ) === $GLOBALS['ajax_result']['consent_context']['required_ids'], $source . ' AJAX shares consent context' );
 }
 consent_assert( 120.0 === $nonzero['monthly_installment'] && 720.0 === $nonzero['total_payable'] && 50.0 === $zero['monthly_installment'], 'financial amounts unchanged' );
+// UNI-WOO-PROCESS2-FIELDS-001: real Process 2 handlers with absent/legacy keys.
+$shop['uni_proces'] = 1;
+$legacy_customer = $customer + array( 'egn' => 'REMOVED-EGN', 'phone2' => 'REMOVED-PHONE2' );
+consent_assert( $customer === mtuc_validate_popup_customer_payload( $legacy_customer ), 'legacy popup fields ignored, no customer aliases' );
+foreach ( array( 'first_name' => 'mtuc_missing_first_name', 'last_name' => 'mtuc_missing_last_name', 'address' => 'mtuc_missing_address', 'phone' => 'mtuc_invalid_phone', 'email' => 'mtuc_invalid_email' ) as $field => $code ) {
+	$invalid_customer = $customer;
+	$invalid_customer[ $field ] = '';
+	consent_assert( consent_error( mtuc_validate_popup_customer_payload( $invalid_customer ), $code ), 'required customer validation remains: ' . $field );
+}
+foreach ( array( 'phone' => 'letters', 'email' => 'invalid-email' ) as $field => $value ) {
+	$invalid_customer = $customer;
+	$invalid_customer[ $field ] = $value;
+	consent_assert( is_wp_error( mtuc_validate_popup_customer_payload( $invalid_customer ) ), 'invalid primary field rejected: ' . $field );
+}
+foreach ( array( 0, 42 ) as $user_id ) {
+	$GLOBALS['test_user_id'] = $user_id;
+	foreach ( array( 'product', 'cart' ) as $source ) {
+		foreach ( array( $customer, $legacy_customer ) as $submitted ) {
+			$_POST = $submitted + array( 'source' => $source, 'product_id' => 10, 'quantity' => 1, 'scheme_key' => '6:0', 'mtuc_consent' => array( 2, 6 ) );
+			consent_assert( 'creation-boundary' === consent_capture( 'mtuc_ajax_popup_submit' ), 'P2 guest/logged-in ' . $source . ' accepts absent or legacy keys' );
+		}
+	}
+	foreach ( array( array( 2, 6 ), '2,6' ) as $accepted ) {
+		$_POST = array( 'mtuc_scheme_key' => '6:0', 'mtuc_consent' => $accepted );
+		consent_assert( $gateway->validate_fields(), 'P2 Classic/Blocks validates without removed fields' );
+		consent_assert( 'checkout-passed' === consent_capture( static function () use ( $gateway ) { return $gateway->process_payment( 1 ); } ), 'P2 checkout payment resumes without removed metadata' );
+		$_POST += array( 'mtuc_egn' => 'REMOVED-EGN', 'mtuc_phone2' => 'REMOVED-PHONE2' );
+		consent_assert( $gateway->validate_fields(), 'P2 Classic/Blocks ignores legacy submitted keys' );
+	}
+}
+$GLOBALS['test_user_id'] = 0;
+
+// Use the real identity and checkout-create hook after the prior boundary tests.
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-process-identity.php';
+require_once MTUC_PLUGIN_DIR . '/includes/mtuc-checkout-payment.php';
+foreach ( array( 0, 1 ) as $process_flag ) {
+	$shop['uni_proces'] = $process_flag;
+	$_POST = array( 'payment_method' => MTUC_PAYMENT_GATEWAY_ID, 'mtuc_egn' => 'REMOVED-EGN', 'mtuc_phone2' => 'REMOVED-PHONE2' );
+	$new_order = new WC_Order();
+	mtuc_checkout_save_process2_order_meta( $new_order, $_POST );
+	consent_assert( ( $process_flag ? 2 : 1 ) === mtuc_get_order_process_identity( $new_order ), 'checkout persists exact process identity without customer keys' );
+	consent_assert( ! array_key_exists( '_mtuc_egn', $new_order->meta ) && ! array_key_exists( '_mtuc_phone2', $new_order->meta ), 'checkout does not persist removed fields' );
+	if ( $process_flag ) {
+		consent_assert( 1 === $new_order->meta[ MTUC_ORDER_META_PROCESS2 ], 'legacy P2 identity marker retained' );
+	}
+}
+$shop['uni_proces'] = 1;
+foreach ( array( 'product', 'cart' ) as $source ) {
+	$new_order = new WC_Order();
+	mtuc_save_order_process2_identity( $new_order );
+	$snapshot_key = 'cart' === $source ? MTUC_ORDER_META_CART_OP_SNAPSHOT : MTUC_ORDER_META_PRODUCT_OP_SNAPSHOT;
+	$snapshot = 'cart' === $source
+		? mtuc_build_cart_operation_snapshot( $legacy_customer, $nonzero, array( array( 'product_id' => 10, 'quantity' => 1, 'line_total' => 600 ) ), array(), 600 )
+		: mtuc_build_product_operation_snapshot( $legacy_customer, $nonzero, 10, 0, 1, 600 );
+	$result = 'cart' === $source ? mtuc_persist_cart_operation_snapshot( $new_order, $snapshot ) : mtuc_persist_product_operation_snapshot( $new_order, $snapshot );
+	consent_assert( true === $result && $customer === $snapshot['customer'], $source . ' new persisted snapshot omits removed fields' );
+	consent_assert( ! array_key_exists( '_mtuc_egn', $new_order->meta ) && ! array_key_exists( '_mtuc_phone2', $new_order->meta ), $source . ' no removed metadata' );
+	consent_assert( $nonzero === $snapshot['calculation'] && 2 === mtuc_get_order_process_identity( $new_order ), $source . ' financial values and identity unchanged' );
+	// Seed a historical snapshot directly, keeping its original fingerprint valid.
+	$snapshot['customer'] = $legacy_customer;
+	if ( 'cart' === $source ) {
+		$snapshot['fingerprint'] = mtuc_cart_operation_snapshot_fingerprint( $snapshot );
+		$new_order->meta[ MTUC_ORDER_META_CART_INIT_FINGERPRINT ] = $snapshot['fingerprint'];
+	}
+	$new_order->meta[ $snapshot_key ] = json_encode( $snapshot );
+	$before = $new_order->meta;
+	$read = 'cart' === $source ? mtuc_read_cart_operation_snapshot( $new_order ) : mtuc_read_product_operation_snapshot( $new_order );
+	consent_assert( null !== $read && $customer === mtuc_filter_operation_customer( $read['customer'] ), $source . ' historical customer filtered after integrity checks' );
+	consent_assert( $before === $new_order->meta, $source . ' historical metadata and snapshot not rewritten' );
+	if ( 'cart' === $source ) {
+		consent_assert( $snapshot['fingerprint'] === mtuc_cart_operation_snapshot_fingerprint( $read ), 'historical Cart fingerprint unchanged and valid' );
+		$snapshot['expected_total'] = 601;
+		$new_order->meta[ $snapshot_key ] = json_encode( $snapshot );
+		consent_assert( null === mtuc_read_cart_operation_snapshot( $new_order ), 'Cart tampering still rejected' );
+	}
+}
 echo 'OK consent-scope ' . $count . ' assertions' . PHP_EOL;

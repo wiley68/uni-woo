@@ -359,6 +359,7 @@ function mtuc_cp_fixture_product_context( int $order_id = 874 ): array {
 		'address'    => 'ул. Тестова 1',
 		// Fake EGN for privacy tests — must NOT appear in CP payload.
 		'egn'        => '8001010000',
+		'phone2'     => 'SECONDARY-PHONE-SENTINEL',
 	);
 
 	$calculation = array(
@@ -450,6 +451,8 @@ $expected_p2 = $expected_p1;
 
 mtuc_cp_assert_same( $expected_p2, $actual_p2, 'Process 2 product CP payload golden contract' );
 mtuc_cp_assert( ! array_key_exists( 'egn', $actual_p2 ), 'P2 CP payload must not include EGN' );
+mtuc_cp_assert( ! array_key_exists( 'phone2', $actual_p2 ), 'P2 CP payload must not include phone2' );
+mtuc_cp_assert( false === strpos( wp_json_encode( $actual_p2 ), 'SECONDARY-PHONE-SENTINEL' ), 'P2 CP payload must not serialize historical phone2' );
 mtuc_cp_assert( ! array_key_exists( 'status', $actual_p2 ), 'F08 P2 create omits status' );
 mtuc_cp_assert( ! array_key_exists( 'status_id', $actual_p2 ), 'F08 P2 create omits status_id' );
 mtuc_cp_assert(

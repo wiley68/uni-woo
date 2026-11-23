@@ -129,7 +129,7 @@ if ( ! function_exists( 'get_current_user_id' ) ) {
 	 * @return int
 	 */
 	function get_current_user_id() {
-		return 0;
+		return $GLOBALS['mtuc_fields_user_id'] ?? 0;
 	}
 }
 
@@ -958,6 +958,10 @@ if ( ! function_exists( 'wc_create_order' ) ) {
 	 * @return WC_Order
 	 */
 	function wc_create_order( $args = array() ) {
+		if ( isset( $GLOBALS['mtuc_fields_next_order'] ) ) {
+			$GLOBALS['mtuc_fields_create_args'] = $args;
+			return $GLOBALS['mtuc_fields_next_order'];
+		}
 		unset( $args );
 		return mtuc_so_create_test_order( false );
 	}
@@ -967,7 +971,7 @@ if ( ! function_exists( 'is_user_logged_in' ) ) {
 	 * @return bool
 	 */
 	function is_user_logged_in() {
-		return false;
+		return 0 !== get_current_user_id();
 	}
 }
 
@@ -2646,6 +2650,55 @@ foreach ( array( 1, 2 ) as $reservation_process ) {
 	mtuc_so_assert( is_wp_error( $rejected ) && 'mtuc_currency_mismatch' === $rejected->get_error_code(), $label . ' blocks successful replay' );
 	mtuc_so_assert( $save_count === $reserved_order->save_count, $label . ' stops before save or send claim' );
 }
+
+// UNI-WOO-PROCESS2-FIELDS-001: real new-order and recovery initializers.
+$fields_customer = array( 'first_name' => 'Test', 'last_name' => 'User', 'address' => 'Test Address', 'phone' => '+359888123456', 'email' => 'test@example.com' );
+$fields_lines = array( array( 'product' => wc_get_product( 20 ), 'product_id' => 20, 'quantity' => 1, 'line_total' => 100.0 ) );
+$fields_calc = $prod_calc;
+$fields_calc['price'] = 100.0;
+$GLOBALS['mtuc_test_wc']->cart = null;
+foreach ( array( 0, 42 ) as $fields_user_id ) {
+	$GLOBALS['mtuc_fields_user_id'] = $fields_user_id;
+	foreach ( array( 'product', 'cart' ) as $fields_source ) {
+		$fields_id = 1900 + $fields_user_id + ( 'cart' === $fields_source ? 1 : 0 );
+		$fields_order = new Mtuc_So_Recoverable_Cart_Order( $fields_id );
+		$GLOBALS['mtuc_test_orders'][ $fields_id ] = $fields_order;
+		$GLOBALS['mtuc_fields_next_order'] = $fields_order;
+		$fields_created = 'cart' === $fields_source
+			? mtuc_create_cart_popup_pending_order( $fields_customer, $fields_calc, $fields_lines )
+			: mtuc_create_popup_pending_order( $fields_customer, $fields_calc, wc_get_product( 20 ), 20, 0, 1, 100.0 );
+		$label = $fields_source . ' customer ' . $fields_user_id;
+		mtuc_so_assert( $fields_created === $fields_order, $label . ' initializer creates order without retired fields' );
+		mtuc_so_assert( $fields_user_id === ( $GLOBALS['mtuc_fields_create_args']['customer_id'] ?? 0 ), $label . ' preserves customer ownership' );
+		mtuc_save_order_process2_identity( $fields_order );
+		mtuc_so_assert( 2 === mtuc_get_order_process_identity( $fields_order ) && 1 === (int) $fields_order->get_meta( MTUC_ORDER_META_PROCESS2 ), $label . ' retains canonical and legacy identity' );
+		mtuc_so_assert( '' === $fields_order->get_meta( '_mtuc_egn' ) && '' === $fields_order->get_meta( '_mtuc_phone2' ), $label . ' creates no retired metadata' );
+		$fields_key = 'cart' === $fields_source ? MTUC_ORDER_META_CART_OP_SNAPSHOT : MTUC_ORDER_META_PRODUCT_OP_SNAPSHOT;
+		$fields_snap = json_decode( $fields_order->get_meta( $fields_key ), true );
+		mtuc_so_assert( $fields_customer === $fields_snap['customer'], $label . ' snapshot contains only current customer fields' );
+		mtuc_so_assert( 100.0 === (float) $fields_order->get_total(), $label . ' financing total remains exact' );
+		// An old immutable snapshot may contain retired fields: resume it without rewriting.
+		$fields_snap['customer']['egn'] = 'REMOVED-EGN';
+		$fields_snap['customer']['phone2'] = 'REMOVED-PHONE2';
+		if ( 'cart' === $fields_source ) {
+			$fields_snap['fingerprint'] = mtuc_cart_operation_snapshot_fingerprint( $fields_snap );
+			$fields_order->update_meta_data( MTUC_ORDER_META_CART_INIT_FINGERPRINT, $fields_snap['fingerprint'] );
+		}
+		$fields_raw = wp_json_encode( $fields_snap );
+		$fields_order->update_meta_data( $fields_key, $fields_raw );
+		$fields_order->update_meta_data( MTUC_ORDER_META_POPUP_INIT_STATE, MTUC_POPUP_INIT_INITIALIZING );
+		$fields_resumed = 'cart' === $fields_source
+			? mtuc_create_cart_popup_pending_order( $fields_customer, $fields_calc, array(), null, $fields_order )
+			: mtuc_create_popup_pending_order( $fields_customer, $fields_calc, wc_get_product( 20 ), 20, 0, 1, 100.0, null, $fields_order );
+		mtuc_so_assert( $fields_resumed === $fields_order, $label . ' resumes historical order without retired metadata' );
+		mtuc_so_assert( $fields_raw === $fields_order->get_meta( $fields_key ), $label . ' leaves historical snapshot untouched' );
+		mtuc_so_assert( '' === $fields_order->get_meta( '_mtuc_egn' ) && '' === $fields_order->get_meta( '_mtuc_phone2' ), $label . ' recovery does not copy retired fields into metadata' );
+		if ( 'cart' === $fields_source ) {
+			mtuc_so_assert( null !== mtuc_read_cart_operation_snapshot( $fields_order ), $label . ' historical fingerprint remains valid after recovery' );
+		}
+	}
+}
+unset( $GLOBALS['mtuc_fields_user_id'], $GLOBALS['mtuc_fields_next_order'] );
 
 fwrite( STDOUT, "OK: {$mtuc_assert_count} submission ownership assertions passed\n" );
 exit( 0 );

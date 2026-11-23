@@ -196,11 +196,9 @@ It is used on predetermined places, for example:
 
 This standard block may be adapted only in predetermined business cases.
 
-Example:
-
-- for Process 2, a second phone may be added;
-- for Process 2, EGN may be added;
-- but only on places where that is explicitly allowed.
+Process 2 permanently excludes EGN and secondary phone, including historical
+values, from all customer, merchant and administrator presentations. The
+Process 2 confirmation message remains part of the block.
 
 Do **not** automatically extend this block with internal lifecycle/debug data.
 
@@ -300,7 +298,98 @@ Later SmartUCF statuses: store and display the returned text/value as received (
 
 ---
 
-## 6. Document history
+## 6. Process 2 customer fields and historical cleanup
+
+### 6.1. Permanent runtime behavior (UNI-WOO-PROCESS2-FIELDS-001)
+
+Process 2 collects first name, last name, address, primary phone and email.
+Product/Cart popups and Classic/Blocks Checkout do not render, validate or submit
+`egn`, `phone2`, `mtuc_egn` or `mtuc_phone2`. Old submitted keys are ignored.
+Primary customer validation, financing selection, calculations and applicable
+mandatory consents remain required. Process 1 popup AJAX preserves its existing
+empty `egn` and `phone2` keys for internal compatibility only.
+
+New Process 2 orders do not write `_mtuc_egn` or `_mtuc_phone2`; new Product/Cart
+operation snapshots omit `customer.egn` and `customer.phone2`. Snapshot schema
+version, currency, financial values, ownership and operation evidence remain
+unchanged. `_mtuc_process`, `_mtuc_process2` and the process identity state machine
+remain authoritative. Conflicting or unknown identities continue to fail closed.
+
+Historical metadata is neither displayed nor required for recovery. Historical
+snapshot integrity is checked before filtering the in-memory customer copy;
+runtime does not rewrite stored snapshots or fingerprints. Both fields remain
+excluded from CP and banking payloads and frozen CP create evidence. CP request
+builders, transport, authentication, callbacks and retry classifications remain
+unchanged. CP create error logs contain error codes instead of raw remote messages.
+
+### 6.2. Separate controlled cleanup procedure — NOT executed by this change
+
+Cleanup requires a separately approved maintenance operation; there is no
+activation hook, runtime migration, database command or cleanup executable in this
+implementation. Rehearse the procedure on an isolated database copy first.
+
+1. **Protect and freeze the input.** Take an access-controlled database backup and
+   record the plugin revision and WooCommerce order storage mode (HPOS or legacy).
+   Use WooCommerce order APIs for discovery and writes, covering all order statuses.
+   Pause financing submissions, retries, callbacks, email workers and administrative
+   edits for the selected batch, or acquire the same exclusive operation locks and
+   prove all writers respect them. Do not race an active operation. Keep backups
+   and any rollback material encrypted and outside logs or source control; record
+   a retention/deletion date because they also contain the historical values.
+2. **Dry-run only.** Classify every candidate using
+   `mtuc_classify_order_process_identity()`. Only `status=clean, process=2` is
+   eligible. Report counts and order IDs, never customer values. Report Process 1,
+   fresh, unknown and conflicting identities as skipped; never infer Process 2 from
+   the current shop setting, the presence of the retired fields or a snapshot.
+   Include a digest of the original metadata so execution can reject stale input.
+3. **Validate before planning writes.** For each eligible order, inspect
+   `_mtuc_egn`, `_mtuc_phone2`, `_mtuc_product_op_snapshot` and
+   `_mtuc_cart_op_snapshot`. Validate snapshot JSON, supported schema, currency,
+   customer/calculation structure and all existing integrity checks. For Cart,
+   require the original snapshot fingerprint to match
+   `mtuc_cart_operation_snapshot_fingerprint()` and the coordinated
+   `_mtuc_cart_init_fingerprint` to match the snapshot fingerprint. Skip malformed,
+   unsupported or inconsistent records for manual investigation; never repair them
+   implicitly. An absent snapshot needs no replacement or new snapshot.
+4. **Prepare the exact change in memory.** Delete only `_mtuc_egn` and
+   `_mtuc_phone2`. In each present snapshot, remove only `customer.egn` and
+   `customer.phone2`. Preserve every other value and its type, including schema
+   version, calculation, lines, adjustments, currency, expected total and submission
+   source. For a changed Cart snapshot, compute the fingerprint using the existing
+   helper on the sanitized complete snapshot and set both its `fingerprint` and
+   `_mtuc_cart_init_fingerprint` to that value. Never use the legacy line-only
+   fingerprint function. Leave `_mtuc_cart_init_snapshot` unchanged. Product has no
+   corresponding fingerprint to regenerate.
+5. **Explicit execution.** Obtain separate approval for a fixed dry-run manifest,
+   environment, order ID allowlist and batch size. Re-read identity, original
+   digests and all integrity checks under the write exclusion. Abort a changed or
+   uncertain record. Apply each order atomically to the actual backing order-meta
+   tables, accounting for HPOS synchronization where enabled. Commit the two Cart
+   fingerprint writes together with the snapshot and metadata deletions. Invalidate
+   WooCommerce order caches and re-read from storage. If atomicity or exclusion
+   cannot be guaranteed for that installation, stop instead of partially writing.
+   Do not invoke payment, CP, banking or notification functions during cleanup.
+6. **Verification and rollback.** Check the two metadata keys and both snapshot
+   customer keys are absent on changed orders; compare every unrelated snapshot
+   value against the protected original. Verify both Cart fingerprint copies and
+   the existing Cart reader. Compare process identity/evidence, operation tokens,
+   ownership, creation references, CP IDs, frozen CP create evidence, outcomes,
+   callback/signature evidence, bank statuses and email/retry markers before and
+   after: all must be identical. Verify unchanged order totals and line items.
+   Re-run the dry-run: eligible changed records must now require zero writes.
+   Test recovery, email/panel privacy and payload allowlists with mocked services
+   on the isolated copy. Log only counts, IDs and verification results. If a batch
+   fails, restore that order's exact protected metadata and both original Cart
+   fingerprint copies atomically while writers remain paused, then invalidate
+   caches and verify. Resume workers only after verification succeeds.
+
+Uncertain process identity is always a manual investigation queue, never an
+automatic deletion or snapshot rewrite. Cleanup is idempotent and must not modify
+historical Process 1 records under this Process 2 authorization.
+
+## 7. Document history
 
 - Introduced as the canonical business-rules source for bank status and leasing presentation in the Woo module.
 - Supersedes any prior informal notes that treated internal lifecycle values as public bank statuses, invented SmartUCF status mappings, or allowed diagnostic fields in the standard leasing block.
+- 2026-11-23: permanently removed EGN and secondary phone from Process 2 runtime;
+  documented a separate, unexecuted historical cleanup procedure.

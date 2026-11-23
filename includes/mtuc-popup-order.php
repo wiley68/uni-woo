@@ -346,11 +346,10 @@ function mtuc_is_process2_order( WC_Order $order ): bool {
 /**
  * Validate popup step-2 customer payload from POST.
  *
- * @param array<string, mixed> $post      Raw POST.
- * @param bool                 $process2  Whether Process 2 extra fields are required.
+ * @param array<string, mixed> $post Raw POST.
  * @return array<string, string>|WP_Error
  */
-function mtuc_validate_popup_customer_payload( array $post, bool $process2 = false ) {
+function mtuc_validate_popup_customer_payload( array $post ) {
 	$first_name = isset( $post['first_name'] ) ? sanitize_text_field( wp_unslash( $post['first_name'] ) ) : '';
 	$last_name  = isset( $post['last_name'] ) ? sanitize_text_field( wp_unslash( $post['last_name'] ) ) : '';
 	$address    = isset( $post['address'] ) ? sanitize_text_field( wp_unslash( $post['address'] ) ) : '';
@@ -384,76 +383,20 @@ function mtuc_validate_popup_customer_payload( array $post, bool $process2 = fal
 		'email'      => $email,
 	);
 
-	if ( $process2 ) {
-		$egn    = isset( $post['egn'] ) ? mtuc_sanitize_egn( (string) wp_unslash( $post['egn'] ) ) : '';
-		$phone2 = isset( $post['phone2'] ) ? sanitize_text_field( wp_unslash( $post['phone2'] ) ) : '';
-		$phone2 = preg_replace( '/[^0-9+() -]/', '', $phone2 );
-		$phone2 = is_string( $phone2 ) ? trim( $phone2 ) : '';
-
-		if ( '' === $egn ) {
-			return new WP_Error( 'mtuc_missing_egn', __( 'Полето „ЕГН“ е задължително.', 'mtunicredit' ) );
-		}
-		if ( ! mtuc_validate_bulgarian_egn( $egn ) ) {
-			return new WP_Error( 'mtuc_invalid_egn', __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ) );
-		}
-		if ( ! mtuc_validate_customer_phone( $phone2 ) ) {
-			return new WP_Error( 'mtuc_invalid_phone2', __( 'Въведете валиден втори телефонен номер.', 'mtunicredit' ) );
-		}
-
-		$customer['egn']     = $egn;
-		$customer['phone2']  = $phone2;
-	}
-
 	return $customer;
 }
 
 /**
- * Validate Process 2-only fields from POST (checkout).
+ * Persist durable Process 2 identity independently of customer fields.
  *
- * @param array<string, mixed> $post Raw POST.
- * @return array{egn:string,phone2:string}|WP_Error
- */
-function mtuc_validate_process2_fields_from_post( array $post ) {
-	$egn    = isset( $post['mtuc_egn'] ) ? mtuc_sanitize_egn( (string) wp_unslash( $post['mtuc_egn'] ) ) : '';
-	$phone2 = isset( $post['mtuc_phone2'] ) ? sanitize_text_field( wp_unslash( $post['mtuc_phone2'] ) ) : '';
-	$phone2 = preg_replace( '/[^0-9+() -]/', '', $phone2 );
-	$phone2 = is_string( $phone2 ) ? trim( $phone2 ) : '';
-
-	if ( '' === $egn ) {
-		return new WP_Error( 'mtuc_missing_egn', __( 'Полето „ЕГН“ е задължително.', 'mtunicredit' ) );
-	}
-	if ( ! mtuc_validate_bulgarian_egn( $egn ) ) {
-		return new WP_Error( 'mtuc_invalid_egn', __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ) );
-	}
-	if ( ! mtuc_validate_customer_phone( $phone2 ) ) {
-		return new WP_Error( 'mtuc_invalid_phone2', __( 'Въведете валиден втори телефонен номер.', 'mtunicredit' ) );
-	}
-
-	return array(
-		'egn'    => $egn,
-		'phone2' => $phone2,
-	);
-}
-
-/**
- * Persist Process 2 customer fields on the order (not sent to CP).
- *
- * @param WC_Order              $order    Order instance.
- * @param array<string, string> $customer Validated customer fields.
+ * @param WC_Order              $order Order instance.
  * @return void
  */
-function mtuc_save_order_process2_customer_meta( WC_Order $order, array $customer ): void {
+function mtuc_save_order_process2_identity( WC_Order $order ): void {
 	if ( function_exists( 'mtuc_persist_order_process_identity' ) ) {
 		mtuc_persist_order_process_identity( $order, 2 );
 	} else {
 		$order->update_meta_data( MTUC_ORDER_META_PROCESS2, 1 );
-	}
-
-	if ( isset( $customer['egn'] ) && '' !== $customer['egn'] ) {
-		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'egn', (string) $customer['egn'] );
-	}
-	if ( isset( $customer['phone2'] ) && '' !== $customer['phone2'] ) {
-		$order->update_meta_data( MTUC_ORDER_META_PREFIX . 'phone2', (string) $customer['phone2'] );
 	}
 }
 
@@ -1444,9 +1387,9 @@ function mtuc_fail_order_on_cp_create_error( WC_Order $order, $error_or_reason =
 		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
 			mtuc_record_order_financing_diagnostic( $order, $error_or_reason, 'cp' );
 		}
-		$reason = $error_or_reason->get_error_message();
+		$reason = sanitize_key( $error_or_reason->get_error_code() );
 	} else {
-		$reason = trim( (string) $error_or_reason );
+		$reason = '' !== trim( (string) $error_or_reason ) ? 'mtuc_cp_create_failed' : '';
 		if ( '' !== $reason && function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
 			mtuc_record_order_financing_diagnostic(
 				$order,
@@ -1526,9 +1469,9 @@ function mtuc_record_cp_create_outcome_unknown( WC_Order $order, $error_or_reaso
 		if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
 			mtuc_record_order_financing_diagnostic( $order, $error_or_reason, 'cp' );
 		}
-		$reason = $error_or_reason->get_error_message();
+		$reason = sanitize_key( $error_or_reason->get_error_code() );
 	} else {
-		$reason = trim( (string) $error_or_reason );
+		$reason = '' !== trim( (string) $error_or_reason ) ? 'mtuc_cp_create_unknown' : '';
 		if ( '' !== $reason && function_exists( 'mtuc_record_order_financing_diagnostic' ) ) {
 			mtuc_record_order_financing_diagnostic(
 				$order,
@@ -1982,18 +1925,6 @@ function mtuc_process_checkout_order_payment( WC_Order $order, array $posted ) {
 		return $cart_state;
 	}
 
-	if ( mtuc_is_process2_order( $order ) ) {
-		$egn = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'egn' );
-		$phone2 = (string) $order->get_meta( MTUC_ORDER_META_PREFIX . 'phone2' );
-		if ( '' === $egn || ! mtuc_validate_bulgarian_egn( $egn ) || ! mtuc_validate_customer_phone( $phone2 ) ) {
-			mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
-			return new WP_Error(
-				'mtuc_missing_process2_fields',
-				__( 'Моля, попълнете валидни ЕГН и втори телефон.', 'mtunicredit' )
-			);
-		}
-	}
-
 	$cart_total = mtuc_get_canonical_financeable_order_total( $order );
 	if ( $cart_total <= 0 || ! mtuc_is_product_price_in_shop_range( $shop, $cart_total ) ) {
 		mtuc_release_popup_submit_lock( $lock_key, $lock_owner );
@@ -2429,6 +2360,18 @@ function mtuc_financing_amounts_equal( float $left, float $right ): bool {
 }
 
 /**
+ * Exclude retired fields from new snapshots and historical recovery customers.
+ *
+ * @param array<string, string> $customer Customer fields.
+ * @return array<string, string>
+ */
+function mtuc_filter_operation_customer( array $customer ): array {
+	unset( $customer['egn'], $customer['phone2'] );
+
+	return $customer;
+}
+
+/**
  * Build immutable Product operation snapshot from server-validated values.
  *
  * @param array<string, string> $customer     Customer fields.
@@ -2458,7 +2401,7 @@ function mtuc_build_product_operation_snapshot(
 		'line_total'        => round( $line_price, 4 ),
 		'unit_price'        => round( $line_price / $qty, 4 ),
 		'currency'          => mtuc_operation_snapshot_currency(),
-		'customer'          => $customer,
+		'customer'          => mtuc_filter_operation_customer( $customer ),
 		'calculation'       => $calculation,
 		'submission_source' => 'product_popup',
 	);
@@ -2571,7 +2514,7 @@ function mtuc_build_cart_operation_snapshot(
 				: (float) ( $calculation['price'] ?? 0 ),
 			2
 		),
-		'customer'          => $customer,
+		'customer'          => mtuc_filter_operation_customer( $customer ),
 		'calculation'       => $calculation,
 		'submission_source' => 'cart_popup',
 	);
@@ -2852,7 +2795,7 @@ function mtuc_create_popup_pending_order(
 		if ( is_wp_error( $currency_ok ) ) {
 			return $currency_ok;
 		}
-		$customer     = is_array( $snapshot['customer'] ) ? $snapshot['customer'] : $customer;
+		$customer     = is_array( $snapshot['customer'] ) ? mtuc_filter_operation_customer( $snapshot['customer'] ) : $customer;
 		$calculation  = is_array( $snapshot['calculation'] ) ? $snapshot['calculation'] : $calculation;
 		$parent_id    = (int) ( $snapshot['product_id'] ?? $parent_id );
 		$variation_id = (int) ( $snapshot['variation_id'] ?? $variation_id );
@@ -3025,7 +2968,7 @@ function mtuc_create_cart_popup_pending_order(
 		if ( is_wp_error( $currency_ok ) ) {
 			return $currency_ok;
 		}
-		$customer    = is_array( $snapshot['customer'] ) ? $snapshot['customer'] : $customer;
+		$customer    = is_array( $snapshot['customer'] ) ? mtuc_filter_operation_customer( $snapshot['customer'] ) : $customer;
 		$calculation = is_array( $snapshot['calculation'] ) ? $snapshot['calculation'] : $calculation;
 		$adjustments = isset( $snapshot['adjustments'] ) && is_array( $snapshot['adjustments'] )
 			? $snapshot['adjustments']
@@ -3766,7 +3709,7 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 
 	$cart_snap = mtuc_read_cart_operation_snapshot( $order );
 	if ( null !== $cart_snap ) {
-		$customer    = is_array( $cart_snap['customer'] ) ? $cart_snap['customer'] : $customer;
+		$customer    = is_array( $cart_snap['customer'] ) ? mtuc_filter_operation_customer( $cart_snap['customer'] ) : $customer;
 		$calculation = is_array( $cart_snap['calculation'] ) ? $cart_snap['calculation'] : $calculation;
 		$cart_lines  = isset( $cart_snap['lines'] ) && is_array( $cart_snap['lines'] )
 			? $cart_snap['lines']
@@ -3817,11 +3760,11 @@ function mtuc_ajax_popup_submit_cart( array $customer ): void {
 			mtuc_send_customer_safe_json_error( $process_id, 500, 'general' );
 		}
 		if ( 2 === (int) $process_id ) {
-			mtuc_save_order_process2_customer_meta( $order, $customer );
+			mtuc_save_order_process2_identity( $order );
 		}
 		$order->save();
 	} elseif ( mtuc_is_shop_process_2( $shop ) ) {
-		mtuc_save_order_process2_customer_meta( $order, $customer );
+		mtuc_save_order_process2_identity( $order );
 	}
 
 	$submission = mtuc_complete_order_bank_submission( $order, $customer, $calculation, $shop );
@@ -4084,7 +4027,7 @@ function mtuc_ajax_popup_submit(): void {
 	$shop = function_exists( 'mtuc_get_shop_data_for_submission' ) ? mtuc_get_shop_data_for_submission() : mtuc_get_shop_data();
 	$process2 = ! is_wp_error( $shop ) && is_array( $shop ) && mtuc_is_shop_process_2( $shop );
 
-	$customer = mtuc_validate_popup_customer_payload( $_POST, $process2 );
+	$customer = mtuc_validate_popup_customer_payload( $_POST );
 	if ( is_wp_error( $customer ) ) {
 		mtuc_send_customer_safe_json_error( $customer, 400, 'general' );
 	}
@@ -4226,7 +4169,7 @@ function mtuc_ajax_popup_submit(): void {
 
 	$product_snap = mtuc_read_product_operation_snapshot( $order );
 	if ( null !== $product_snap ) {
-		$customer     = is_array( $product_snap['customer'] ) ? $product_snap['customer'] : $customer;
+		$customer     = is_array( $product_snap['customer'] ) ? mtuc_filter_operation_customer( $product_snap['customer'] ) : $customer;
 		$calculation  = is_array( $product_snap['calculation'] ) ? $product_snap['calculation'] : $calculation;
 		$parent_id    = (int) ( $product_snap['product_id'] ?? $parent_id );
 		$variation_id = (int) ( $product_snap['variation_id'] ?? $variation_id );
@@ -4253,7 +4196,7 @@ function mtuc_ajax_popup_submit(): void {
 	}
 
 	if ( $process2 ) {
-		mtuc_save_order_process2_customer_meta( $order, $customer );
+		mtuc_save_order_process2_identity( $order );
 	}
 	$order->save();
 

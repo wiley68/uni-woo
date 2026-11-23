@@ -536,9 +536,6 @@ function mtuc_get_calculator_i18n_strings(): array {
 		'offerStandard'    => __( 'Стандарт', 'mtunicredit' ),
 		'offerPromo'       => __( 'Промо', 'mtunicredit' ),
 		'fieldRequired'    => __( 'Полето е задължително.', 'mtunicredit' ),
-		'egnRequired'      => __( 'Полето „ЕГН“ е задължително.', 'mtunicredit' ),
-		'egnInvalid'       => __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ),
-		'phoneInvalid'     => __( 'Въведете валиден втори телефонен номер.', 'mtunicredit' ),
 	);
 }
 
@@ -752,35 +749,13 @@ function mtuc_register_checkout_payment_hooks(): void {
 	add_action( 'wp_enqueue_scripts', 'mtuc_enqueue_checkout_payment_assets', 100 );
 	add_action( 'template_redirect', 'mtuc_checkout_apply_payment_method_from_query', 4 );
 	add_action( 'template_redirect', 'mtuc_checkout_maybe_redirect_to_bank_on_thankyou', 5 );
-	add_action( 'woocommerce_checkout_process', 'mtuc_checkout_validate_process2_fields' );
 	add_action( 'woocommerce_checkout_create_order', 'mtuc_checkout_save_process2_order_meta', 10, 2 );
 	add_action( 'woocommerce_thankyou', 'mtuc_clear_checkout_prefill_session', 20 );
 	add_action( 'woocommerce_checkout_order_processed', 'mtuc_clear_checkout_prefill_session', 20 );
 }
 
 /**
- * Validate Process 2 fields during classic checkout.
- *
- * @return void
- */
-function mtuc_checkout_validate_process2_fields(): void {
-	if ( ! isset( $_POST['payment_method'] ) || MTUC_PAYMENT_GATEWAY_ID !== sanitize_text_field( wp_unslash( (string) $_POST['payment_method'] ) ) ) {
-		return;
-	}
-
-	$shop = mtuc_get_shop_data();
-	if ( is_wp_error( $shop ) || ! is_array( $shop ) || ! mtuc_is_shop_process_2( $shop ) ) {
-		return;
-	}
-
-	$validated = mtuc_validate_process2_fields_from_post( $_POST );
-	if ( is_wp_error( $validated ) ) {
-		mtuc_add_customer_safe_notice( $validated, 'general' );
-	}
-}
-
-/**
- * Persist durable process identity and Process 2 fields on checkout create.
+ * Persist durable process identity on checkout create.
  *
  * @param WC_Order             $order Order instance.
  * @param array<string, mixed> $data  Checkout posted data.
@@ -803,11 +778,7 @@ function mtuc_checkout_save_process2_order_meta( $order, array $data ): void {
 	}
 
 	if ( mtuc_is_shop_process_2( $shop ) ) {
-		$validated = mtuc_validate_process2_fields_from_post( $_POST );
-		if ( is_wp_error( $validated ) ) {
-			return;
-		}
-		mtuc_save_order_process2_customer_meta( $order, $validated );
+		mtuc_save_order_process2_identity( $order );
 		return;
 	}
 

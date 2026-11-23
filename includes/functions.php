@@ -49,38 +49,7 @@ function mtuc_get_process2_confirmation_message(): string {
 }
 
 /**
- * Strip non-digits from an EGN input value.
- *
- * @param string $value Raw EGN.
- * @return string
- */
-function mtuc_sanitize_egn( string $value ): string {
-	$digits = preg_replace( '/\D/', '', $value );
-
-	return is_string( $digits ) ? $digits : '';
-}
-
-/**
- * Validate Bulgarian EGN: 10 digits, first 8 are a valid YYYYMMDD date.
- *
- * @param string $egn Raw or sanitized EGN.
- * @return bool
- */
-function mtuc_validate_bulgarian_egn( string $egn ): bool {
-	$egn = mtuc_sanitize_egn( $egn );
-	if ( ! preg_match( '/^\d{10}$/', $egn ) ) {
-		return false;
-	}
-
-	$year  = (int) substr( $egn, 0, 4 );
-	$month = (int) substr( $egn, 4, 2 );
-	$day   = (int) substr( $egn, 6, 2 );
-
-	return checkdate( $month, $day, $year );
-}
-
-/**
- * Validate a customer phone number (primary or secondary).
+ * Validate a customer primary phone number.
  *
  * @param string $phone Raw phone input.
  * @return bool

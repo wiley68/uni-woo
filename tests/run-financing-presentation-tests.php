@@ -134,12 +134,9 @@ function mtuc_fp_seed_process2_order( WC_Order $order ): void {
 }
 
 // ---------------------------------------------------------------------------
-// Audience helpers
+// Permanent Process 2 field removal
 // ---------------------------------------------------------------------------
 
-mtuc_fp_assert( ! mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER ), 'customer excludes EGN' );
-mtuc_fp_assert( ! mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL ), 'admin panel excludes EGN' );
-mtuc_fp_assert( mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL ), 'admin email allows EGN' );
 
 // ---------------------------------------------------------------------------
 // Process 2 — audience matrix
@@ -149,13 +146,13 @@ $p2 = new WC_Order();
 mtuc_fp_seed_process2_order( $p2 );
 
 $admin_email = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL );
-mtuc_fp_assert( isset( $admin_email['ЕГН'] ) && $fake_egn === $admin_email['ЕГН'], 'P2 admin email presents EGN' );
-mtuc_fp_assert( isset( $admin_email['Втори телефон'] ) && '0888123456' === $admin_email['Втори телефон'], 'P2 admin email presents phone2' );
+mtuc_fp_assert( ! isset( $admin_email['ЕГН'] ), 'P2 admin email hides historical EGN' );
+mtuc_fp_assert( ! isset( $admin_email['Втори телефон'] ), 'P2 admin email hides historical phone2' );
 
 $admin_panel = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL );
 mtuc_fp_assert( ! isset( $admin_panel['ЕГН'] ), 'P2 admin panel hides EGN' );
 mtuc_fp_assert( false === strpos( wp_json_encode( $admin_panel ), $fake_egn ), 'P2 admin panel does not embed EGN' );
-mtuc_fp_assert( isset( $admin_panel['Втори телефон'] ), 'P2 admin panel keeps phone2' );
+mtuc_fp_assert( ! isset( $admin_panel['Втори телефон'] ), 'P2 admin panel hides historical phone2' );
 mtuc_fp_assert( ! isset( mtuc_get_admin_order_credit_meta_rows( $p2 )['ЕГН'] ), 'admin helper matches ADMIN_PANEL' );
 
 $customer = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER );
@@ -189,17 +186,9 @@ mtuc_fp_assert(
 	'customer row ordering preserved'
 );
 
-$admin_email_labels = array_keys( $admin_email );
-$egn_pos            = array_search( 'ЕГН', $admin_email_labels, true );
-$phone_pos          = array_search( 'Втори телефон', $admin_email_labels, true );
-$msg_pos            = array_search( 'Съобщение', $admin_email_labels, true );
-mtuc_fp_assert(
-	false !== $egn_pos
-	&& false !== $phone_pos
-	&& $phone_pos < $egn_pos
-	&& $egn_pos < $msg_pos,
-	'admin email Process 2 field order: phone2 → EGN → message'
-);
+mtuc_fp_assert( array_keys( $admin_email ) === array_keys( $customer ), 'admin email retains standard field ordering and confirmation' );
+mtuc_fp_assert( false === strpos( wp_json_encode( $admin_email ), $fake_egn ), 'admin email does not embed historical EGN' );
+mtuc_fp_assert( false === strpos( wp_json_encode( $admin_panel ), '0888123456' ), 'admin panel does not embed historical phone2' );
 
 // ---------------------------------------------------------------------------
 // Process 1 — EGN absent for all audiences

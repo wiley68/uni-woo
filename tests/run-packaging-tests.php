@@ -127,6 +127,7 @@ final class Mtuc_Packaging_Test_Runner {
 				umask( $mask );
 			}
 			$this->check( $hash === $repeat['sha256'], 'Repeated build is byte-identical despite fixture mtime/timezone/umask changes.' );
+			$this->test_installer_cleanup();
 			$this->test_cli();
 			$this->test_rejections();
 			$this->test_versions();
@@ -138,6 +139,80 @@ final class Mtuc_Packaging_Test_Runner {
 			return 1;
 		} finally {
 			Mtuc_Distribution_Package::remove_tree( $this->fixture );
+		}
+	}
+
+	/** Clean only previous regular installer files after success; preserve all outputs on build/verify failure. */
+	private function test_installer_cleanup(): void {
+		$previous = array( 'woo_uni_0.0.1.zip', 'woo_uni_1.2.3-beta.1.zip', 'woo_uni_1.2.3+build.7.zip' );
+		$unrelated = array(
+			'other.zip',
+			'woo_uni_latest.zip',
+			'woo_uni_1.2.zip',
+			'woo_uni_1.2.3.4.zip',
+			'woo_uni_1.2.3.zip.bak',
+			'woo_uni_1.2.3.zip.sha256',
+			'woo_uni_1.2.3-backup.zip.tmp',
+			'prefix_woo_uni_1.2.3.zip',
+			"woo_uni_1.2.3.zip\n",
+		);
+		foreach ( array_merge( $previous, $unrelated ) as $name ) {
+			$this->put( 'dist/' . $name, 'preserved artifact fixture' );
+		}
+		$this->put( 'outside/woo_uni_0.0.2.zip', 'outside installer fixture' );
+		$this->put( 'dist/woo_uni_0.0.3.zip/nested.zip', 'directory fixture' );
+		$this->put( 'dist/backups/woo_uni_0.0.4.zip', 'nested backup fixture' );
+		symlink( $this->fixture . '/outside/woo_uni_0.0.2.zip', $this->fixture . '/dist/woo_uni_0.0.2.zip' );
+		symlink( $this->fixture . '/outside/missing.zip', $this->fixture . '/dist/woo_uni_0.0.5.zip' );
+		symlink( $this->fixture . '/outside', $this->fixture . '/dist/woo_uni_0.0.6.zip' );
+		$built = $this->package->build();
+		$this->check( $this->facts['sha256'] === $built['sha256'], 'Cleanup does not change installer bytes or archive conventions.' );
+		$this->check( $built === $this->package->verify( $built['path'] ), 'New installer remains present and valid after cleanup.' );
+		foreach ( $previous as $name ) {
+			$this->check( ! file_exists( $this->fixture . '/dist/' . $name ), 'Previous generated installer removed: ' . $name );
+		}
+		foreach ( $unrelated as $name ) {
+			$this->check( 'preserved artifact fixture' === file_get_contents( $this->fixture . '/dist/' . $name ), 'Unrelated artifact preserved: ' . trim( $name ) );
+		}
+		foreach ( array( '0.0.2', '0.0.5', '0.0.6' ) as $version ) {
+			$this->check( is_link( $this->fixture . '/dist/woo_uni_' . $version . '.zip' ), 'Installer symlink preserved without following it.' );
+		}
+		$this->check( 'outside installer fixture' === file_get_contents( $this->fixture . '/outside/woo_uni_0.0.2.zip' ), 'Outside installer untouched.' );
+		$this->check( 'directory fixture' === file_get_contents( $this->fixture . '/dist/woo_uni_0.0.3.zip/nested.zip' ), 'Matching directory and contents preserved.' );
+		$this->check( 'nested backup fixture' === file_get_contents( $this->fixture . '/dist/backups/woo_uni_0.0.4.zip' ), 'Nested backup installer untouched.' );
+		$repeat = $this->package->build();
+		$this->check( $repeat === $built, 'Repeated cleanup is idempotent.' );
+
+		$this->put( 'dist/' . $previous[0], 'previous installer preserved on failure' );
+		$config = file_get_contents( $this->fixture . '/includes/config.php' );
+		$deny = file_get_contents( $this->fixture . '/dist/.htaccess' );
+		try {
+			unlink( $this->fixture . '/includes/config.php' );
+			$this->reject( function (): void { $this->package->build(); }, 'Build failure skips installer cleanup.' );
+			$this->check( 'previous installer preserved on failure' === file_get_contents( $this->fixture . '/dist/' . $previous[0] ), 'Previous version survives failed generation.' );
+			$this->check( $built['sha256'] === hash_file( 'sha256', $built['path'] ), 'Current installer survives failed generation.' );
+			$this->put( 'includes/config.php', $config . "\n// verification failure fixture\n" );
+			$this->reject( function () use ( $built ): void { $this->package->verify( $built['path'] ); }, 'Verification failure never triggers cleanup.' );
+			$this->check( 'previous installer preserved on failure' === file_get_contents( $this->fixture . '/dist/' . $previous[0] ), 'Previous version survives failed verification.' );
+			$this->check( $built['sha256'] === hash_file( 'sha256', $built['path'] ), 'Current installer survives failed verification.' );
+			$this->put( 'includes/config.php', $config );
+			$this->put( 'dist/.htaccess', 'custom protection' );
+			$this->reject( function (): void { $this->package->build(); }, 'Publication failure after ZIP verification skips cleanup.' );
+			$this->check( 'previous installer preserved on failure' === file_get_contents( $this->fixture . '/dist/' . $previous[0] ), 'Previous version survives failed publication.' );
+			$this->check( $built['sha256'] === hash_file( 'sha256', $built['path'] ), 'Current installer survives failed publication.' );
+		} finally {
+			$this->put( 'includes/config.php', $config );
+			$this->put( 'dist/.htaccess', $deny );
+		}
+		rename( $this->fixture . '/dist', $this->fixture . '/saved-dist' );
+		symlink( $this->fixture . '/outside', $this->fixture . '/dist' );
+		try {
+			$this->reject( function (): void { $this->package->build(); }, 'Symlinked dist directory rejected before publication and cleanup.' );
+			$this->check( 'outside installer fixture' === file_get_contents( $this->fixture . '/outside/woo_uni_0.0.2.zip' ), 'Symlinked dist does not delete outside installer.' );
+			$this->check( 'previous installer preserved on failure' === file_get_contents( $this->fixture . '/saved-dist/' . $previous[0] ), 'Symlinked dist leaves existing installers untouched.' );
+		} finally {
+			unlink( $this->fixture . '/dist' );
+			rename( $this->fixture . '/saved-dist', $this->fixture . '/dist' );
 		}
 	}
 

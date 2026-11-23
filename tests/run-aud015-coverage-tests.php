@@ -538,12 +538,12 @@ $p2->update_meta_data( MTUC_ORDER_META_PREFIX . 'glp', 0 );
 $p2->update_meta_data( MTUC_ORDER_META_PREFIX . 'gpr', 0 );
 
 $admin_email_rows = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL );
-mtuc_aud015_assert( isset( $admin_email_rows['ЕГН'] ) && '9001011234' === $admin_email_rows['ЕГН'], 'Process 2 admin email may include EGN' );
+mtuc_aud015_assert( ! isset( $admin_email_rows['ЕГН'] ), 'Process 2 admin email excludes historical EGN' );
 
 $admin_panel_rows = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL );
 mtuc_aud015_assert( ! isset( $admin_panel_rows['ЕГН'] ), 'Process 2 Woo admin panel must not include EGN' );
 mtuc_aud015_assert( ! isset( mtuc_get_admin_order_credit_meta_rows( $p2 )['ЕГН'] ), 'admin panel helper excludes EGN' );
-mtuc_aud015_assert( isset( $admin_panel_rows['Втори телефон'] ), 'admin panel retains other Process 2 fields' );
+mtuc_aud015_assert( ! isset( $admin_panel_rows['Втори телефон'] ), 'admin panel excludes historical phone2' );
 
 $customer_rows = mtuc_get_order_credit_meta_rows( $p2, MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER );
 mtuc_aud015_assert( ! isset( $customer_rows['ЕГН'] ), 'Process 2 customer rows must not include EGN' );
@@ -626,7 +626,7 @@ mtuc_aud015_assert( false === stripos( $customer_email_html, 'ЕГН' ), 'custom
 ob_start();
 mtuc_render_order_credit_email_section( $p2, false, MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL );
 $admin_email_html = (string) ob_get_clean();
-mtuc_aud015_assert( false !== strpos( $admin_email_html, '9001011234' ), 'admin email HTML must contain EGN' );
+mtuc_aud015_assert( false === strpos( $admin_email_html, '9001011234' ), 'admin email HTML excludes historical EGN' );
 
 $p1 = new WC_Order();
 $p1->update_meta_data( MTUC_ORDER_META_PROCESS2, 0 );
@@ -645,9 +645,6 @@ foreach (
 	mtuc_aud015_assert( false === strpos( wp_json_encode( $p1_rows ), '9001011234' ), 'Process 1 ' . $audience . ' must not embed EGN value' );
 }
 
-mtuc_aud015_assert( ! mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_CUSTOMER ), 'customer audience excludes EGN' );
-mtuc_aud015_assert( ! mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_PANEL ), 'admin panel audience excludes EGN' );
-mtuc_aud015_assert( mtuc_credit_rows_audience_includes_egn( MTUC_CREDIT_ROWS_AUDIENCE_ADMIN_EMAIL ), 'admin email audience allows EGN' );
 
 // Diagnostics must not carry EGN.
 if ( function_exists( 'mtuc_record_order_financing_diagnostic' ) && function_exists( 'mtuc_get_order_financing_diagnostic' ) ) {

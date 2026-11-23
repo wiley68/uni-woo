@@ -287,6 +287,15 @@ final class Mtuc_Distribution_Package {
 				}
 			}
 			$facts['path'] = $dist . '/' . $filename;
+			// Verified bytes are published before any previous installer is removed.
+			foreach ( new DirectoryIterator( $dist ) as $entry ) {
+				if ( $entry->getFilename() !== $filename && ! $entry->isLink() && $entry->isFile()
+					&& preg_match( '/\Awoo_uni_[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?\.zip\z/D', $entry->getFilename() ) ) {
+					if ( ! unlink( $entry->getPathname() ) ) {
+						throw new RuntimeException( 'New distribution archive is valid, but a previous installer could not be removed.' );
+					}
+				}
+			}
 			return $facts;
 		} finally {
 			// phpcs:ignore WordPress.DateTime.RestrictedFunctions.timezone_change_date_default_timezone_set -- Restore the CLI caller timezone.

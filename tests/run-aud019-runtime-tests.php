@@ -192,7 +192,7 @@ mtuc_rt_assert( '[REDACTED]' === ( $san_resp['clientEmail'] ?? null ), 'ISSUE1 r
 mtuc_rt_assert( '[REDACTED]' === ( $san_resp['pass'] ?? null ), 'ISSUE1 response pass redacted' );
 
 // ---------------------------------------------------------------------------
-// ISSUE 2 — Process 2 UI field order: phone2 before EGN
+// ISSUE 2 — Process 2 retired fields absent
 // ---------------------------------------------------------------------------
 
 $checkout_tpl = (string) file_get_contents( MTUC_PLUGIN_DIR . '/templates/checkout-payment-fields.php' );
@@ -203,10 +203,10 @@ $co_egn   = strpos( $checkout_tpl, 'mtuc-checkout-egn' );
 $pu_phone = strpos( $popup_tpl, 'mtuc-popup-phone2' );
 $pu_egn   = strpos( $popup_tpl, 'mtuc-popup-egn' );
 
-mtuc_rt_assert( false !== $co_phone && false !== $co_egn && $co_phone < $co_egn, 'ISSUE2 checkout: phone2 before EGN' );
-mtuc_rt_assert( false !== $pu_phone && false !== $pu_egn && $pu_phone < $pu_egn, 'ISSUE2 popup: phone2 before EGN' );
-mtuc_rt_assert( false !== strpos( $checkout_tpl, 'name="mtuc_phone2"' ), 'ISSUE2 phone2 POST key unchanged' );
-mtuc_rt_assert( false !== strpos( $checkout_tpl, 'name="mtuc_egn"' ), 'ISSUE2 egn POST key unchanged' );
+mtuc_rt_assert( false === $co_phone && false === $co_egn, 'ISSUE2 checkout: retired fields absent' );
+mtuc_rt_assert( false === $pu_phone && false === $pu_egn, 'ISSUE2 popup: retired fields absent' );
+mtuc_rt_assert( false === strpos( $checkout_tpl, 'name="mtuc_phone2"' ), 'ISSUE2 phone2 POST input removed' );
+mtuc_rt_assert( false === strpos( $checkout_tpl, 'name="mtuc_egn"' ), 'ISSUE2 egn POST input removed' );
 
 // ---------------------------------------------------------------------------
 // ISSUE 3 — encrypted SmartUCF credentials; general cache credential-free

@@ -7,6 +7,13 @@
  * @package MTUC
  */
 
+define( 'WP_DEBUG_LOG', true );
+$mtuc_cf_debug_log = tempnam( sys_get_temp_dir(), 'mtuc-cp-privacy-' );
+$mtuc_cf_previous_log = ini_set( 'error_log', $mtuc_cf_debug_log );
+register_shutdown_function( static function () use ( $mtuc_cf_debug_log, $mtuc_cf_previous_log ): void {
+	ini_set( 'error_log', $mtuc_cf_previous_log );
+	unlink( $mtuc_cf_debug_log );
+} );
 require_once __DIR__ . '/bootstrap.php';
 
 $GLOBALS['mtuc_test_options']          = array();
@@ -793,6 +800,18 @@ mtuc_cf_assert(
 unset( $public_labels );
 
 Mtuc_Smartucf_Api_Client::$http_transport = null;
+
+// Remote messages may echo retired fields; debug logging must retain only codes.
+$privacy_error = new WP_Error( 'http_request_failed', 'timeout REMOVED-EGN REMOVED-PHONE2' );
+mtuc_record_cp_create_outcome_unknown( $p2, $privacy_error );
+mtuc_cf_assert( 'unknown' === $p2->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'privacy logging retains unknown outcome' );
+mtuc_fail_order_on_cp_create_error( $p2, new WP_Error( 'mtuc_api_http_error', 'REMOVED-EGN REMOVED-PHONE2', array( 'status' => 403 ) ) );
+mtuc_cf_assert( 'missing' === $p2->get_meta( MTUC_ORDER_META_CP_CREATE_OUTCOME ), 'privacy logging retains definitive failure outcome' );
+mtuc_fail_order_on_cp_create_error( $p2, 'REMOVED-EGN REMOVED-PHONE2' );
+mtuc_record_cp_create_outcome_unknown( $p2, 'REMOVED-EGN REMOVED-PHONE2' );
+$privacy_log = (string) file_get_contents( $mtuc_cf_debug_log );
+mtuc_cf_assert( false !== strpos( $privacy_log, 'http_request_failed' ) && false !== strpos( $privacy_log, 'mtuc_api_http_error' ), 'CP debug log retains error codes' );
+mtuc_cf_assert( false === strpos( $privacy_log, 'REMOVED-EGN' ) && false === strpos( $privacy_log, 'REMOVED-PHONE2' ), 'CP debug log never includes remote messages or raw reasons' );
 
 fwrite( STDOUT, 'OK cp-create-fail ' . $mtuc_cf_assert_count . " assertions\n" );
 exit( 0 );

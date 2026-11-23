@@ -437,7 +437,6 @@ function mtuc_enqueue_cart_calculator_assets( array $context ): void {
 				'fieldRequired'     => __( 'Полето е задължително.', 'mtunicredit' ),
 				'phoneInvalid'      => __( 'Въведете валиден телефонен номер.', 'mtunicredit' ),
 				'emailInvalid'      => __( 'Въведете валиден e-mail адрес.', 'mtunicredit' ),
-				'egnInvalid'        => __( 'Въведете валидно ЕГН (10 цифри, първите 8 — дата YYYYMMDD).', 'mtunicredit' ),
 				'submitError'       => __( 'Заявката не може да бъде изпратена. Моля, опитайте отново.', 'mtunicredit' ),
 				'submitNoCalc'      => __( 'Липсват данни за изчисление. Моля, върнете се и изберете схема отново.', 'mtunicredit' ),
 				'submitting'        => __( 'Изпращане...', 'mtunicredit' ),
