@@ -14,9 +14,6 @@ final class Mtuc_Distribution_Package {
 	/** Archive plugin directory. */
 	public const ROOT = 'mtunicredit/';
 
-	/** ZIP timestamp, independent of source mtimes and the build clock. */
-	private const ZIP_TIME = 315532800;
-
 	/** Apache protection for sensitive local build outputs. */
 	private const PROTECTION = "# Generated deployment artifacts: deny HTTP access.\n<IfModule mod_authz_core.c>\n\tRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n\tDeny from all\n</IfModule>\n";
 
@@ -210,21 +207,20 @@ final class Mtuc_Distribution_Package {
 	}
 
 	/**
-	 * Stage, verify and atomically publish deterministic bytes under source dist/.
+	 * Stage, verify and atomically publish current source under source dist/.
 	 *
 	 * @return array<string, mixed> Nonsecret artifact facts.
 	 * @throws RuntimeException If packaging validation or local I/O fails.
 	 */
 	public function build(): array {
 		self::require_zip();
+		$build_time = time();
+		$build_time -= $build_time % 2;
 		$snapshot = $this->snapshot();
 		$version  = self::version( self::read( $snapshot['mtunicredit.php']['path'] ) );
 		$filename = self::filename( $version );
 		$stage    = sys_get_temp_dir() . '/mtuc-package-' . bin2hex( random_bytes( 12 ) );
 		self::directory( $stage, 0700 );
-		$timezone = date_default_timezone_get();
-		// phpcs:ignore WordPress.DateTime.RestrictedFunctions.timezone_change_date_default_timezone_set -- CLI ZIP metadata uses UTC; restored in finally.
-		date_default_timezone_set( 'UTC' );
 		try {
 			foreach ( $snapshot as $relative => $entry ) {
 				$target = $stage . '/' . self::ROOT . $relative;
@@ -234,26 +230,40 @@ final class Mtuc_Distribution_Package {
 					throw new RuntimeException( 'Source changed while staging: ' . $relative );
 				}
 			}
-			$archive = $stage . '/' . $filename;
-			$zip     = new ZipArchive();
-			if ( true !== $zip->open( $archive, ZipArchive::CREATE | ZipArchive::EXCL ) ) {
-				throw new RuntimeException( 'Cannot create distribution archive.' );
-			}
+			$archive          = $stage . '/' . $filename;
+			$zip              = new ZipArchive();
+			$timezone         = date_default_timezone_get();
+			$process_timezone = getenv( 'TZ' );
 			try {
-				foreach ( array_keys( $snapshot ) as $relative ) {
-					$name = self::ROOT . $relative;
-					$mode = 'secrets/smartucf-key.php' === $relative ? 0100600 : 0100644;
-					if ( ! $zip->addFile( $stage . '/' . $name, $name )
-						|| ! $zip->setMtimeName( $name, self::ZIP_TIME )
-						|| ! $zip->setCompressionName( $name, ZipArchive::CM_DEFLATE, 9 )
-						|| ! $zip->setExternalAttributesName( $name, ZipArchive::OPSYS_UNIX, $mode << 16 ) ) {
-						throw new RuntimeException( 'Cannot write distribution entry: ' . $relative );
+				// libzip uses the process timezone for DOS fields, independently of PHP's timezone.
+				if ( ! putenv( 'TZ=UTC' ) ) {
+					throw new RuntimeException( 'Cannot set the ZIP-writing timezone to UTC.' );
+				}
+				// phpcs:ignore WordPress.DateTime.RestrictedFunctions.timezone_change_date_default_timezone_set -- CLI ZIP metadata uses UTC; restored in finally.
+				date_default_timezone_set( 'UTC' );
+				if ( true !== $zip->open( $archive, ZipArchive::CREATE | ZipArchive::EXCL ) ) {
+					throw new RuntimeException( 'Cannot create distribution archive.' );
+				}
+				try {
+					foreach ( array_keys( $snapshot ) as $relative ) {
+						$name = self::ROOT . $relative;
+						$mode = 'secrets/smartucf-key.php' === $relative ? 0100600 : 0100644;
+						if ( ! $zip->addFile( $stage . '/' . $name, $name )
+							|| ! $zip->setMtimeName( $name, $build_time )
+							|| ! $zip->setCompressionName( $name, ZipArchive::CM_DEFLATE, 9 )
+							|| ! $zip->setExternalAttributesName( $name, ZipArchive::OPSYS_UNIX, $mode << 16 ) ) {
+							throw new RuntimeException( 'Cannot write distribution entry: ' . $relative );
+						}
+					}
+				} finally {
+					if ( ! $zip->close() ) {
+						throw new RuntimeException( 'Cannot finalize distribution archive.' );
 					}
 				}
 			} finally {
-				if ( ! $zip->close() ) {
-					throw new RuntimeException( 'Cannot finalize distribution archive.' );
-				}
+				// phpcs:ignore WordPress.DateTime.RestrictedFunctions.timezone_change_date_default_timezone_set -- Restore the CLI caller timezone, including failed ZIP operations.
+				date_default_timezone_set( $timezone );
+				putenv( false === $process_timezone ? 'TZ' : 'TZ=' . $process_timezone );
 			}
 			$facts = $this->verify( $archive, $snapshot );
 			$dist  = $this->source . '/dist';
@@ -298,8 +308,6 @@ final class Mtuc_Distribution_Package {
 			}
 			return $facts;
 		} finally {
-			// phpcs:ignore WordPress.DateTime.RestrictedFunctions.timezone_change_date_default_timezone_set -- Restore the CLI caller timezone.
-			date_default_timezone_set( $timezone );
 			self::remove_tree( $stage );
 		}
 	}
@@ -387,9 +395,9 @@ final class Mtuc_Distribution_Package {
 	}
 
 	/**
-	 * Check deterministic ZIP support before copying deployment inputs.
+	 * Check ZIP timestamp support before copying deployment inputs.
 	 *
-	 * @throws RuntimeException If deterministic ZIP support is unavailable.
+	 * @throws RuntimeException If ZIP timestamp support is unavailable.
 	 */
 	private static function require_zip(): void {
 		if ( ! class_exists( 'ZipArchive' ) || ! method_exists( 'ZipArchive', 'setMtimeName' ) ) {

@@ -112,12 +112,12 @@ final class Mtuc_Packaging_Test_Runner {
 			$zip->close();
 			$this->check( false !== strpos( file_get_contents( $this->fixture . '/dist/.htaccess' ), 'Require all denied' ), 'Distribution protection generated.' );
 			$this->check( 0600 === ( fileperms( $this->facts['path'] ) & 0777 ), 'Sensitive ZIP is private.' );
-			$hash = $this->facts['sha256'];
+			$content_hash = $this->zip_metadata( $this->facts['path'] )['content_hash'];
 			// Change fixture mtimes, timezone and umask; production source is untouched.
 			touch( $this->fixture . '/includes/config.php', 1700000000 );
 			$timezone = date_default_timezone_get();
 			$mask     = umask( 0022 );
-			// phpcs:ignore WordPress.DateTime.RestrictedFunctions.timezone_change_date_default_timezone_set -- Exercise CLI reproducibility across timezones.
+			// phpcs:ignore WordPress.DateTime.RestrictedFunctions.timezone_change_date_default_timezone_set -- Exercise CLI packaging across timezones.
 			date_default_timezone_set( 'Pacific/Auckland' );
 			try {
 				$repeat = $this->package->build();
@@ -126,7 +126,10 @@ final class Mtuc_Packaging_Test_Runner {
 				date_default_timezone_set( $timezone );
 				umask( $mask );
 			}
-			$this->check( $hash === $repeat['sha256'], 'Repeated build is byte-identical despite fixture mtime/timezone/umask changes.' );
+			$this->check( $content_hash === $this->zip_metadata( $repeat['path'] )['content_hash'], 'Repeated build changes only ZIP timestamps despite fixture mtime/timezone/umask changes.' );
+			$this->facts = $repeat;
+			$this->test_timestamps();
+			$this->test_timezones();
 			$this->test_installer_cleanup();
 			$this->test_cli();
 			$this->test_rejections();
@@ -139,6 +142,233 @@ final class Mtuc_Packaging_Test_Runner {
 			return 1;
 		} finally {
 			Mtuc_Distribution_Package::remove_tree( $this->fixture );
+		}
+	}
+
+	/**
+	 * Read small fixture ZIPs independently of ZipArchive; check headers, bytes and CRCs.
+	 *
+	 * @param string $path Fixture archive.
+	 * @return array Timestamp and hash with only local/central DOS timestamps zeroed.
+	 */
+	private function zip_metadata( string $path ): array {
+		$bytes      = file_get_contents( $path );
+		$normalized = $bytes;
+		$end        = strrpos( $bytes, "PK\x05\x06" );
+		$this->check( false !== $end, 'Independent ZIP end record exists.' );
+		$directory = unpack( 'vdisk/vstart/ventries_disk/ventries/Vsize/Voffset/vcomment', substr( $bytes, $end + 4, 18 ) );
+		$snapshot  = $this->package->snapshot();
+		$expected  = array_map( static function ( $name ) { return 'mtunicredit/' . $name; }, array_keys( $snapshot ) );
+		$this->check( 0 === $directory['disk'] && 0 === $directory['start']
+			&& count( $expected ) === $directory['entries'] && $directory['entries'] === $directory['entries_disk']
+			&& $directory['offset'] + $directory['size'] === $end
+			&& $end + 22 + $directory['comment'] === strlen( $bytes ), 'Independent ZIP directory and exact inventory count.' );
+		$position = $directory['offset'];
+		$common   = null;
+		foreach ( $expected as $name ) {
+			$central = unpack( 'Vsignature/vmade/vneeded/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed/Vsize/vname/vextra/vcomment/vdisk/vinternal/Vexternal/Vlocal', substr( $bytes, $position, 46 ) );
+			$this->check( 0x02014b50 === $central['signature'] && $name === substr( $bytes, $position + 46, $central['name'] ), 'Independent exact sorted archive entry.' );
+			$local = unpack( 'Vsignature/vneeded/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed/Vsize/vname/vextra', substr( $bytes, $central['local'], 30 ) );
+			$this->check( 0x04034b50 === $local['signature'] && $name === substr( $bytes, $central['local'] + 30, $local['name'] )
+				&& $local['time'] === $central['time'] && $local['date'] === $central['date'], 'Local and central raw DOS timestamps match.' );
+			$fields = array(
+				1980 + ( $central['date'] >> 9 ), ( $central['date'] >> 5 ) & 15, $central['date'] & 31,
+				$central['time'] >> 11, ( $central['time'] >> 5 ) & 63, ( $central['time'] & 31 ) * 2,
+			);
+			$stamp = gmmktime( $fields[3], $fields[4], $fields[5], $fields[1], $fields[2], $fields[0] );
+			$this->check( gmdate( 'Y-m-d H:i:s', $stamp ) === vsprintf( '%04d-%02d-%02d %02d:%02d:%02d', $fields ), 'DOS fields decode exactly as UTC.' );
+			$common = $common ?? $stamp;
+			$this->check( $stamp === $common && 0 === $stamp % 2, 'Every entry shares one DOS-precision timestamp.' );
+			$this->check( 8 === $central['method'] && $local['method'] === $central['method'] && 0 === ( $central['flags'] & 1 ), 'Fixture entries retain unencrypted DEFLATE compression.' );
+			$data = gzinflate( substr( $bytes, $central['local'] + 30 + $local['name'] + $local['extra'], $central['compressed'] ) );
+			$this->check( false !== $data && strlen( $data ) === $central['size']
+				&& sprintf( '%08x', crc32( $data ) ) === sprintf( '%08x', $central['crc'] )
+				&& $local['crc'] === $central['crc'], 'Independent decompression and local/central CRC integrity.' );
+			$relative = substr( $name, strlen( 'mtunicredit/' ) );
+			$this->check( $data === file_get_contents( $snapshot[ $relative ]['path'] ), 'Independent complete source-to-archive byte parity.' );
+			$mode = 'secrets/smartucf-key.php' === $relative ? 0100600 : 0100644;
+			$this->check( 3 === ( $central['made'] >> 8 ) && $central['external'] === ( $mode << 16 ), 'Normalized Unix entry permissions preserved.' );
+			$normalized = substr_replace( $normalized, "\0\0\0\0", $position + 12, 4 );
+			$normalized = substr_replace( $normalized, "\0\0\0\0", $central['local'] + 10, 4 );
+			$position  += 46 + $central['name'] + $central['extra'] + $central['comment'];
+		}
+		$this->check( $position === $end, 'Independent parser consumed the exact central directory.' );
+		return array( 'timestamp' => $common, 'content_hash' => hash( 'sha256', $normalized ) );
+	}
+
+	/** Build a fixture and require its raw UTC timestamp to fall inside the measured interval. */
+	private function timed_build(): array {
+		$start = time();
+		$facts = $this->package->build();
+		$end   = time();
+		$meta  = $this->zip_metadata( $facts['path'] );
+		$this->check( $meta['timestamp'] >= $start - $start % 2 && $meta['timestamp'] <= $end - $end % 2, 'Current UTC timestamp falls within the measured build interval.' );
+		$this->check( $facts === $this->package->verify( $facts['path'] ), 'Timed build passes the production verifier.' );
+		return array( $facts, $meta['timestamp'] );
+	}
+
+	/**
+	 * Synchronize with the next DOS interval without an unbounded wall-clock wait.
+	 *
+	 * @param int $previous Previous archive timestamp.
+	 */
+	private function wait_for_interval( int $previous ): void {
+		$deadline = hrtime( true ) + 5000000000;
+		do {
+			$now = time();
+			if ( $now - $now % 2 > $previous ) {
+				return;
+			}
+			usleep( 20000 );
+		} while ( hrtime( true ) < $deadline );
+		throw new RuntimeException( 'Clock did not advance to the next DOS interval within five seconds.' );
+	}
+
+	/**
+	 * Run an isolated fixture tool, capturing its output.
+	 *
+	 * @param array $command Argument vector.
+	 * @return string Standard output.
+	 */
+	private function command( array $command ): string {
+		$pipes       = array();
+		$environment = null;
+		if ( 'unzip' === $command[0] ) {
+			$environment = getenv();
+			unset( $environment['UNZIP'], $environment['UNZIPOPT'] );
+		}
+		$child = proc_open( $command, array( 0 => array( 'pipe', 'r' ), 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes, null, $environment );
+		$this->check( is_resource( $child ), 'Fixture subprocess starts.' );
+		fclose( $pipes[0] );
+		$output = stream_get_contents( $pipes[1] );
+		stream_get_contents( $pipes[2] );
+		fclose( $pipes[1] );
+		fclose( $pipes[2] );
+		$this->check( 0 === proc_close( $child ), 'Fixture subprocess succeeds: ' . $command[0] );
+		return $output;
+	}
+
+	/** Prove current timestamps, source-mtime independence, successive bytes and extracted/placed mtimes. */
+	private function test_timestamps(): void {
+		$manifest = json_decode( file_get_contents( $this->fixture . '/tools/package-manifest.json' ), true );
+		foreach ( $manifest['required_files'] as $index => $relative ) {
+			touch( $this->fixture . '/' . $relative, 0 === $index % 2 ? 946684800 : 1893456000 );
+		}
+		$before = $this->source_fingerprint();
+		list( $first, $first_time ) = $this->timed_build();
+		$this->check( $before === $this->source_fingerprint(), 'Historical/future source mtimes remain unchanged and do not control ZIP timestamps.' );
+		$this->put( 'evidence/first/' . basename( $first['path'] ), file_get_contents( $first['path'] ) );
+		$first_path = $this->fixture . '/evidence/first/' . basename( $first['path'] );
+		$relative   = 'includes/functions.php';
+		$original   = file_get_contents( $this->fixture . '/' . $relative );
+		$changed    = $original . "\n// Synthetic timestamp regression.\n";
+		$process_tz = getenv( 'TZ' );
+		try {
+			$this->wait_for_interval( $first_time );
+			$this->put( $relative, $changed );
+			list( $second, $second_time ) = $this->timed_build();
+			$this->check( $second_time > $first_time && $first['sha256'] !== $second['sha256'], 'Changed PHP across distinct DOS intervals has a newer ZIP timestamp and different archive bytes.' );
+			putenv( 'TZ=UTC' );
+			foreach ( array( $first_path, $second['path'] ) as $index => $path ) {
+				$this->command( array( 'unzip', '-tqq', $path ) );
+				$destination = $this->fixture . '/evidence/extracted-' . $index;
+				$this->command( array( 'unzip', '-qq', $path, '-d', $destination ) );
+				$php = $destination . '/mtunicredit/' . $relative;
+				clearstatcache( true, $php );
+				$this->check( file_get_contents( $php ) === ( 0 === $index ? $original : $changed ), 'Independent extraction preserves the expected changed PHP bytes.' );
+				$this->check( filemtime( $php ) === ( 0 === $index ? $first_time : $second_time ), 'UTC extraction preserves each distinct ZIP timestamp without touching files.' );
+			}
+			$placed = $this->fixture . '/evidence/placed.php';
+			rename( $php, $placed );
+			$this->check( filemtime( $placed ) === $second_time && file_get_contents( $placed ) === $changed, 'Rename placement preserves extracted PHP bytes and mtime.' );
+			$this->wait_for_interval( $second_time );
+			$start  = time();
+			$copied = $this->fixture . '/evidence/copied.php';
+			copy( $placed, $copied );
+			clearstatcache( true, $copied );
+			$this->check( file_get_contents( $copied ) === $changed && filemtime( $copied ) > $second_time
+				&& filemtime( $copied ) >= $start && filemtime( $copied ) <= time(), 'Ordinary copy preserves PHP bytes but sets a new placement mtime.' );
+		} finally {
+			putenv( false === $process_tz ? 'TZ' : 'TZ=' . $process_tz );
+			$this->put( $relative, $original );
+		}
+		$this->facts = $this->package->build();
+	}
+
+	/** Exercise all caller TZ states and fail timestamp assignment inside the real ZIP-writing flow. */
+	private function test_timezones(): void {
+		// Fault injection changes only the ZipArchive construction in a private builder copy.
+		$source = file_get_contents( $this->fixture . '/tools/class-mtuc-distribution-package.php' );
+		$source = str_replace( 'new ZipArchive()', 'new Mtuc_Failing_ZipArchive()', $source, $replacements );
+		$this->check( 2 === $replacements, 'Fault injection targets only the two ZipArchive constructions.' );
+		$this->put( 'tools/failing-package.php', $source );
+		$this->put( 'tools/fail-timestamp.php', <<<'PHP'
+<?php
+class Mtuc_Failing_ZipArchive extends ZipArchive {
+	public static $assignment_utc = false;
+	public static $close_utc = false;
+	public function setMtimeName( string $name, int $timestamp, int $flags = 0 ): bool {
+		self::$assignment_utc = 'UTC' === getenv('TZ') && 'UTC' === date_default_timezone_get();
+		return false;
+	}
+	public function close(): bool {
+		self::$close_utc = 'UTC' === getenv('TZ') && 'UTC' === date_default_timezone_get();
+		return parent::close();
+	}
+}
+require __DIR__ . '/failing-package.php';
+date_default_timezone_set('Pacific/Auckland');
+$before = array(getenv('TZ'), date_default_timezone_get());
+$failed = false;
+try {
+	(new Mtuc_Distribution_Package(dirname(__DIR__), __DIR__ . '/package-manifest.json'))->build();
+} catch (RuntimeException $error) {
+	$failed = false !== strpos($error->getMessage(), 'Cannot write distribution entry:');
+}
+echo json_encode(array(
+	'failed' => $failed,
+	'assignment_utc' => Mtuc_Failing_ZipArchive::$assignment_utc,
+	'close_utc' => Mtuc_Failing_ZipArchive::$close_utc,
+	'before' => $before,
+	'after' => array(getenv('TZ'), date_default_timezone_get()),
+));
+PHP
+		);
+		$process_tz = getenv( 'TZ' );
+		$php_tz     = date_default_timezone_get();
+		try {
+			date_default_timezone_set( 'Pacific/Auckland' );
+			foreach ( array( false, '', 'UTC', 'Europe/Sofia', 'America/New_York' ) as $caller_tz ) {
+				putenv( false === $caller_tz ? 'TZ' : 'TZ=' . $caller_tz );
+				list( $facts ) = $this->timed_build();
+				$this->facts = $facts;
+				$this->check( getenv( 'TZ' ) === $caller_tz && 'Pacific/Auckland' === date_default_timezone_get(), 'Successful build restores the exact process and PHP timezone states.' );
+				$stages = glob( sys_get_temp_dir() . '/mtuc-package-*' );
+				$failure = json_decode( $this->command( array( PHP_BINARY, $this->fixture . '/tools/fail-timestamp.php' ) ), true );
+				$this->check( $failure['failed'] && $failure['assignment_utc'] && $failure['close_utc'], 'Timestamp assignment fails inside UTC and ZIP closing remains inside UTC.' );
+				$this->check( $failure['before'] === array( $caller_tz, 'Pacific/Auckland' ) && $failure['after'] === $failure['before'], 'In-ZIP failure restores exact timezone states, including unset versus empty TZ.' );
+				$this->check( $facts['sha256'] === hash_file( 'sha256', $facts['path'] ) && $stages === glob( sys_get_temp_dir() . '/mtuc-package-*' ), 'In-ZIP failure preserves exact previous installer bytes and cleans staging.' );
+				$config = file_get_contents( $this->fixture . '/includes/config.php' );
+				$deny   = file_get_contents( $this->fixture . '/dist/.htaccess' );
+				foreach ( array( 'input', 'publication' ) as $phase ) {
+					try {
+						if ( 'input' === $phase ) {
+							unlink( $this->fixture . '/includes/config.php' );
+						} else {
+							$this->put( 'dist/.htaccess', 'synthetic publication failure' );
+						}
+						$this->reject( function (): void { $this->package->build(); }, 'Failure before/after ZIP operation is rejected: ' . $phase );
+						$this->check( getenv( 'TZ' ) === $caller_tz && 'Pacific/Auckland' === date_default_timezone_get(), 'Input/publication failure preserves caller timezone states.' );
+						$this->check( $facts['sha256'] === hash_file( 'sha256', $facts['path'] ) && $stages === glob( sys_get_temp_dir() . '/mtuc-package-*' ), 'Input/publication failure preserves exact installer bytes and cleans staging.' );
+					} finally {
+						$this->put( 'includes/config.php', $config );
+						$this->put( 'dist/.htaccess', $deny );
+					}
+				}
+			}
+		} finally {
+			putenv( false === $process_tz ? 'TZ' : 'TZ=' . $process_tz );
+			date_default_timezone_set( $php_tz );
 		}
 	}
 
@@ -165,8 +395,9 @@ final class Mtuc_Packaging_Test_Runner {
 		symlink( $this->fixture . '/outside/woo_uni_0.0.2.zip', $this->fixture . '/dist/woo_uni_0.0.2.zip' );
 		symlink( $this->fixture . '/outside/missing.zip', $this->fixture . '/dist/woo_uni_0.0.5.zip' );
 		symlink( $this->fixture . '/outside', $this->fixture . '/dist/woo_uni_0.0.6.zip' );
+		$content_hash = $this->zip_metadata( $this->facts['path'] )['content_hash'];
 		$built = $this->package->build();
-		$this->check( $this->facts['sha256'] === $built['sha256'], 'Cleanup does not change installer bytes or archive conventions.' );
+		$this->check( $content_hash === $this->zip_metadata( $built['path'] )['content_hash'], 'Cleanup preserves every archive byte except build timestamps.' );
 		$this->check( $built === $this->package->verify( $built['path'] ), 'New installer remains present and valid after cleanup.' );
 		foreach ( $previous as $name ) {
 			$this->check( ! file_exists( $this->fixture . '/dist/' . $name ), 'Previous generated installer removed: ' . $name );
@@ -181,7 +412,10 @@ final class Mtuc_Packaging_Test_Runner {
 		$this->check( 'directory fixture' === file_get_contents( $this->fixture . '/dist/woo_uni_0.0.3.zip/nested.zip' ), 'Matching directory and contents preserved.' );
 		$this->check( 'nested backup fixture' === file_get_contents( $this->fixture . '/dist/backups/woo_uni_0.0.4.zip' ), 'Nested backup installer untouched.' );
 		$repeat = $this->package->build();
-		$this->check( $repeat === $built, 'Repeated cleanup is idempotent.' );
+		$this->check( $content_hash === $this->zip_metadata( $repeat['path'] )['content_hash'], 'Repeated cleanup is idempotent apart from build timestamps.' );
+		$this->check( $repeat === $this->package->verify( $repeat['path'] ), 'Repeated cleanup leaves a verified installer.' );
+		$built       = $repeat;
+		$this->facts = $repeat;
 
 		$this->put( 'dist/' . $previous[0], 'previous installer preserved on failure' );
 		$config = file_get_contents( $this->fixture . '/includes/config.php' );
@@ -237,6 +471,7 @@ final class Mtuc_Packaging_Test_Runner {
 			fclose( $pipes[2] );
 			$this->check( 0 === proc_close( $child ) && false !== strpos( $output, 'Verified package:' ), 'CLI ' . $args[0] . ' succeeds.' );
 			$this->check( false === strpos( $output, 'test-only-packaging-password' ), 'CLI output does not expose secret contents.' );
+			$this->facts = $this->package->verify( $this->facts['path'] );
 		}
 	}
 
